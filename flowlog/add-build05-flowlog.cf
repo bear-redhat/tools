@@ -1,0 +1,52 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters" : {
+        "LogGroupName" : {
+            "Type" : "String",
+            "Default": "ci-build05-flow-logs"
+        },
+        "VpcId": {
+            "Type": "String",
+            "Default": "vpc-06fc4bfe10a98b2bf"
+        },
+        "LogRoleArn": {
+            "Type": "String",
+            "Default": "arn:aws:iam::320297955214:role/cluster-flow-logs"
+        },
+        "FlowLogName": {
+            "Type": "String",
+            "Default": "ci-build05-flow-logs"
+        }
+    },
+    "Resources": {
+        "LogGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+                "LogGroupName": {
+                    "Ref": "LogGroupName"
+                },
+                "RetentionInDays": 30
+            }
+        },
+        "FlowLog": {
+            "Type": "AWS::EC2::FlowLog",
+            "Properties":{
+                "DeliverLogsPermissionArn": {
+                    "Ref": "LogRoleArn"
+                },
+                "LogDestination": {
+                    "Fn::GetAtt": [
+                        "LogGroup",
+                        "Arn"
+                    ]
+                },
+                "ResourceType": "VPC",
+                "ResourceId": {
+                    "Ref": "VpcId"
+                },
+                "TrafficType": "ALL",
+                "Tags": [{"Key": "Name", "Value": {"Ref": "FlowLogName"}}]
+            }
+        }
+    }
+}

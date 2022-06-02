@@ -1,0 +1,81 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Parameters": {
+    "GroupName": {
+      "Type": "String",
+      "Default": "RobotBuilders"
+    },
+    "ProvisionUserName": {
+      "Type": "String",
+      "Default": "origin-ci-robot-provision"
+    },
+    "BaseDomain": {
+      "Type": "String",
+      "Default": "ci-rc.devcluster.openshift.com"
+    }
+  },
+  "Resources": {
+    "ELBServerCertPolicy": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyName": "ELBServerCertPolicy",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ELBServerCert",
+              "Effect": "Allow",
+              "Action": [
+                "iam:ListServerCertificates",
+                "iam:GetServerCertificate",
+                "iam:UploadServerCertificate"
+              ],
+              "Resource": [
+                  "*"
+              ]
+            }
+          ]
+        },
+        "Groups": [{"Ref": "CiOperatorUserGroup"}]
+      }
+    },
+    "CiOperatorUserGroup": {
+      "Type": "AWS::IAM::Group",
+      "Properties": {
+        "GroupName": { "Ref": "GroupName" },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AmazonEC2FullAccess",
+          "arn:aws:iam::aws:policy/IAMFullAccess",
+          "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+          "arn:aws:iam::aws:policy/ResourceGroupsandTagEditorReadOnlyAccess",
+          "arn:aws:iam::aws:policy/ResourceGroupsandTagEditorFullAccess",
+          "arn:aws:iam::aws:policy/AmazonRoute53FullAccess",
+          "arn:aws:iam::aws:policy/ServiceQuotasReadOnlyAccess"
+        ]
+      }
+    },
+    "ProvisionUser": {
+      "Type": "AWS::IAM::User",
+      "Properties": {
+        "UserName": {
+          "Ref": "ProvisionUserName"
+        },
+        "Groups": [{
+          "Ref": "CiOperatorUserGroup"
+        }],
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AWSLambda_FullAccess",
+          "arn:aws:iam::aws:policy/AmazonElasticFileSystemFullAccess",
+          "arn:aws:iam::aws:policy/AmazonElasticFileSystemClientFullAccess",
+          "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess"
+        ]
+      }
+    },
+    "BaseDomainZone": {
+      "Type" : "AWS::Route53::HostedZone",
+      "Properties" : {
+          "Name" : { "Ref" : "BaseDomain" }
+        }
+    }
+  }
+}
