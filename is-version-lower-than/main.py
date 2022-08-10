@@ -116,25 +116,25 @@ if __name__ == '__main__':
     for data in all_data:
         ret = process_ciops(data, FILENAME)
         ret2 = process_job(data, FILENAME)
-        # if ret:
-            # pending.extend(ret)
-        # if ret2:
-            # pending.extend(ret2)
+        if ret:
+            pending.extend(ret)
+        if ret2:
+            pending.extend(ret2)
         if ret or ret2:
             file_changed = True
 
-    # print('pending', pending)
-    # if pending:
-    #     with open(FILENAME, 'r', encoding='utf-8') as fp:
-    #         content = fp.read()
-    #     for item in pending:
-    #         content = content.replace(item[0], item[1])
+    print('pending', pending)
+    if pending:
+        with open(FILENAME, 'r', encoding='utf-8') as fp:
+            content = fp.read()
+        for item in pending:
+            content = content.replace(item[0], item[1])
 
-    #     with open(FILENAME, 'w', encoding='utf-8') as fp:
-    #         fp.write(content)
-
-    if file_changed:
         with open(FILENAME, 'w', encoding='utf-8') as fp:
-            yaml.dump_all(all_data, fp)
+            fp.write(content)
+
+    # if file_changed:
+    #     with open(FILENAME, 'w', encoding='utf-8') as fp:
+    #         yaml.dump_all(all_data, fp)
 
     # print('done')
