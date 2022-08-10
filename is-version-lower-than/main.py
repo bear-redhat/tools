@@ -9,9 +9,45 @@ IDX_DAY_OF_WEEK = 4
 def version_lower_than_or_equal(ver, target):
     ver_v = version.parse(ver)
     target_v = version.parse(target)
-    return ver_v < target_v or ver_v == target_v
+    return (ver_v < target_v or ver_v == target_v)
 
-def process(data, filename):
+def replace(test):
+    if 'interval' in test:
+        name = test['as'] if 'as' in test else test['name']
+        print('found test', name, 'with interval', test['interval'])
+        interval = test['interval'].strip()
+        if interval.endswith('h') and int(interval[:-1]) < 24 * 7 * 2:
+            print('interval', interval, 'is less than 2 weeks')
+            test['interval'] = '336h'
+            return [(f'interval: {interval}', 'interval: 336h')]
+        elif interval.endswith('m') and int(interval[:-1]) < 24 * 7 * 2 * 60:
+            print('interval', interval, 'is less than 2 weeks')
+            test['interval'] = '336h'
+            return [(f'interval: {interval}', 'interval: 336h')]
+        else:
+            print('unrecognised interval', interval)
+            return []
+    if 'cron' in test:
+        name = test['as'] if 'as' in test else test['name']
+        print('found test', name, 'with cron', test['cron'])
+        cron = re.split(r'\s+', test['cron'].strip())
+        if len(cron) == 1 and cron[0] == '@daily':
+            test['cron'] = '* * * */13 *'
+            return [(test['cron'], '* * * */13 *')]
+        elif len(cron) == 5 and cron[IDX_DAY_OF_MONTH] == '*' and cron[IDX_DAY_OF_WEEK] == '*':
+            print('cron', cron, 'is less than bi-weekly')
+            cron[IDX_DAY_OF_MONTH] = '*/13'
+            test['cron'] = ' '.join(cron)
+            return [(test['cron'], ' '.join(cron))]
+        elif len(cron) == 5:
+            print('cron is satisfied')
+        else:
+            print('unrecognised cron', cron)
+
+    return []
+
+
+def process_ciops(data, filename):
     section_latest = data.get('releases', {}).get('latest', {})
     if not section_latest:
         return False
@@ -30,29 +66,41 @@ def process(data, filename):
     pending_replacements = []
     print('Found version', ver, 'lower than 4.9 in', filename)
     for test in data.get('tests', []):
-        if 'interval' in test:
-            print('found test', test['as'], 'with interval', test['interval'])
-            interval = test['interval'].strip()
-            if not interval.endswith('h'):
-                print('unrecognised interval', interval)
-                continue
-            if int(interval[:-1]) < 24 * 7 * 2:
-                print('interval', interval, 'is less than 2 weeks')
-                pending_replacements.append((interval, '336h'))
-                continue
-        if 'cron' in test:
-            print('found test', test['as'], 'with cron', test['cron'])
-            cron = re.split(r'\s+', test['cron'].strip())
-            if len(cron) == 1 and cron[0] == '@daily':
-                pending_replacements.append((test['cron'], '@weekly'))
-            elif len(cron) == 5 and cron[IDX_DAY_OF_MONTH] == '*' and cron[IDX_DAY_OF_WEEK] == '*':
-                print('cron', cron, 'is less than bi-weekly')
-                cron[IDX_DAY_OF_WEEK] = '0'
-                pending_replacements.append((test['cron'], ' '.join(cron)))
-            else:
-                print('unrecognised cron', cron)
+        pending_replacements.extend(replace(test))
 
     return pending_replacements
+
+
+def process_job(data, filename):
+    for periodic in data.get('periodics', []):
+        if 'ci.openshift.io/generator' in periodic.get('labels', {}):
+            continue
+
+        version_satisfied = False
+        for ref in periodic.get('extra_refs', []):
+            base_ref = ref.get('base_ref', '').split('-')
+            if len(base_ref) != 2:
+                print('unrecognised base_ref', base_ref)
+                continue
+            ver = base_ref[1]
+            if ver and version_lower_than_or_equal(ver, '4.9'):
+                version_satisfied = True
+                break
+
+        if 'job-release' in periodic.get('labels', {}):
+            ver = periodic.get('labels', {}).get('job-release')
+            if ver and version_lower_than_or_equal(ver, '4.9'):
+                version_satisfied = True
+
+        if not version_satisfied:
+            return False
+
+        pending_replacements = []
+        print('Found version', ver, 'lower than 4.9 in', filename)
+        pending_replacements.extend(replace(periodic))
+
+        return pending_replacements
+
 
 if __name__ == '__main__':
     FILENAME = sys.argv[1]
@@ -63,19 +111,30 @@ if __name__ == '__main__':
 
     yaml = ruamel.yaml.YAML()
     pending = []
-    for data in yaml.load_all(ycontent):
-        ret = process(data, FILENAME)
-        if ret:
-            pending.extend(ret)
+    all_data = list(yaml.load_all(ycontent))
+    file_changed = False
+    for data in all_data:
+        ret = process_ciops(data, FILENAME)
+        ret2 = process_job(data, FILENAME)
+        # if ret:
+            # pending.extend(ret)
+        # if ret2:
+            # pending.extend(ret2)
+        if ret or ret2:
+            file_changed = True
 
-    # print(pending)
-    if pending:
-        with open(FILENAME, 'r', encoding='utf-8') as fp:
-            content = fp.read()
-        for item in pending:
-            content = content.replace(item[0], item[1])
+    # print('pending', pending)
+    # if pending:
+    #     with open(FILENAME, 'r', encoding='utf-8') as fp:
+    #         content = fp.read()
+    #     for item in pending:
+    #         content = content.replace(item[0], item[1])
 
+    #     with open(FILENAME, 'w', encoding='utf-8') as fp:
+    #         fp.write(content)
+
+    if file_changed:
         with open(FILENAME, 'w', encoding='utf-8') as fp:
-            fp.write(content)
+            yaml.dump_all(all_data, fp)
 
     # print('done')
