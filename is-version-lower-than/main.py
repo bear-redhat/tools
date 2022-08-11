@@ -2,28 +2,42 @@ import sys
 import re
 import ruamel.yaml
 from packaging import version
+import random
 
 IDX_DAY_OF_MONTH = 2
 IDX_DAY_OF_WEEK = 4
 
 def version_lower_than_or_equal(ver, target):
     ver_v = version.parse(ver)
+    if ver.find("priv") != -1:
+        v = ver.split("-")
+        ver_v = version.parse(v[0])
     target_v = version.parse(target)
     return (ver_v < target_v or ver_v == target_v)
+
+
+def cron_string():
+    return str(random.randint(0, 59)) + ' ' + str(random.randint(0, 23)) + ' ' + "*/14 * *"
+
 
 def replace(test):
     if 'interval' in test:
         name = test['as'] if 'as' in test else test['name']
         print('found test', name, 'with interval', test['interval'])
+        if name.startswith('promote-'):
+            print('found promote test', name)
+            return []
         interval = test['interval'].strip()
         if interval.endswith('h') and int(interval[:-1]) < 24 * 7 * 2:
             print('interval', interval, 'is less than 2 weeks')
-            test['interval'] = '336h'
-            return [(f'interval: {interval}', 'interval: 336h')]
+            del test['interval']
+            test["cron"] = cron_string()
+            return ["yes"]
         elif interval.endswith('m') and int(interval[:-1]) < 24 * 7 * 2 * 60:
             print('interval', interval, 'is less than 2 weeks')
-            test['interval'] = '336h'
-            return [(f'interval: {interval}', 'interval: 336h')]
+            del test['interval']
+            test["cron"] = cron_string()
+            return ["yes"]
         else:
             print('unrecognised interval', interval)
             return []
@@ -32,13 +46,14 @@ def replace(test):
         print('found test', name, 'with cron', test['cron'])
         cron = re.split(r'\s+', test['cron'].strip())
         if len(cron) == 1 and cron[0] == '@daily':
-            test['cron'] = '* * * */13 *'
-            return [(test['cron'], '* * * */13 *')]
+            del test['cron']
+            test["cron"] = cron_string()
+            return ["yes"]
         elif len(cron) == 5 and cron[IDX_DAY_OF_MONTH] == '*' and cron[IDX_DAY_OF_WEEK] == '*':
             print('cron', cron, 'is less than bi-weekly')
-            cron[IDX_DAY_OF_MONTH] = '*/13'
-            test['cron'] = ' '.join(cron)
-            return [(test['cron'], ' '.join(cron))]
+            del test['cron']
+            test["cron"] = cron_string()
+            return ["yes"]
         elif len(cron) == 5:
             print('cron is satisfied')
         else:
@@ -74,6 +89,9 @@ def process_ciops(data, filename):
 def process_job(data, filename):
     for periodic in data.get('periodics', []):
         if 'ci.openshift.io/generator' in periodic.get('labels', {}):
+            continue
+
+        if periodic.get('name', '').startswith('promote-'):
             continue
 
         version_satisfied = False
@@ -116,25 +134,22 @@ if __name__ == '__main__':
     for data in all_data:
         ret = process_ciops(data, FILENAME)
         ret2 = process_job(data, FILENAME)
-        if ret:
-            pending.extend(ret)
-        if ret2:
-            pending.extend(ret2)
         if ret or ret2:
             file_changed = True
 
-    print('pending', pending)
-    if pending:
-        with open(FILENAME, 'r', encoding='utf-8') as fp:
-            content = fp.read()
-        for item in pending:
-            content = content.replace(item[0], item[1])
 
-        with open(FILENAME, 'w', encoding='utf-8') as fp:
-            fp.write(content)
+    # print('pending', pending)
+    # if pending:
+    #     with open(FILENAME, 'r', encoding='utf-8') as fp:
+    #         content = fp.read()
+    #     for item in pending:
+    #         content = content.replace(item[0], item[1])
 
-    # if file_changed:
     #     with open(FILENAME, 'w', encoding='utf-8') as fp:
-    #         yaml.dump_all(all_data, fp)
+    #         fp.write(content)
+
+    if file_changed:
+        with open(FILENAME, 'w', encoding='utf-8') as fp:
+            yaml.dump_all(all_data, fp)
 
     # print('done')
