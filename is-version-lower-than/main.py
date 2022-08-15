@@ -17,7 +17,7 @@ def version_lower_than_or_equal(ver, target):
 
 
 def cron_string():
-    return str(random.randint(0, 59)) + ' ' + str(random.randint(0, 23)) + ' ' + "*/14 * *"
+    return str(random.randint(0, 59)) + ' ' + str(random.randint(0, 23)) + ' ' + "*/" + str(random.randint(13, 14)) + " * *"
 
 
 def replace(test):
