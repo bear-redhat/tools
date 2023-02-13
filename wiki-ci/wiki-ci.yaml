@@ -1,0 +1,270 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wiki-ci
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wiki-ci
+  labels:
+    app: wiki
+  namespace: wiki-ci
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: wiki
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: wiki-ci
+  namespace: wiki-ci
+spec:
+  to:
+    kind: Service
+    name: wiki-ci
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: wiki-ci
+  namespace: wiki-ci
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: wiki
+    spec:
+      containers:
+      - name: proxy
+        image: registry.ci.openshift.org/wiki-ci/wiki-ci:proxy
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 8080
+            protocol: TCP
+      - name: php-fpm
+        image: registry.ci.openshift.org/wiki-ci/wiki-ci:php-fpm
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 9000
+            protocol: TCP
+        volumeMounts:
+          - name: wiki-config
+            mountPath: /opt/wiki-config
+            readOnly: true
+        lifecycle:
+          postStart:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - cp /opt/wiki-config/LocalSettings.php /var/www/html/LocalSettings.php
+      volumes:
+        - name: wiki-config
+          secret:
+            secretName: wiki-config
+  triggers:
+    - type: ConfigChange
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+          - proxy
+        from:
+          kind: ImageStreamTag
+          name: wiki-ci:proxy
+          namespace: wiki-ci
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+          - php-fpm
+        from:
+          kind: ImageStreamTag
+          name: wiki-ci:php-fpm
+          namespace: wiki-ci
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: wiki-ci
+  namespace: wiki-ci
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: proxy
+  namespace: wiki-ci
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: wiki-ci:proxy
+  source:
+    type: Git
+    git:
+      uri: https://github.com/bear-redhat/tools
+      ref: master
+    contextDir: wiki-ci
+    dockerfile:
+      |
+      FROM nginx:alpine
+      COPY nginx-wiki.conf /etc/nginx/conf.d/default.conf
+      RUN chmod 777 -R /var/cache/nginx/ /var/run/
+      RUN cd /tmp && \
+        wget -O /tmp/wiki.tar.gz https://releases.wikimedia.org/mediawiki/1.39/mediawiki-1.39.1.tar.gz && \
+        tar xf /tmp/wiki.tar.gz && \
+        mkdir -p /var/www/html && \
+        mv /tmp/mediawiki-*/* /var/www/html && \
+        rm -rf /tmp/wiki.tar.gz /tmp/mediawiki-*
+      RUN cd /tmp && \
+        wget -O /tmp/oidc.tar.gz https://github.com/wikimedia/mediawiki-extensions-OpenIDConnect/archive/refs/tags/6.0.tar.gz && \
+        tar xf /tmp/oidc.tar.gz && \
+        mv /tmp/mediawiki-extensions-* /var/www/html/extensions/OpenIDConnect && \
+        rm -rf /tmp/oidc.tar.gz /tmp/mediawiki-extensions-*
+      WORKDIR /var/www/html
+      EXPOSE 8080
+  strategy:
+    dockerStrategy:
+      from:
+        kind: DockerImage
+        name: nginx:alpine
+    type: Docker
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: php-fpm
+  namespace: wiki-ci
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: wiki-ci:php-fpm
+  source:
+    type: Git
+    git:
+      uri: https://github.com/bear-redhat/tools
+      ref: master
+    contextDir: wiki-ci
+    dockerfile:
+      |
+      FROM php:fpm-alpine
+      RUN apk add icu-dev && \
+        docker-php-ext-install intl mysqli calendar
+      RUN cd /tmp && \
+        wget -O /tmp/wiki.tar.gz https://releases.wikimedia.org/mediawiki/1.39/mediawiki-1.39.1.tar.gz && \
+        tar xf /tmp/wiki.tar.gz && \
+        mv /tmp/mediawiki-*/* /var/www/html && \
+        rm -rf /tmp/wiki.tar.gz /tmp/mediawiki-*
+      RUN cd /tmp && \
+        wget -O /tmp/oidc.tar.gz https://github.com/wikimedia/mediawiki-extensions-OpenIDConnect/archive/refs/tags/6.0.tar.gz && \
+        tar xf /tmp/oidc.tar.gz && \
+        mv /tmp/mediawiki-extensions-* /var/www/html/extensions/OpenIDConnect && \
+        rm -rf /tmp/oidc.tar.gz /tmp/mediawiki-extensions-* && \
+        echo '{"extra": {"merge-plugin": {"include": ["extensions/OpenIDConnect/composer.json"]}}}' > /var/www/html/composer.local.json
+      RUN mkdir -p /opt/composer && \
+        cd /opt/composer && \
+        wget https://raw.githubusercontent.com/composer/getcomposer.org/76a7060ccb93902cd7576b67264ad91c8a2700e2/web/installer -O - -q | php -- --quiet && \
+        cd /var/www/html && \
+        php /opt/composer/composer.phar install --no-dev --no-interaction --no-progress --no-suggest --optimize-autoloader --prefer-dist
+
+      RUN chgrp -R root /var/www/html && \
+        chmod -R g=u /var/www/html
+      EXPOSE 9000
+  strategy:
+    dockerStrategy:
+      from:
+        kind: DockerImage
+        name: php:fpm-alpine
+    type: Docker
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: wiki-ci
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wiki-db
+  template:
+    metadata:
+      labels:
+        app: wiki-db
+    spec:
+      containers:
+      - name: db
+        image: mariadb:latest
+        imagePullPolicy: Always
+        env:
+          - name: MYSQL_ROOT_PASSWORD
+            value: root
+          - name: MYSQL_DATABASE
+            value: wiki
+          - name: MYSQL_USER
+            value: wiki
+          - name: MYSQL_PASSWORD
+            value: wiki
+        ports:
+          - containerPort: 3306
+            protocol: TCP
+        volumeMounts:
+          - name: db-data
+            mountPath: /var/lib/mysql
+      volumes:
+        - name: db-data
+          persistentVolumeClaim:
+            claimName: db-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app: wiki-db
+  name: db-data
+  namespace: wiki-ci
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  labels:
+    app: wiki-db
+  namespace: wiki-ci
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3306
+    targetPort: 3306
+    protocol: TCP
+    name: http
+  selector:
+    app: wiki-db
