@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create VPC with 3 Subnets and an Internet Gateway
+
+Parameters:
+  BaseName:
+    Type: String
+    Description: Base name (e.g., build10) of the VPC and subnets
+  VpcCidr:
+    Type: String
+    Description: CIDR block for the VPC
+  Region:
+    Type: String
+    Description: AWS region to deploy the VPC (e.g., us-east-2)
+  SubnetNetmaskLength:
+    Type: Number
+    Description: Reversed netmask length for the subnets (e.g., 6 for /26)
+    Default: 6
+
+Mappings:
+  RegionAZs:
+    us-east-1:
+      AZA: us-east-1a
+      AZB: us-east-1b
+      AZC: us-east-1c
+    us-east-2:
+      AZA: us-east-2a
+      AZB: us-east-2b
+      AZC: us-east-2c
+
+Resources:
+  ClusterVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${BaseName}-vpc'
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  SubnetA:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${BaseName}-subnet-public-${!FindInMap [RegionAZs, !Ref Region, AZA]}'
+      VpcId: !Ref ClusterVPC
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 4, !Ref SubnetNetmaskLength]]
+      AvailabilityZone: !FindInMap [RegionAZs, !Ref Region, AZA]
+      MapPublicIpOnLaunch: true
+
+  SubnetB:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${BaseName}-subnet-public-${!FindInMap [RegionAZs, !Ref Region, AZA]}'
+      VpcId: !Ref ClusterVPC
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 4, !Ref SubnetNetmaskLength]]
+      AvailabilityZone: !FindInMap [RegionAZs, !Ref Region, AZB]
+      MapPublicIpOnLaunch: true
+
+  SubnetC:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${BaseName}-subnet-public-${!FindInMap [RegionAZs, !Ref Region, AZA]}'
+      VpcId: !Ref ClusterVPC
+      CidrBlock: !Select [2, !Cidr [!Ref VpcCidr, 4, !Ref SubnetNetmaskLength]]
+      AvailabilityZone: !FindInMap [RegionAZs, !Ref Region, AZC]
+      MapPublicIpOnLaunch: true
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${BaseName}-igw'
+
+  GatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref ClusterVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  RouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref ClusterVPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${BaseName}-rt'
+
+  SubnetARouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetA
+      RouteTableId: !Ref RouteTable
+
+  SubnetBRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetB
+      RouteTableId: !Ref RouteTable
+
+  SubnetCRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetC
+      RouteTableId: !Ref RouteTable
+
+  DefaultRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+Outputs:
+  VPCId:
+    Description: The ID of the VPC
+    Value: !Ref ClusterVPC
+  SubnetAId:
+    Description: The ID of Subnet A
+    Value: !Ref SubnetA
+  SubnetBId:
+    Description: The ID of Subnet B
+    Value: !Ref SubnetB
+  SubnetCId:
+    Description: The ID of Subnet C
+    Value: !Ref SubnetC
