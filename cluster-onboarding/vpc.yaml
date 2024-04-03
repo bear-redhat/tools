@@ -8,24 +8,14 @@ Parameters:
   VpcCidr:
     Type: String
     Description: CIDR block for the VPC
-  Region:
-    Type: String
-    Description: AWS region to deploy the VPC (e.g., us-east-2)
   SubnetNetmaskLength:
     Type: Number
     Description: Reversed netmask length for the subnets (e.g., 6 for /26)
     Default: 6
-
-Mappings:
-  RegionAZs:
-    us-east-1:
-      AZA: us-east-1a
-      AZB: us-east-1b
-      AZC: us-east-1c
-    us-east-2:
-      AZA: us-east-2a
-      AZB: us-east-2b
-      AZC: us-east-2c
+  LogGroupName:
+    Type: String
+    Description: Name of the CloudWatch Logs group
+    Default: ci-${BaseName}-flowlog
 
 Resources:
   ClusterVPC:
@@ -43,10 +33,12 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub '${BaseName}-subnet-public-${!FindInMap [RegionAZs, !Ref Region, AZA]}'
+          Value: !Sub
+            - '${BaseName}-public-${AZ}'
+            - AZ: !Sub '${AWS::Region}a'
       VpcId: !Ref ClusterVPC
       CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 4, !Ref SubnetNetmaskLength]]
-      AvailabilityZone: !FindInMap [RegionAZs, !Ref Region, AZA]
+      AvailabilityZone: !Sub '${AWS::Region}a'
       MapPublicIpOnLaunch: true
 
   SubnetB:
@@ -54,10 +46,12 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub '${BaseName}-subnet-public-${!FindInMap [RegionAZs, !Ref Region, AZA]}'
+          Value: !Sub
+            - '${BaseName}-public-${AZ}'
+            - AZ: !Sub '${AWS::Region}b'
       VpcId: !Ref ClusterVPC
       CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 4, !Ref SubnetNetmaskLength]]
-      AvailabilityZone: !FindInMap [RegionAZs, !Ref Region, AZB]
+      AvailabilityZone: !Sub '${AWS::Region}b'
       MapPublicIpOnLaunch: true
 
   SubnetC:
@@ -65,10 +59,12 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub '${BaseName}-subnet-public-${!FindInMap [RegionAZs, !Ref Region, AZA]}'
+          Value: !Sub
+            - '${BaseName}-public-${AZ}'
+            - AZ: !Sub '${AWS::Region}c'
       VpcId: !Ref ClusterVPC
       CidrBlock: !Select [2, !Cidr [!Ref VpcCidr, 4, !Ref SubnetNetmaskLength]]
-      AvailabilityZone: !FindInMap [RegionAZs, !Ref Region, AZC]
+      AvailabilityZone: !Sub '${AWS::Region}c'
       MapPublicIpOnLaunch: true
 
   InternetGateway:
@@ -117,6 +113,43 @@ Resources:
       RouteTableId: !Ref RouteTable
       DestinationCidrBlock: '0.0.0.0/0'
       GatewayId: !Ref InternetGateway
+
+  FlowLogRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: flowlogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${LogGroupName}:*'
+
+  FlowLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Ref LogGroupName
+      RetentionInDays: 7
+
+  FlowLog:
+    Type: 'AWS::EC2::FlowLog'
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+      LogGroupName: !Ref LogGroupName
+      ResourceId: !Ref ClusterVPC
+      ResourceType: VPC
+      TrafficType: ALL
 
 Outputs:
   VPCId:
