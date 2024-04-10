@@ -12,10 +12,6 @@ Parameters:
     Type: Number
     Description: Reversed netmask length for the subnets (e.g., 6 for /26)
     Default: 6
-  LogGroupName:
-    Type: String
-    Description: Name of the CloudWatch Logs group
-    Default: ci-${BaseName}-flowlog
 
 Resources:
   ClusterVPC:
@@ -134,19 +130,19 @@ Resources:
                   - 'logs:CreateLogGroup'
                   - 'logs:CreateLogStream'
                   - 'logs:PutLogEvents'
-                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${LogGroupName}:*'
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:ci-${BaseName}-flowlog:*'
 
   FlowLogGroup:
     Type: 'AWS::Logs::LogGroup'
     Properties:
-      LogGroupName: !Ref LogGroupName
+      LogGroupName: ci-${BaseName}-flowlog
       RetentionInDays: 7
 
   FlowLog:
     Type: 'AWS::EC2::FlowLog'
     Properties:
       DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
-      LogGroupName: !Ref LogGroupName
+      LogGroupName: ci-${BaseName}-flowlog
       ResourceId: !Ref ClusterVPC
       ResourceType: VPC
       TrafficType: ALL
