@@ -135,14 +135,14 @@ Resources:
   FlowLogGroup:
     Type: 'AWS::Logs::LogGroup'
     Properties:
-      LogGroupName: ci-${BaseName}-flowlog
+      LogGroupName: !Sub ci-${BaseName}-flowlog
       RetentionInDays: 7
 
   FlowLog:
     Type: 'AWS::EC2::FlowLog'
     Properties:
       DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
-      LogGroupName: ci-${BaseName}-flowlog
+      LogGroupName: !Sub ci-${BaseName}-flowlog
       ResourceId: !Ref ClusterVPC
       ResourceType: VPC
       TrafficType: ALL
