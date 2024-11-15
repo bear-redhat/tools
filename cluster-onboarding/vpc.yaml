@@ -110,42 +110,17 @@ Resources:
       DestinationCidrBlock: '0.0.0.0/0'
       GatewayId: !Ref InternetGateway
 
-  FlowLogRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: 'sts:AssumeRole'
-      Policies:
-        - PolicyName: flowlogs
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'logs:CreateLogGroup'
-                  - 'logs:CreateLogStream'
-                  - 'logs:PutLogEvents'
-                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:ci-${BaseName}-flowlog:*'
-
-  FlowLogGroup:
-    Type: 'AWS::Logs::LogGroup'
-    Properties:
-      LogGroupName: !Sub ci-${BaseName}-flowlog
-      RetentionInDays: 7
-
   FlowLog:
     Type: 'AWS::EC2::FlowLog'
     Properties:
-      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
-      LogGroupName: !Sub ci-${BaseName}-flowlog
       ResourceId: !Ref ClusterVPC
       ResourceType: VPC
       TrafficType: ALL
+      LogDestinationType: s3
+      LogDestination: !Sub 'arn:aws:s3:::build-farm-flowlogs/${BaseName}/'
+      Tags:
+        - Key: Name
+          Value: ci-audit
 
 Outputs:
   VPCId:
