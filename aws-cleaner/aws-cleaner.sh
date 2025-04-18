@@ -39,7 +39,7 @@ done
 # Function to log messages
 log() {
     local message="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-    echo "$message"
+    echo "$message" >&2
     echo "$message" >> "$LOG_FILE"
 }
 
@@ -48,46 +48,32 @@ aws_api_call() {
     local cmd="$1"
     local retry=0
     local wait_time=$DELAY
-    local result
-    local temp_output
-    local final_output=""
-    local last_result=""
-    
+    local status stdout stderr last_result=""
     while true; do
-        # Store output in a variable and capture exit status
-        temp_output=$(mktemp)
-        eval "$cmd" > "$temp_output" 2>&1
-        local status=$?
-        result=$(<"$temp_output")
-        rm -f "$temp_output"
+        # Capture stdout and stderr separately
+        local out_file=$(mktemp) err_file=$(mktemp)
+        eval "$cmd" >"$out_file" 2>"$err_file"
+        status=$?
+        stdout=$(<"$out_file") ; stderr=$(<"$err_file")
+        rm -f "$out_file" "$err_file"
         
         if [ $status -eq 0 ]; then
-            # Only return actual command output on success
-            echo "$result"
+            echo "$stdout"
             return 0
-        elif [[ "$result" == *"Throttling"* || "$result" == *"ThrottlingException"* || "$result" == *"Rate exceeded"* ]]; then
-            # Save the last result even if throttled (might contain partial data)
-            if [[ -n "$result" && "$result" != *"ThrottlingException"* && "$result" != *"Throttling"* ]]; then
-                last_result="$result"
-            fi
-            
+        elif [[ "$stderr" == *"Throttling"* || "$stderr" == *"ThrottlingException"* || "$stderr" == *"Rate exceeded"* ]]; then
+            # keep any non-throttle stdout as last_result
+            if [[ -n "$stdout" ]]; then last_result="$stdout"; fi
             if [ $retry -lt $MAX_RETRIES ]; then
-                # Send log messages to stderr to avoid contaminating command output
-                log "API throttled, retrying in ${wait_time}s... ($((retry+1))/$MAX_RETRIES)" >&2
-                log "$result" >&2
-                sleep $wait_time
-                retry=$((retry+1))
-                wait_time=$((wait_time * 2)) # Exponential backoff
+                log "API throttled, retrying in ${wait_time}s... ($((retry+1))/$MAX_RETRIES)"
+                ((retry++)); sleep $wait_time; wait_time=$((wait_time*2))
             else
-                log "WARNING: Maximum retries exceeded due to throttling. Continuing with partial or empty results." >&2
-                log "Command was: $cmd" >&2
-                # Return the last result we got (might be empty or partial) and continue
+                log "WARNING: Maximum retries exceeded, continuing with partial results."
                 echo "$last_result"
                 return 0
             fi
         else
-            log "ERROR: Command failed: $cmd" >&2
-            log "Error message: $result" >&2
+            log "ERROR: Command failed: $cmd"
+            log "Error message: $stderr"
             return $status
         fi
     done
@@ -96,18 +82,21 @@ aws_api_call() {
 # Function to safely extract and validate marker values
 get_valid_marker() {
     local raw_marker="$1"
-    
-    # Clean up the marker value - remove newlines, trim spaces
-    local clean_marker=$(echo "$raw_marker" | tr -d '\n\r' | xargs)
-    
-    # Check if marker is None, "None", empty or contains "None" repeated
-    if [[ -z "$clean_marker" || "$clean_marker" == "None" || "$clean_marker" == *"None None"* || "$clean_marker" == *"NoneNone"* ]]; then
-        log "Debug: Invalid marker detected: '$clean_marker', returning empty string"
+    # Clean up – remove newlines, trim spaces
+    local clean_marker
+    clean_marker=$(echo "$raw_marker" | tr -d '\n\r' | xargs)
+
+    # Drop leading “None” artifact from CLI v2 tokens (e.g. "NoneeyJ...")
+    if [[ "$clean_marker" == None* && "$clean_marker" != "None" ]]; then
+        clean_marker=${clean_marker#None}
+    fi
+
+    # If empty or literal "None", return empty
+    if [[ -z "$clean_marker" || "$clean_marker" == "None" ]]; then
         echo ""
         return 0
     fi
-    
-    # Return the valid marker
+
     echo "$clean_marker"
 }
 
@@ -135,13 +124,13 @@ cleanup_iam_users() {
     log "Retrieving IAM users with pagination (page size: $PAGE_SIZE)"
     
     while true; do
-        MARKER_PARAM=""
+        START_PARAM=""
         if [[ -n "$MARKER" ]]; then
-            MARKER_PARAM="--marker \"$MARKER\""
+            START_PARAM="--starting-token $MARKER"
         fi
         
         log "Fetching page $PAGE_COUNT of users..."
-        PAGE_DATA=$(aws_api_call "aws iam list-users --max-items $PAGE_SIZE $MARKER_PARAM --query 'Users[*].[UserName,PasswordLastUsed]' --output text")
+        PAGE_DATA=$(aws_api_call "aws iam list-users --max-items $PAGE_SIZE $START_PARAM --query 'Users[*].[UserName,PasswordLastUsed]' --output text")
         STATUS=$?
         
         if [ $STATUS -ne 0 ] && [ -z "$PAGE_DATA" ]; then
@@ -158,7 +147,7 @@ cleanup_iam_users() {
         USERS="${USERS}${PAGE_DATA}"$'\n'
         
         # Check if there are more pages, using our new marker validation function
-        raw_marker=$(aws_api_call "aws iam list-users --max-items $PAGE_SIZE $MARKER_PARAM --query 'Marker' --output text")
+        raw_marker=$(aws_api_call "aws iam list-users --max-items $PAGE_SIZE $START_PARAM --query 'NextToken' --output text")
         MARKER=$(get_valid_marker "$raw_marker")
         
         if [[ -z "$MARKER" ]]; then
@@ -328,13 +317,13 @@ cleanup_iam_roles() {
     log "Retrieving IAM roles with pagination (page size: $PAGE_SIZE)"
     
     while true; do
-        MARKER_PARAM=""
+        START_PARAM=""
         if [[ -n "$MARKER" ]]; then
-            MARKER_PARAM="--marker \"$MARKER\""
+            START_PARAM="--starting-token $MARKER"
         fi
         
         log "Fetching page $PAGE_COUNT of roles..."
-        PAGE_DATA=$(aws_api_call "aws iam list-roles --max-items $PAGE_SIZE $MARKER_PARAM --query 'Roles[*].[RoleName,RoleLastUsed.LastUsedDate]' --output text")
+        PAGE_DATA=$(aws_api_call "aws iam list-roles --max-items $PAGE_SIZE $START_PARAM --query 'Roles[*].[RoleName,RoleLastUsed.LastUsedDate]' --output text")
         STATUS=$?
         
         if [ $STATUS -ne 0 ] && [ -z "$PAGE_DATA" ]; then
@@ -351,7 +340,7 @@ cleanup_iam_roles() {
         ROLES="${ROLES}${PAGE_DATA}"$'\n'
         
         # Check if there are more pages, using our new marker validation function
-        raw_marker=$(aws_api_call "aws iam list-roles --max-items $PAGE_SIZE $MARKER_PARAM --query 'Marker' --output text")
+        raw_marker=$(aws_api_call "aws iam list-roles --max-items $PAGE_SIZE $START_PARAM --query 'NextToken' --output text")
         MARKER=$(get_valid_marker "$raw_marker")
         
         if [[ -z "$MARKER" ]]; then
