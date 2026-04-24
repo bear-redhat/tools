@@ -18,7 +18,7 @@ public enum ConversationItemType
 {
     UserMessage, Thinking, AssistantMessage, Conclusion, Error,
     SubAgentThinking, SubAgentMessage,
-    Finding, ScoutQuestion, Dispatch
+    Finding, ScoutQuestion, Dispatch, Welcome
 }
 
 public class LogEntryModel

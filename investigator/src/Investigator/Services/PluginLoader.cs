@@ -4,20 +4,16 @@ using Investigator.Contracts;
 
 namespace Investigator.Services;
 
-public sealed class PluginLoader
+public static class PluginLoader
 {
-    private readonly ILogger<PluginLoader> _logger;
-
-    public PluginLoader(ILogger<PluginLoader> logger) => _logger = logger;
-
-    public IReadOnlyList<IInvestigatorTool> LoadPlugins(string pluginDir, IConfiguration config)
+    public static List<Type> DiscoverToolTypes(string pluginDir, ILogger logger)
     {
-        var tools = new List<IInvestigatorTool>();
+        var types = new List<Type>();
 
         if (!Directory.Exists(pluginDir))
         {
-            _logger.LogInformation("Plugin directory {Dir} does not exist, skipping", pluginDir);
-            return tools;
+            logger.LogInformation("Plugin directory {Dir} does not exist, skipping", pluginDir);
+            return types;
         }
 
         foreach (var dll in Directory.GetFiles(pluginDir, "*.dll"))
@@ -32,27 +28,18 @@ public sealed class PluginLoader
 
                 foreach (var type in toolTypes)
                 {
-                    var instance = Activator.CreateInstance(type);
-                    if (instance is IInvestigatorTool tool)
-                    {
-                        tools.Add(tool);
-                        _logger.LogInformation("Loaded plugin tool {Name} from {Dll}", tool.Definition.Name, Path.GetFileName(dll));
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Type {Type} in {Dll} implements IInvestigatorTool but could not be instantiated (got {Instance})",
-                            type.FullName, Path.GetFileName(dll), instance?.GetType().FullName ?? "null");
-                    }
+                    types.Add(type);
+                    logger.LogInformation("Discovered plugin tool type {Type} from {Dll}", type.FullName, Path.GetFileName(dll));
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to load plugin from {Dll}", dll);
+                logger.LogError(ex, "Failed to load plugin from {Dll}", dll);
             }
         }
 
-        _logger.LogInformation("Plugin loading complete: {Count} tools loaded from {Dir}", tools.Count, pluginDir);
-        return tools;
+        logger.LogInformation("Plugin discovery complete: {Count} tool types found in {Dir}", types.Count, pluginDir);
+        return types;
     }
 
     private sealed class PluginLoadContext(string pluginPath) : AssemblyLoadContext(isCollectible: true)

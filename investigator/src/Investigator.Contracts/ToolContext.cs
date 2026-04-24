@@ -6,4 +6,5 @@ public record ToolContext(
     ILogger Logger,
     string WorkspacePath,
     Action<string>? OnOutputLine,
-    Func<int> NextOutputNumber);
+    Func<int> NextOutputNumber,
+    string CallerId);

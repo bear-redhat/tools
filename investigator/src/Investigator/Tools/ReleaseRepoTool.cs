@@ -26,6 +26,7 @@ public sealed class ReleaseRepoTool : IInvestigatorTool
     private readonly string _repoUrl;
     private readonly string _localPath;
     private readonly bool _shallowClone;
+    private readonly TimeSpan? _maxAge;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     public ReleaseRepoTool(IOptions<ReleaseRepoOptions> options)
@@ -39,6 +40,7 @@ public sealed class ReleaseRepoTool : IInvestigatorTool
             ? opts.LocalPath
             : Path.Combine(Path.GetTempPath(), "investigator", "release-repo");
         _shallowClone = opts.ShallowClone;
+        _maxAge = opts.MaxAge;
     }
 
     public ToolDefinition Definition => new(
@@ -81,8 +83,18 @@ public sealed class ReleaseRepoTool : IInvestigatorTool
     {
         if (Directory.Exists(Path.Combine(_localPath, ".git")))
         {
+            var age = GetLastFetchAge();
+            if (_maxAge is not null && age > _maxAge)
+            {
+                context.Logger.LogInformation("release_repo: clone is {Age} old (max {Max}), auto-pulling",
+                    FormatAge(age), FormatAge(_maxAge.Value));
+                context.OnOutputLine?.Invoke($"Release repo is {FormatAge(age)} stale -- pulling...");
+                await PullInternal(context, ct);
+                age = GetLastFetchAge();
+            }
+
             context.Logger.LogDebug("release_repo: repo already exists at {Path}", _localPath);
-            return new ToolResult(_localPath);
+            return new ToolResult($"{_localPath}\n(last synced {FormatAge(age)} ago)");
         }
 
         context.Logger.LogInformation("release_repo: cloning {Url} into {Path} (shallow={Shallow})", _repoUrl, _localPath, _shallowClone);
@@ -113,6 +125,11 @@ public sealed class ReleaseRepoTool : IInvestigatorTool
             return new ToolResult("Repo not cloned yet. Use action 'get_path' first.", ExitCode: 1);
         }
 
+        return await PullInternal(context, ct);
+    }
+
+    private async Task<ToolResult> PullInternal(ToolContext context, CancellationToken ct)
+    {
         context.Logger.LogInformation("release_repo: pulling latest changes in {Path}", _localPath);
         context.OnOutputLine?.Invoke("Pulling latest changes...");
         var (output, exitCode) = await RunGit(["pull"], _localPath, context, ct);
@@ -123,6 +140,25 @@ public sealed class ReleaseRepoTool : IInvestigatorTool
             context.Logger.LogInformation("release_repo: pull completed successfully");
 
         return new ToolResult(output, ExitCode: exitCode);
+    }
+
+    private TimeSpan GetLastFetchAge()
+    {
+        var fetchHead = Path.Combine(_localPath, ".git", "FETCH_HEAD");
+        var head = Path.Combine(_localPath, ".git", "HEAD");
+
+        var marker = File.Exists(fetchHead) ? fetchHead : head;
+        var lastWrite = File.GetLastWriteTimeUtc(marker);
+        return DateTime.UtcNow - lastWrite;
+    }
+
+    private static string FormatAge(TimeSpan age)
+    {
+        if (age.TotalDays >= 1)
+            return $"{age.TotalDays:F0}d {age.Hours}h";
+        if (age.TotalHours >= 1)
+            return $"{age.TotalHours:F0}h {age.Minutes}m";
+        return $"{age.TotalMinutes:F0}m";
     }
 
     private async Task<(string Output, int ExitCode)> RunGit(

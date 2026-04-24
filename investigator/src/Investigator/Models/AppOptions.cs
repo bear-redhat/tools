@@ -98,9 +98,27 @@ public sealed class ReleaseRepoOptions
     public string Url { get; set; } = "https://github.com/openshift/release.git";
     public string? LocalPath { get; set; }
     public bool ShallowClone { get; set; } = true;
+    /// <summary>
+    /// Auto-pull when get_path finds the clone older than this. Null disables auto-pull.
+    /// </summary>
+    public TimeSpan? MaxAge { get; set; } = TimeSpan.FromHours(1);
 }
 
 public sealed class SkillsOptions
 {
     public string Path { get; set; } = "skills";
+}
+
+public sealed class WebSearchOptions
+{
+    public string? GoogleApiKey { get; set; }
+    public string? GoogleSearchEngineId { get; set; }
+}
+
+public sealed class WebBrowserOptions
+{
+    public int MaxContentChars { get; set; } = 8000;
+    public int MaxElements { get; set; } = 50;
+    public bool Headless { get; set; } = true;
+    public int SessionIdleMinutes { get; set; } = 30;
 }

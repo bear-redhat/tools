@@ -65,10 +65,6 @@ internal sealed class RoomToolHandlers
         }
 
         var report = summary ?? "(No summary provided)";
-        if (evidence is not null)
-            report += $"\n\n[Evidence: {evidence.Steps.Count} steps]";
-        if (fix is not null)
-            report += $"\n[Fix suggested: {fix.Description}]";
 
         _logger.LogInformation("Scout {Name} reporting back with {EvidenceSteps} evidence steps",
             callerConfig.Name, evidence?.Steps.Count ?? 0);
@@ -83,7 +79,7 @@ internal sealed class RoomToolHandlers
             fix,
         });
 
-        await _emitToUi(new AgentEvent.SubAgentDone($"sa-{callerConfig.Name}-done", callerConfig.Name, report));
+        await _emitToUi(new AgentEvent.SubAgentDone($"sa-{callerConfig.Name}-done", callerConfig.Name, report, evidence, fix));
 
         if (_agents.TryGetValue("Little Bear", out var lbSlot))
         {

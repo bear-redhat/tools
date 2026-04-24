@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Investigator.Contracts;
 using Investigator.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Investigator.Services;
@@ -11,17 +12,29 @@ public sealed class ToolRegistry
     private readonly ILogger<ToolRegistry> _logger;
     private readonly ToolOutputOptions _options;
 
-    public ToolRegistry(ILogger<ToolRegistry> logger, IOptions<ToolOutputOptions> toolOutputOptions)
+    public ToolRegistry(
+        IServiceProvider sp,
+        IEnumerable<Type> toolTypes,
+        ILogger<ToolRegistry> logger,
+        IOptions<ToolOutputOptions> toolOutputOptions)
     {
         _logger = logger;
         _options = toolOutputOptions.Value;
-    }
 
-    public void Register(IInvestigatorTool tool)
-    {
-        _tools[tool.Definition.Name] = tool;
-        _logger.LogInformation("Registered tool: {Name} (timeout={Timeout}s, truncate={Truncate})",
-            tool.Definition.Name, tool.Definition.DefaultTimeout.TotalSeconds, tool.Definition.TruncateOutput);
+        foreach (var type in toolTypes)
+        {
+            try
+            {
+                var tool = (IInvestigatorTool)ActivatorUtilities.CreateInstance(sp, type);
+                _tools[tool.Definition.Name] = tool;
+                _logger.LogInformation("Registered tool: {Name} (timeout={Timeout}s, truncate={Truncate})",
+                    tool.Definition.Name, tool.Definition.DefaultTimeout.TotalSeconds, tool.Definition.TruncateOutput);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Tool {Type} failed to register", type.Name);
+            }
+        }
     }
 
     public IReadOnlyList<ToolDefinition> GetToolDefinitions() =>

@@ -13,42 +13,34 @@ public static class ServiceCollectionExtensions
         services.Configure<ShellOptions>(config.GetSection("Tools:run_shell"));
         services.Configure<ReleaseRepoOptions>(config.GetSection("Tools:release_repo"));
         services.Configure<SkillsOptions>(config.GetSection("Tools:skills"));
+        services.Configure<WebSearchOptions>(config.GetSection("Tools:web_search"));
+        services.Configure<WebBrowserOptions>(config.GetSection("Tools:web_browse"));
         services.Configure<ToolOutputOptions>(config.GetSection(ToolOutputOptions.Section));
         services.Configure<PluginOptions>(config.GetSection(PluginOptions.Section));
         services.Configure<WorkspaceOptions>(config.GetSection(WorkspaceOptions.Section));
 
-        services.AddSingleton<OcExecutor>();
-        services.AddSingleton<ShellExecutor>();
-        services.AddSingleton<ReleaseRepoTool>();
-        services.AddSingleton<PluginLoader>();
         services.AddSingleton<WorkspaceManager>();
 
         services.AddSingleton<ToolRegistry>(sp =>
         {
-            var registry = new ToolRegistry(
-                sp.GetRequiredService<ILogger<ToolRegistry>>(),
-                sp.GetRequiredService<IOptions<ToolOutputOptions>>());
+            var logger = sp.GetRequiredService<ILogger<ToolRegistry>>();
 
-            registry.Register(sp.GetRequiredService<OcExecutor>());
-            registry.Register(sp.GetRequiredService<ShellExecutor>());
-            registry.Register(sp.GetRequiredService<ReleaseRepoTool>());
-
-            var skillsLib = new SkillsLibrary(
-                sp.GetRequiredService<IEmbeddingClient>(),
-                sp.GetRequiredService<ILogger<SkillsLibrary>>(),
-                sp.GetRequiredService<IOptions<SkillsOptions>>());
-            registry.Register(skillsLib);
+            var toolTypes = new List<Type>
+            {
+                typeof(OcExecutor),
+                typeof(ShellExecutor),
+                typeof(ReleaseRepoTool),
+                typeof(SkillsLibrary),
+                typeof(WebSearchTool),
+                typeof(WebBrowserTool),
+            };
 
             var pluginOpts = sp.GetRequiredService<IOptions<PluginOptions>>().Value;
             if (!string.IsNullOrEmpty(pluginOpts.Directory))
-            {
-                var pluginConfig = sp.GetRequiredService<IConfiguration>();
-                var pluginLoader = sp.GetRequiredService<PluginLoader>();
-                foreach (var plugin in pluginLoader.LoadPlugins(pluginOpts.Directory, pluginConfig))
-                    registry.Register(plugin);
-            }
+                toolTypes.AddRange(PluginLoader.DiscoverToolTypes(pluginOpts.Directory, logger));
 
-            return registry;
+            return new ToolRegistry(sp, toolTypes, logger,
+                sp.GetRequiredService<IOptions<ToolOutputOptions>>());
         });
 
         return services;

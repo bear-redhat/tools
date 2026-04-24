@@ -53,6 +53,14 @@
                 {
                     <div class="report-full">
                         <MarkdownRenderer Content="@Item.Content" />
+                        @if (Item.Evidence is not null)
+                        {
+                            <EvidencePanel Evidence="Item.Evidence" />
+                        }
+                        @if (Item.Fix is not null)
+                        {
+                            <FixPanel Fix="Item.Fix" />
+                        }
                     </div>
                 }
             </div>
@@ -68,6 +76,14 @@
                 {
                     <div class="report-full">
                         <MarkdownRenderer Content="@Item.Content" />
+                        @if (Item.Evidence is not null)
+                        {
+                            <EvidencePanel Evidence="Item.Evidence" />
+                        }
+                        @if (Item.Fix is not null)
+                        {
+                            <FixPanel Fix="Item.Fix" />
+                        }
                     </div>
                 }
             </div>
@@ -139,6 +155,13 @@
             }
         </div>
     }
+    else if (Item.Type == ConversationItemType.Welcome)
+    {
+        <div class="message-role">221B Banyan Hollow</div>
+        <div class="message-content welcome-content">
+            <pre class="welcome-room">@Item.Content</pre>
+        </div>
+    }
     else if (Item.Type == ConversationItemType.Error)
     {
         <div class="message-role">Error</div>
@@ -166,6 +189,7 @@
         ConversationItemType.Finding => "finding",
         ConversationItemType.ScoutQuestion => "scout-question",
         ConversationItemType.Dispatch => "dispatch",
+        ConversationItemType.Welcome => "welcome",
         ConversationItemType.Error => "error",
         _ => "",
     };

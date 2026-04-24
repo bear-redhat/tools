@@ -32,5 +32,5 @@ public abstract record AgentEvent(string StepId)
 
     public record SubAgentMessage(string StepId, string AgentName, string Text) : AgentEvent(StepId);
 
-    public record SubAgentDone(string StepId, string AgentName, string Report) : AgentEvent(StepId);
+    public record SubAgentDone(string StepId, string AgentName, string Report, EvidenceChain? Evidence = null, FixSuggestion? Fix = null) : AgentEvent(StepId);
 }

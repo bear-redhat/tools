@@ -253,7 +253,8 @@ public sealed class InvestigationRoom
             _logger,
             callerConfig.WorkspacePath,
             line => _logger.LogTrace("[{Agent}/{Tool}] {Line}", callerConfig.Name, toolName, line),
-            () => Interlocked.Increment(ref _outputCounter));
+            () => Interlocked.Increment(ref _outputCounter),
+            callerConfig.Name);
 
         var (result, outFile, truncated) = await _toolRegistry.InvokeAsync(toolName, input, context, ct);
 

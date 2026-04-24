@@ -55,6 +55,7 @@ public partial class Chat : IDisposable
         ConversationItemType.Conclusion,
         ConversationItemType.Error,
         ConversationItemType.Dispatch,
+        ConversationItemType.Welcome,
     ];
 
     private bool _showFindings => _selectedMemberId is "all" or "user";
@@ -456,6 +457,8 @@ public partial class Chat : IDisposable
                         SenderDisplayName = sad.AgentName,
                         StepId = sad.StepId,
                         Content = sad.Report,
+                        Evidence = sad.Evidence,
+                        Fix = sad.Fix,
                         Timestamp = DateTimeOffset.UtcNow,
                     };
                     _conversationItems.Add(reportItem);

@@ -2,6 +2,7 @@ using Investigator;
 using Investigator.Components;
 using Investigator.Models;
 using Investigator.Services;
+using Investigator.Tools;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -73,5 +74,12 @@ app.MapGet("/", (ConversationStore store) =>
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+lifetime.ApplicationStopping.Register(() =>
+{
+    var browserTool = app.Services.GetService<WebBrowserTool>();
+    browserTool?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+});
 
 app.Run();
