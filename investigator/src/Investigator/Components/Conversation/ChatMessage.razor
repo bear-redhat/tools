@@ -1,0 +1,193 @@
+@using Investigator.Components.Shared
+
+<div class="chat-message @GetMessageClass() @GetSenderClass()">
+    @if (Item.Type == ConversationItemType.UserMessage)
+    {
+        <div class="message-role">Client</div>
+        <div class="message-content">@Item.Content</div>
+    }
+    else if (Item.Type == ConversationItemType.Thinking)
+    {
+        <div class="message-role">
+            Little Bear
+            <span class="thinking-label">thinking</span>
+            @if (Item.StepId is not null)
+            {
+                <button class="step-badge" @onclick="() => OnStepClick.InvokeAsync(Item.StepId)">@GetStepLabel()</button>
+            }
+        </div>
+        <div class="message-content thinking">
+            <MarkdownRenderer Content="@Item.Content" />
+        </div>
+    }
+    else if (Item.Type == ConversationItemType.SubAgentThinking)
+    {
+        <div class="message-role">
+            @(Item.SenderDisplayName ?? Item.Sender)
+            <span class="thinking-label">thinking</span>
+        </div>
+        <div class="message-content thinking">
+            <MarkdownRenderer Content="@Item.Content" />
+        </div>
+    }
+    else if (Item.Type == ConversationItemType.AssistantMessage)
+    {
+        <div class="message-role">@GetDisplayName()</div>
+        <div class="message-content assistant">
+            <MarkdownRenderer Content="@Item.Content" />
+        </div>
+    }
+    else if (Item.Type == ConversationItemType.SubAgentMessage)
+    {
+        <div class="message-role">@(Item.SenderDisplayName ?? Item.Sender)</div>
+        @if (Item.Summary is not null)
+        {
+            <div class="message-content subagent">
+                <div class="report-summary">
+                    <MarkdownRenderer Content="@Item.Summary" />
+                </div>
+                <button class="panel-toggle report-toggle" @onclick="ToggleReport">
+                    @(_reportExpanded ? "▼" : "▶") @(_reportExpanded ? "Hide full report" : "Show full report")
+                </button>
+                @if (_reportExpanded)
+                {
+                    <div class="report-full">
+                        <MarkdownRenderer Content="@Item.Content" />
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="message-content subagent">
+                <div class="report-summary loading">Summarising report...</div>
+                <button class="panel-toggle report-toggle" @onclick="ToggleReport">
+                    @(_reportExpanded ? "▼" : "▶") @(_reportExpanded ? "Hide full report" : "Show full report")
+                </button>
+                @if (_reportExpanded)
+                {
+                    <div class="report-full">
+                        <MarkdownRenderer Content="@Item.Content" />
+                    </div>
+                }
+            </div>
+        }
+    }
+    else if (Item.Type == ConversationItemType.Conclusion)
+    {
+        <div class="message-role">Little Bear -- Conclusion</div>
+        <div class="message-content conclusion">
+            @if (Item.Summary is not null)
+            {
+                <div class="conclusion-headline">@Item.Summary</div>
+            }
+            else
+            {
+                <div class="conclusion-headline loading">Summarising...</div>
+            }
+            <button class="panel-toggle report-toggle" @onclick="ToggleReport">
+                @(_reportExpanded ? "▼" : "▶") @(_reportExpanded ? "Hide full conclusion" : "Show full conclusion")
+            </button>
+            @if (_reportExpanded)
+            {
+                <div class="report-full">
+                    <MarkdownRenderer Content="@Item.Content" />
+                    @if (Item.Evidence is not null)
+                    {
+                        <EvidencePanel Evidence="Item.Evidence" />
+                    }
+                    @if (Item.Fix is not null)
+                    {
+                        <FixPanel Fix="Item.Fix" />
+                    }
+                </div>
+            }
+        </div>
+    }
+    else if (Item.Type == ConversationItemType.Finding)
+    {
+        <div class="message-role">Little Bear -- Finding</div>
+        <div class="message-content finding">
+            <MarkdownRenderer Content="@Item.Content" />
+        </div>
+    }
+    else if (Item.Type == ConversationItemType.ScoutQuestion)
+    {
+        <div class="message-role">@(Item.SenderDisplayName ?? Item.Sender)</div>
+        <div class="message-content scout-question">
+            <MarkdownRenderer Content="@Item.Content" />
+        </div>
+    }
+    else if (Item.Type == ConversationItemType.Dispatch)
+    {
+        <div class="message-role">
+            Little Bear
+            <span class="thinking-label">dispatching @(Item.SenderDisplayName ?? Item.Sender)</span>
+        </div>
+        <div class="message-content dispatch">
+            <div class="dispatch-summary">
+                <MarkdownRenderer Content="@(Item.Summary ?? "")" />
+            </div>
+            <button class="panel-toggle report-toggle" @onclick="ToggleReport">
+                @(_reportExpanded ? "▼" : "▶") @(_reportExpanded ? "Hide task" : "Show task")
+            </button>
+            @if (_reportExpanded)
+            {
+                <div class="report-full">
+                    <MarkdownRenderer Content="@Item.Content" />
+                </div>
+            }
+        </div>
+    }
+    else if (Item.Type == ConversationItemType.Error)
+    {
+        <div class="message-role">Error</div>
+        <div class="message-content error-message">@Item.Content</div>
+    }
+
+    <div class="message-time">@Item.Timestamp.ToString("HH:mm:ss")</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ConversationItem Item { get; set; } = default!;
+    [Parameter] public EventCallback<string> OnStepClick { get; set; }
+
+    private bool _reportExpanded;
+    private void ToggleReport() => _reportExpanded = !_reportExpanded;
+
+    private string GetMessageClass() => Item.Type switch
+    {
+        ConversationItemType.UserMessage => "user",
+        ConversationItemType.Thinking => "thinking",
+        ConversationItemType.SubAgentThinking => "thinking",
+        ConversationItemType.AssistantMessage => "assistant",
+        ConversationItemType.SubAgentMessage => "subagent",
+        ConversationItemType.Conclusion => "conclusion",
+        ConversationItemType.Finding => "finding",
+        ConversationItemType.ScoutQuestion => "scout-question",
+        ConversationItemType.Dispatch => "dispatch",
+        ConversationItemType.Error => "error",
+        _ => "",
+    };
+
+    private string GetSenderClass() => Item.Sender switch
+    {
+        "little-bear" => "sender-bear",
+        "user" => "sender-user",
+        _ => "sender-irregular",
+    };
+
+    private string GetDisplayName() => Item.Sender switch
+    {
+        "little-bear" => "Little Bear",
+        "user" => "Client",
+        _ => Item.SenderDisplayName ?? Item.Sender,
+    };
+
+    private string GetStepLabel()
+    {
+        if (Item.StepId is null) return "";
+        var num = Item.StepId.Replace("step-", "");
+        return int.TryParse(num, out var n) ? ((char)('a' + (n - 1) % 26)).ToString() : num;
+    }
+}

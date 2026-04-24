@@ -1,0 +1,22 @@
+using System.Security.Claims;
+using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
+
+namespace Investigator.Services;
+
+public sealed class AnonymousAuthHandler(
+    IOptionsMonitor<AuthenticationSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder)
+    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+{
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var identity = new ClaimsIdentity("anonymous");
+        identity.AddClaim(new Claim(ClaimTypes.Name, "dev-user"));
+        var principal = new ClaimsPrincipal(identity);
+        var ticket = new AuthenticationTicket(principal, "anonymous");
+        return Task.FromResult(AuthenticateResult.Success(ticket));
+    }
+}

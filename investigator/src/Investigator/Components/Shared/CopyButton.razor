@@ -1,0 +1,20 @@
+<button class="copy-btn" @onclick="Copy" title="Copy to clipboard">
+    @(_copied ? "✓" : "📋")
+</button>
+
+@inject IJSRuntime JS
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    private bool _copied;
+
+    private async Task Copy()
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", Text);
+        _copied = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _copied = false;
+        StateHasChanged();
+    }
+}

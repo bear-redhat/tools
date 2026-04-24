@@ -1,0 +1,103 @@
+@page "/c/{ConversationId}"
+@page "/c/{ConversationId}/view"
+@using Investigator.Models
+@using Investigator.Components.Conversation
+@using Investigator.Components.InvestigationLog
+@using Investigator.Components.Shared
+
+<PageTitle>Little Bear, the Detective</PageTitle>
+
+@if (_isOwner)
+{
+    <button class="btn-share-readonly" @onclick="CopyShareLink" title="Copy read-only link to clipboard">
+        @(_shareCopied ? "Copied!" : "Share Read-Only")
+    </button>
+}
+
+<div class="chat-page">
+
+@if (!_isOwner && _session is not null)
+{
+    <div class="readonly-banner">
+        <span>Viewing shared conversation (read-only)</span>
+        @if (!_forcedReadonly)
+        {
+            <button class="btn-refresh" @onclick="Refresh">Refresh</button>
+        }
+    </div>
+}
+
+<div class="investigator-layout">
+    <div class="conversation-panel">
+        <MemberPanel Members="_members" SelectedId="_selectedMemberId" OnSelect="OnMemberSelected" />
+        <div class="conversation-messages" @ref="_messagesRef">
+            @foreach (var item in FilteredConversation)
+            {
+                <ChatMessage Item="item" OnStepClick="ScrollToLogEntry" />
+            }
+        </div>
+        @if (_isOwner)
+        {
+            <ChatInput OnSend="OnSendAsync" OnCancel="OnCancel"
+                       IsInvestigating="_isInvestigating"
+                       HasWorkingAgents="_hasWorkingAgents" />
+        }
+    </div>
+
+    <div class="log-panel">
+        @if (_showFindings)
+        {
+            <div class="log-header">Findings</div>
+            <div class="log-entries findings-panel" @ref="_logRef">
+                @foreach (var item in FilteredFindings)
+                {
+                    var isConclusion = item.Type == ConversationItemType.Conclusion;
+                    var expanded = IsFindingExpanded(item);
+                    <div class="finding-entry @(isConclusion ? "finding-conclusion" : "")" @onclick="() => ToggleFinding(item)">
+                        <div class="finding-header">
+                            <span class="finding-chevron">@(expanded ? "▼" : "▶")</span>
+                            @if (isConclusion)
+                            {
+                                <span class="finding-label conclusion-label">Conclusion</span>
+                            }
+                            <span class="finding-summary">@(item.Summary ?? Truncate(item.Content))</span>
+                        </div>
+                        @if (expanded)
+                        {
+                            <div class="finding-full">
+                                <MarkdownRenderer Content="@item.Content" />
+                            </div>
+                        }
+                        <div class="finding-time">@item.Timestamp.ToString("HH:mm:ss")</div>
+                    </div>
+                }
+                @if (!FilteredFindings.Any())
+                {
+                    <div class="log-empty">Findings will appear here as Little Bear investigates.</div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="log-header">
+                Investigation Log
+                @if (_selectedMemberId != "all" && _selectedMemberId != "user")
+                {
+                    <span class="log-filter-badge">@(_members.FirstOrDefault(m => m.Id == _selectedMemberId)?.Name ?? _selectedMemberId)</span>
+                }
+            </div>
+            <div class="log-entries" @ref="_logRef">
+                @foreach (var entry in FilteredLog)
+                {
+                    <LogEntry Entry="entry" HighlightedStepId="_highlightedStepId" />
+                }
+                @if (!FilteredLog.Any())
+                {
+                    <div class="log-empty">Tool calls will appear here when you select a member.</div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+</div>

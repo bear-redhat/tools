@@ -1,0 +1,36 @@
+@using Investigator.Models
+@using Investigator.Components.Shared
+
+<div class="fix-panel">
+    <button class="panel-toggle" @onclick="Toggle">
+        @(_expanded ? "▼" : "▶") Suggest Fix
+    </button>
+
+    @if (_expanded)
+    {
+        <div class="fix-content">
+            <p class="fix-description">@Fix.Description</p>
+
+            @if (Fix.Warning is not null)
+            {
+                <div class="fix-warning">⚠ @Fix.Warning</div>
+            }
+
+            <div class="fix-commands">
+                @foreach (var cmd in Fix.Commands)
+                {
+                    <div class="fix-command">
+                        <code>@cmd</code>
+                        <CopyButton Text="@cmd" />
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public FixSuggestion Fix { get; set; } = default!;
+    private bool _expanded;
+    private void Toggle() => _expanded = !_expanded;
+}

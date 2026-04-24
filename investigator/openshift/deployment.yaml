@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: investigator
+  namespace: investigator
+  labels:
+    app: investigator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: investigator
+  template:
+    metadata:
+      labels:
+        app: investigator
+    spec:
+      serviceAccountName: investigator
+      containers:
+        - name: investigator
+          image: ghcr.io/bear-redhat/tools/investigator:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: investigator-env
+                optional: true
+          volumeMounts:
+            - name: workspace-data
+              mountPath: /data
+            - name: app-config
+              mountPath: /app/appsettings.Production.json
+              subPath: appsettings.Production.json
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: workspace-data
+          persistentVolumeClaim:
+            claimName: investigator-workspace-data
+        - name: app-config
+          configMap:
+            name: investigator-config
+        - name: secrets
+          secret:
+            secretName: investigator-cluster-creds
+            defaultMode: 0600

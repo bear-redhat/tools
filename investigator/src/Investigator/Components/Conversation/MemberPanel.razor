@@ -1,0 +1,27 @@
+@using Investigator.Models
+
+<div class="member-panel">
+    @foreach (var member in Members)
+    {
+        <button class="member-chip @GetStatusClass(member) @(member.Id == SelectedId ? "selected" : "")"
+                @onclick="() => OnSelect.InvokeAsync(member.Id)">
+            <span class="member-dot"></span>
+            <span class="member-name">@member.Name</span>
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<GroupMember> Members { get; set; } = [];
+    [Parameter] public string SelectedId { get; set; } = "all";
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+
+    private static string GetStatusClass(GroupMember m) => m.Status switch
+    {
+        MemberStatus.Static => "static",
+        MemberStatus.Active => "active",
+        MemberStatus.Working => "working",
+        MemberStatus.Idle => "idle",
+        _ => "",
+    };
+}

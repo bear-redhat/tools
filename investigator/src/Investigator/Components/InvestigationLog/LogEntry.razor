@@ -1,0 +1,65 @@
+@using Investigator.Components.Shared
+
+<div class="log-entry @GetStatusClass() @(IsHighlighted ? "highlighted" : "")" id="@Entry.StepId">
+    <div class="log-entry-header" @onclick="Toggle">
+        <span class="log-entry-num">#@GetEntryNumber()</span>
+        @if (Entry.SenderDisplayName is not null)
+        {
+            <span class="log-entry-agent">@Entry.SenderDisplayName</span>
+        }
+        <span class="log-entry-tool">@Entry.Tool</span>
+        @if (Entry.Context is not null)
+        {
+            @foreach (var tag in Entry.Context)
+            {
+                <span class="log-entry-tag" title="@tag.Key">@tag.Value</span>
+            }
+        }
+        <span class="log-entry-status">@GetStatusIcon()</span>
+        <span class="log-entry-time">@Entry.Timestamp.ToString("HH:mm:ss")</span>
+    </div>
+    <div class="log-entry-command">
+        <code>@Entry.DisplayCommand</code>
+        <CopyButton Text="@Entry.DisplayCommand" />
+    </div>
+
+    @if (_expanded && Entry.Output is not null)
+    {
+        <div class="log-entry-output">
+            <pre>@Entry.Output</pre>
+        </div>
+    }
+
+    @if (Entry.Status == LogEntryStatus.Running)
+    {
+        <div class="log-entry-spinner">Executing...</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public LogEntryModel Entry { get; set; } = default!;
+    [Parameter] public string? HighlightedStepId { get; set; }
+    private bool _expanded;
+
+    private bool IsHighlighted => HighlightedStepId == Entry.StepId;
+
+    private void Toggle() => _expanded = !_expanded;
+
+    private string GetStatusClass() => Entry.Status switch
+    {
+        LogEntryStatus.Running => "running",
+        LogEntryStatus.Completed => Entry.ExitCode == 0 ? "success" : "failed",
+        LogEntryStatus.TimedOut => "timed-out",
+        _ => "",
+    };
+
+    private string GetStatusIcon() => Entry.Status switch
+    {
+        LogEntryStatus.Running => "⏳",
+        LogEntryStatus.Completed => Entry.ExitCode == 0 ? "✓" : "✗",
+        LogEntryStatus.TimedOut => "⏰",
+        _ => "",
+    };
+
+    private string GetEntryNumber() => Entry.StepId.Replace("step-", "").Replace("sa-", "");
+}

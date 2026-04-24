@@ -1,0 +1,65 @@
+@page "/login"
+@using Investigator.Models
+@using Investigator.Services
+@using Microsoft.Extensions.Options
+@inject CircuitAuthState CircuitAuth
+@inject AuthSettings AuthSettings
+@inject NavigationManager Nav
+@inject IOptions<AuthOptions> AuthOpts
+@inject ConversationStore Store
+
+<PageTitle>Sign In - Little Bear</PageTitle>
+
+<div class="login-container">
+    <div class="login-card">
+        <h2>Little Bear, the Detective</h2>
+
+        @if (AuthSettings.Mode == AuthMode.Token)
+        {
+            <form @onsubmit="Submit" @onsubmit:preventDefault>
+                <input type="password" @bind="_token" placeholder="Access token" class="login-input" autofocus />
+                <button type="submit" class="login-button">Sign In</button>
+                @if (_error)
+                {
+                    <p class="login-error">Invalid token. Please try again.</p>
+                }
+            </form>
+        }
+        else
+        {
+            <p class="login-hint">Authentication is not configured.</p>
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    private string _token = "";
+    private bool _error;
+
+    private void Submit()
+    {
+        var expected = AuthOpts.Value.SharedToken;
+        if (!string.IsNullOrEmpty(expected) && _token == expected)
+        {
+            CircuitAuth.IsAuthenticated = true;
+            CircuitAuth.UserName = "token-user";
+
+            if (!string.IsNullOrEmpty(ReturnUrl))
+            {
+                Nav.NavigateTo(ReturnUrl);
+            }
+            else
+            {
+                var session = Store.CreateSession();
+                Nav.NavigateTo($"/c/{session.Id}");
+            }
+        }
+        else
+        {
+            _error = true;
+        }
+    }
+}

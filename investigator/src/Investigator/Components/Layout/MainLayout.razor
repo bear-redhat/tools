@@ -1,0 +1,20 @@
+﻿@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+
+<div class="main-layout">
+    <header class="top-bar">
+        <img src="@Assets["little-bear.png"]" alt="Little Bear" class="header-logo" />
+        <h1>Little Bear, the Detective</h1>
+        <AuthorizeView>
+            <Authorized>
+                <div class="user-info">
+                    <span>@context.User.Identity?.Name</span>
+                    <a href="/logout" class="logout-link">Sign out</a>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+    <main>
+        @Body
+    </main>
+</div>

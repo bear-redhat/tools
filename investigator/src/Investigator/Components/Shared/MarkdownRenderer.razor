@@ -1,0 +1,18 @@
+@using Markdig
+
+<div class="markdown-body">@((MarkupString)_html)</div>
+
+@code {
+    private static readonly MarkdownPipeline s_pipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
+    [Parameter, EditorRequired] public string Content { get; set; } = "";
+
+    private string _html = "";
+
+    protected override void OnParametersSet()
+    {
+        _html = Markdown.ToHtml(Content ?? "", s_pipeline);
+    }
+}

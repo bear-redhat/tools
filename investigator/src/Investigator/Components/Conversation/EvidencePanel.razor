@@ -1,0 +1,38 @@
+@using Investigator.Models
+@using Investigator.Components.Shared
+
+<div class="evidence-panel">
+    <button class="panel-toggle" @onclick="Toggle">
+        @(_expanded ? "▼" : "▶") Show Evidence (@Evidence.Steps.Count steps)
+    </button>
+
+    @if (_expanded)
+    {
+        <div class="evidence-steps">
+            @foreach (var step in Evidence.Steps)
+            {
+                <div class="evidence-step">
+                    <div class="step-number">@step.Step</div>
+                    <div class="step-body">
+                        <div class="step-reasoning">@step.Reasoning</div>
+                        <div class="step-finding">@step.Finding</div>
+                        @if (step.Cluster is not null)
+                        {
+                            <span class="step-cluster">@step.Cluster</span>
+                        }
+                        <div class="step-command">
+                            <code>@step.Command</code>
+                            <CopyButton Text="@step.Command" />
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EvidenceChain Evidence { get; set; } = default!;
+    private bool _expanded;
+    private void Toggle() => _expanded = !_expanded;
+}

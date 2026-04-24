@@ -1,0 +1,11 @@
+## Build output
+**/bin/
+**/obj/
+.vs/
+
+## User-specific
+*.csproj.user
+*.user
+
+## Secrets and local overrides
+appsettings.*.local.json

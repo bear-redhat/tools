@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Investigator.Contracts": {
+      "commandName": "Project",
+      "jsWebView2Debugging": true
+    }
+  }
+}
