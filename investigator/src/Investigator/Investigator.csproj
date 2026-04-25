@@ -21,4 +21,8 @@
     <UserSecretsId>229847c8-d9de-4da0-942c-3e736ed50ace</UserSecretsId>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Content Include="skills\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
