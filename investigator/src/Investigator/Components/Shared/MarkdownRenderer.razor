@@ -1,18 +1,34 @@
 @using Markdig
+@using System.Text.RegularExpressions
 
-<div class="markdown-body">@((MarkupString)_html)</div>
+@if (Inline)
+{
+    <span class="markdown-body markdown-inline">@((MarkupString)_html)</span>
+}
+else
+{
+    <div class="markdown-body">@((MarkupString)_html)</div>
+}
 
 @code {
     private static readonly MarkdownPipeline s_pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
         .Build();
 
+    private static readonly Regex s_blockWrapperRegex = new(
+        @"^\s*<p>(.*)</p>\s*$", RegexOptions.Singleline | RegexOptions.Compiled);
+
     [Parameter, EditorRequired] public string Content { get; set; } = "";
+    [Parameter] public bool Inline { get; set; }
 
     private string _html = "";
 
     protected override void OnParametersSet()
     {
         _html = Markdown.ToHtml(Content ?? "", s_pipeline);
+        if (Inline)
+        {
+            _html = s_blockWrapperRegex.Replace(_html, "$1").Trim();
+        }
     }
 }

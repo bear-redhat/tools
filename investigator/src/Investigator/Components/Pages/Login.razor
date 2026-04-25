@@ -8,26 +8,51 @@
 @inject IOptions<AuthOptions> AuthOpts
 @inject ConversationStore Store
 
-<PageTitle>Sign In - Little Bear</PageTitle>
+<PageTitle>The Game Is Afoot - Investigator</PageTitle>
 
 <div class="login-container">
     <div class="login-card">
-        <h2>Little Bear, the Detective</h2>
+        @if (_success)
+        {
+            <div class="login-art login-art--success">
+                <div class="art-header">221B Banyan Hollow</div>
+                <div class="art-flora">🌿 🔥 🌿</div>
+                <div class="art-bear">🐻</div>
+                <div class="art-magnifier">🐾</div>
+                <div class="art-footer">The game is afoot. Welcome, Client.</div>
+            </div>
+        }
+        else if (_error)
+        {
+            <div class="login-art login-art--error">
+                <div class="art-header">221B Banyan Hollow</div>
+                <div class="art-flora">🍂 🕯️ 🍂</div>
+                <div class="art-bear">🐻</div>
+                <div class="art-magnifier">✋</div>
+                <div class="art-footer">That letter of introduction doesn't check out.</div>
+            </div>
+        }
+        else
+        {
+            <div class="login-art">
+                <div class="art-header">221B Banyan Hollow</div>
+                <div class="art-flora">🌿 🏮 🌿</div>
+                <div class="art-bear">🐻</div>
+                <div class="art-magnifier">🔎</div>
+                <div class="art-footer">🐾 Knock, knock. 🐾</div>
+            </div>
+        }
 
         @if (AuthSettings.Mode == AuthMode.Token)
         {
             <form @onsubmit="Submit" @onsubmit:preventDefault>
-                <input type="password" @bind="_token" placeholder="Access token" class="login-input" autofocus />
-                <button type="submit" class="login-button">Sign In</button>
-                @if (_error)
-                {
-                    <p class="login-error">Invalid token. Please try again.</p>
-                }
+                <input type="password" @bind="_token" placeholder="Present your letter of introduction..." class="login-input" autofocus />
+                <button type="submit" class="login-button">🔎 The Game Is Afoot</button>
             </form>
         }
         else
         {
-            <p class="login-hint">Authentication is not configured.</p>
+            <p class="login-hint">🚪 The door to 221B stands open. No letter of introduction required.</p>
         }
     </div>
 </div>
@@ -38,14 +63,20 @@
 
     private string _token = "";
     private bool _error;
+    private bool _success;
 
-    private void Submit()
+    private async Task Submit()
     {
         var expected = AuthOpts.Value.SharedToken;
         if (!string.IsNullOrEmpty(expected) && _token == expected)
         {
             CircuitAuth.IsAuthenticated = true;
-            CircuitAuth.UserName = "Authenticated User";
+            CircuitAuth.UserName = "token-user";
+
+            _error = false;
+            _success = true;
+            StateHasChanged();
+            await Task.Delay(600);
 
             if (!string.IsNullOrEmpty(ReturnUrl))
             {

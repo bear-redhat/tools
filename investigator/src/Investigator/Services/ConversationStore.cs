@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Investigator.Tools;
 using Visus.Cuid;
 
 namespace Investigator.Services;
@@ -19,6 +20,23 @@ public sealed class ConversationStore
     {
         _sessions.TryGetValue(id, out var session);
         return session;
+    }
+
+    /// <summary>
+    /// Checks memory first, then falls back to loading from disk.
+    /// The loaded session is cached so subsequent lookups are fast.
+    /// </summary>
+    public async Task<ConversationSession?> TryGetOrLoadSessionAsync(string id, WorkspaceManager workspaceManager)
+    {
+        if (_sessions.TryGetValue(id, out var session))
+            return session;
+
+        var loaded = await workspaceManager.TryLoadSessionAsync(id);
+        if (loaded is null)
+            return null;
+
+        _sessions.TryAdd(id, loaded);
+        return loaded;
     }
 
     /// <summary>

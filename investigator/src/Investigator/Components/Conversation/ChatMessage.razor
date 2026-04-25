@@ -4,7 +4,7 @@
     @if (Item.Type == ConversationItemType.UserMessage)
     {
         <div class="message-role">Client</div>
-        <div class="message-content">@Item.Content</div>
+        <div class="message-content"><MarkdownRenderer Content="@Item.Content" /></div>
     }
     else if (Item.Type == ConversationItemType.Thinking)
     {
@@ -47,7 +47,7 @@
                     <MarkdownRenderer Content="@Item.Summary" />
                 </div>
                 <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                    @(_reportExpanded ? "▼" : "▶") @(_reportExpanded ? "Hide full report" : "Show full report")
+                    <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> @(_reportExpanded ? "Hide full report" : "Show full report")
                 </button>
                 @if (_reportExpanded)
                 {
@@ -70,7 +70,7 @@
             <div class="message-content subagent">
                 <div class="report-summary loading">Summarising report...</div>
                 <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                    @(_reportExpanded ? "▼" : "▶") @(_reportExpanded ? "Hide full report" : "Show full report")
+                    <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> @(_reportExpanded ? "Hide full report" : "Show full report")
                 </button>
                 @if (_reportExpanded)
                 {
@@ -102,7 +102,7 @@
                 <div class="conclusion-headline loading">Summarising...</div>
             }
             <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                @(_reportExpanded ? "▼" : "▶") @(_reportExpanded ? "Hide full conclusion" : "Show full conclusion")
+                <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> @(_reportExpanded ? "Hide full conclusion" : "Show full conclusion")
             </button>
             @if (_reportExpanded)
             {
@@ -145,7 +145,7 @@
                 <MarkdownRenderer Content="@(Item.Summary ?? "")" />
             </div>
             <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                @(_reportExpanded ? "▼" : "▶") @(_reportExpanded ? "Hide task" : "Show task")
+                <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> @(_reportExpanded ? "Hide task" : "Show task")
             </button>
             @if (_reportExpanded)
             {
@@ -159,7 +159,7 @@
     {
         <div class="message-role">221B Banyan Hollow</div>
         <div class="message-content welcome-content">
-            <pre class="welcome-room">@FormatWelcomeContent(Item.Content)</pre>
+            <pre class="ascii-art welcome-room">@FormatWelcomeContent(Item.Content)</pre>
         </div>
     }
     else if (Item.Type == ConversationItemType.Error)

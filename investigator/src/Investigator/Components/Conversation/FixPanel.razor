@@ -3,13 +3,13 @@
 
 <div class="fix-panel">
     <button class="panel-toggle" @onclick="Toggle">
-        @(_expanded ? "▼" : "▶") Suggest Fix
+        <span class="toggle-arrow">@(_expanded ? "▼" : "▶")</span> Suggest Fix
     </button>
 
     @if (_expanded)
     {
         <div class="fix-content">
-            <p class="fix-description">@Fix.Description</p>
+            <div class="fix-description"><MarkdownRenderer Content="@Fix.Description" /></div>
 
             @if (Fix.Warning is not null)
             {

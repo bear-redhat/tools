@@ -8,7 +8,7 @@ using Microsoft.JSInterop;
 
 namespace Investigator.Components.Pages;
 
-public partial class Chat : IDisposable
+public partial class Chat : IAsyncDisposable
 {
     [Inject] private InvestigationRoom Room { get; set; } = default!;
     [Inject] private WorkspaceManager WorkspaceMgr { get; set; } = default!;
@@ -36,8 +36,12 @@ public partial class Chat : IDisposable
     private string? _highlightedStepId;
     private string _selectedMemberId = "all";
     private bool _forceScrollOnRender;
+    private bool _scrollAfterRender;
+    private bool _jsInitialized;
     private ElementReference _messagesRef;
     private ElementReference _logRef;
+    private ElementReference _dividerRef;
+    private ElementReference _inputDividerRef;
 
     private List<ConversationItem> _conversationItems => _session?.Items ?? [];
     private List<LogEntryModel> _logEntries => _session?.LogEntries ?? [];
@@ -108,8 +112,18 @@ public partial class Chat : IDisposable
         _session = Store.TryGetSession(ConversationId);
         if (_session is null)
         {
-            Nav.NavigateTo("/", forceLoad: true);
-            return;
+            _session = await Store.TryGetOrLoadSessionAsync(ConversationId, WorkspaceMgr);
+            if (_session is null)
+            {
+                Nav.NavigateTo("/", forceLoad: true);
+                return;
+            }
+
+            if (!isViewRoute)
+            {
+                Nav.NavigateTo($"/c/{ConversationId}/view", forceLoad: true);
+                return;
+            }
         }
 
         if (isViewRoute)
@@ -203,7 +217,7 @@ public partial class Chat : IDisposable
 
         if (!_started)
         {
-            _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace();
+            _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
             _cts = new CancellationTokenSource();
             _eventLoopTask = RunEventLoopAsync(_cts.Token);
             _ = Room.StartAsync(_session.WorkspacePath, _history, _cts.Token);
@@ -211,8 +225,8 @@ public partial class Chat : IDisposable
         }
 
         await Room.PostUserMessageAsync(message, _cts!.Token);
+        _scrollAfterRender = true;
         await InvokeAsync(StateHasChanged);
-        await ScrollToBottom();
     }
 
     private async Task RunEventLoopAsync(CancellationToken ct)
@@ -222,8 +236,8 @@ public partial class Chat : IDisposable
             await foreach (var evt in Room.Events.ReadAllAsync(ct))
             {
                 HandleAgentEvent(evt);
+                _scrollAfterRender = true;
                 await InvokeAsync(StateHasChanged);
-                await ScrollToBottom();
             }
         }
         catch (OperationCanceledException) { }
@@ -243,10 +257,11 @@ public partial class Chat : IDisposable
             {
                 _session.IsInvestigating = false;
                 _session.HasWorkingAgents = false;
+                await WorkspaceMgr.SaveSessionAsync(_session);
             }
             SetMemberStatus("little-bear", MemberStatus.Idle);
+            _scrollAfterRender = true;
             await InvokeAsync(StateHasChanged);
-            await ScrollToBottom();
         }
     }
 
@@ -488,26 +503,42 @@ public partial class Chat : IDisposable
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_forceScrollOnRender)
+        if (firstRender || !_jsInitialized)
         {
-            _forceScrollOnRender = false;
             try
             {
+                await JS.InvokeVoidAsync("initAutoScroll", _messagesRef);
+                await JS.InvokeVoidAsync("initAutoScroll", _logRef);
+                _jsInitialized = await JS.InvokeAsync<bool>("initDividerResize", _dividerRef, "col");
+                await JS.InvokeAsync<bool>("initDividerResize", _inputDividerRef, "row");
+            }
+            catch (JSDisconnectedException) { }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "JS interop initialization failed (firstRender={FirstRender})", firstRender);
+            }
+        }
+
+        try
+        {
+            if (_forceScrollOnRender)
+            {
+                _forceScrollOnRender = false;
                 await JS.InvokeVoidAsync("forceScrollToBottom", _messagesRef);
                 await JS.InvokeVoidAsync("forceScrollToBottom", _logRef);
             }
-            catch { }
+            else if (_scrollAfterRender)
+            {
+                _scrollAfterRender = false;
+                await JS.InvokeVoidAsync("scrollToBottom", _messagesRef);
+                await JS.InvokeVoidAsync("scrollToBottom", _logRef);
+            }
         }
-    }
-
-    private async Task ScrollToBottom()
-    {
-        try
+        catch (JSDisconnectedException) { }
+        catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("scrollToBottom", _messagesRef);
-            await JS.InvokeVoidAsync("scrollToBottom", _logRef);
+            Logger.LogDebug(ex, "JS scroll interop failed");
         }
-        catch { }
     }
 
     private readonly HashSet<ConversationItem> _expandedFindings = [];
@@ -560,11 +591,14 @@ public partial class Chat : IDisposable
         return text[..maxLength] + "...";
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         _cts?.Cancel();
         _cts?.Dispose();
         if (_isOwner && _session is not null)
+        {
+            await WorkspaceMgr.SaveSessionAsync(_session);
             Store.Release(_session.Id, _circuitId);
+        }
     }
 }

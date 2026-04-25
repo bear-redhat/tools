@@ -17,8 +17,7 @@
     <div class="chat-input-row">
         <textarea @bind="_message" @bind:event="oninput"
                   @onkeydown="OnKeyDown"
-                  placeholder="Describe the issue to investigate..."
-                  rows="2"></textarea>
+                  placeholder="Describe the issue to investigate..."></textarea>
         <div class="chat-input-buttons">
             <button class="btn-send" @onclick="Send" disabled="@string.IsNullOrWhiteSpace(_message)">Send</button>
             @if (IsInvestigating)

@@ -7,14 +7,7 @@
 
 <PageTitle>Little Bear, the Detective</PageTitle>
 
-@if (_isOwner)
-{
-    <button class="btn-share-readonly" @onclick="CopyShareLink" title="Copy read-only link to clipboard">
-        @(_shareCopied ? "Copied!" : "Share Read-Only")
-    </button>
-}
-
-<div class="chat-page">
+<div class="chat-page @(!_isOwner ? "readonly" : "")">
 
 @if (!_isOwner && _session is not null)
 {
@@ -38,16 +31,27 @@
         </div>
         @if (_isOwner)
         {
+            <div class="input-divider" @ref="_inputDividerRef"></div>
             <ChatInput OnSend="OnSendAsync" OnCancel="OnCancel"
                        IsInvestigating="_isInvestigating"
                        HasWorkingAgents="_hasWorkingAgents" />
         }
     </div>
 
+    <div class="panel-divider" @ref="_dividerRef"></div>
+
     <div class="log-panel">
         @if (_showFindings)
         {
-            <div class="log-header">Findings</div>
+            <div class="log-header">
+                <span>Findings</span>
+                @if (_isOwner)
+                {
+                    <button class="btn-share-readonly" @onclick="CopyShareLink" title="Copy read-only link to clipboard">
+                        @(_shareCopied ? "Copied!" : "Share Read-Only")
+                    </button>
+                }
+            </div>
             <div class="log-entries findings-panel" @ref="_logRef">
                 @foreach (var item in FilteredFindings)
                 {
@@ -55,12 +59,12 @@
                     var expanded = IsFindingExpanded(item);
                     <div class="finding-entry @(isConclusion ? "finding-conclusion" : "")" @onclick="() => ToggleFinding(item)">
                         <div class="finding-header">
-                            <span class="finding-chevron">@(expanded ? "▼" : "▶")</span>
+                            <span class="finding-chevron toggle-arrow">@(expanded ? "▼" : "▶")</span>
                             @if (isConclusion)
                             {
                                 <span class="finding-label conclusion-label">Conclusion</span>
                             }
-                            <span class="finding-summary">@(item.Summary ?? Truncate(item.Content))</span>
+                            <span class="finding-summary"><MarkdownRenderer Content="@(item.Summary ?? Truncate(item.Content))" Inline="true" /></span>
                         </div>
                         @if (expanded)
                         {

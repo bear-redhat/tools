@@ -3,7 +3,7 @@
 
 <div class="evidence-panel">
     <button class="panel-toggle" @onclick="Toggle">
-        @(_expanded ? "▼" : "▶") Show Evidence (@Evidence.Steps.Count steps)
+        <span class="toggle-arrow">@(_expanded ? "▼" : "▶")</span> Evidence (@Evidence.Steps.Count steps)
     </button>
 
     @if (_expanded)
@@ -16,7 +16,7 @@
                     <div class="step-body">
                         <div class="step-reasoning">@step.Reasoning</div>
                         <div class="step-finding">@step.Finding</div>
-                        @if (step.Cluster is not null)
+                        @if (!string.IsNullOrWhiteSpace(step.Cluster))
                         {
                             <span class="step-cluster">@step.Cluster</span>
                         }
