@@ -37,8 +37,8 @@ public sealed class WebSearchTool : IInvestigatorTool
 
     public ToolDefinition Definition => new(
         Name: "web_search",
-        Description: "Search the web using Google. Returns a list of results with title, URL, and snippet. "
-            + "Use this to find documentation, error messages, release notes, blog posts, or any publicly available information.",
+        Description: "Search the public record -- documentation, error reports, release notes, "
+            + "and any other intelligence available on the open web.",
         ParameterSchema: s_paramSchema,
         DefaultTimeout: TimeSpan.FromSeconds(15));
 

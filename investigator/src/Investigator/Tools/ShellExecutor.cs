@@ -21,7 +21,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
         if (_isPowerShell)
             return """
                 SHELL ENVIRONMENT:
-                Commands via run_shell execute in PowerShell on Windows. Do NOT use bash/Linux syntax:
+                Your shell is PowerShell on Windows. Observe the following constraints:
                 - No heredocs (<< 'EOF'), no 2>/dev/null, no $(...) subshells, no single-quote escaping rules from bash.
                 - No Linux coreutils: 'find -type f', 'grep -r', 'base64 -d', 'sort', 'xargs', 'wc', 'head', 'tail' will fail or behave differently.
                 - Use PowerShell cmdlets: Get-ChildItem (instead of find), Select-String (instead of grep), Get-Content (instead of cat), [Convert]::FromBase64String (instead of base64 -d).
@@ -31,7 +31,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
 
         return """
             SHELL ENVIRONMENT:
-            Commands via run_shell execute in bash on Linux. Standard coreutils are available (grep, awk, sed, jq, curl, openssl, python3, etc.).
+            Your shell is bash on Linux. Standard coreutils are available (grep, awk, sed, jq, curl, openssl, python3, etc.).
             """;
     }
 
@@ -80,7 +80,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
                 + "This is PowerShell -- do NOT use bash/Linux syntax (no heredocs, no 2>/dev/null, no 'find -type f', no 'grep -r', no 'base64 -d'). "
                 + "Use PowerShell cmdlets (Get-ChildItem, Select-String, Get-Content) or Python one-liners. "
                 + "Do NOT use for oc/kubectl -- use run_oc instead.";
-            toolDesc = "Run a PowerShell command in the conversation workspace. "
+            toolDesc = "Execute a PowerShell command in the workspace. "
                 + "IMPORTANT: This shell is PowerShell on Windows -- bash syntax will fail. "
                 + "Use PowerShell cmdlets (Select-String instead of grep, Get-ChildItem instead of find, "
                 + "[Convert]::FromBase64String instead of base64 -d) or python -c one-liners. "
@@ -92,7 +92,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             cmdDesc = "Shell command to run in the conversation workspace. "
                 + "Use for data processing (grep, awk, jq), Python scripts, network diagnostics (curl, dig), "
                 + "cert inspection (openssl). Do NOT use for oc/kubectl -- use run_oc instead.";
-            toolDesc = "Run a shell command in the conversation workspace. Use for data processing, "
+            toolDesc = "Execute a command in the workspace shell. Use for data processing, "
                 + "text filtering (grep, awk, jq), Python scripts, network diagnostics (curl, dig), "
                 + "cert inspection (openssl), or any general-purpose computation. "
                 + "Do NOT use this for oc/kubectl commands -- use run_oc instead.";

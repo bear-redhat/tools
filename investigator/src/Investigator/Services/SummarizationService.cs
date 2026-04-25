@@ -28,7 +28,7 @@ public sealed class SummarizationService
         SummarizeAsync(content, "Summarise the following report into 2-3 concise sentences capturing the key findings. Return ONLY the summary, nothing else.", ct);
 
     public Task<string> SummarizeToHeadlineAsync(string content, CancellationToken ct) =>
-        SummarizeAsync(content, "Summarise the following into a punchy headline of 3-8 words that identifies the root cause and any key identifiers (resource IDs, hostnames, error codes). Return ONLY the headline, nothing else.", ct);
+        SummarizeAsync(content, "Summarise the following into a terse headline of 3-8 words identifying the root cause and any key identifiers (resource IDs, hostnames, error codes). Return ONLY the headline, nothing else.", ct);
 
     private async Task<string> SummarizeAsync(string content, string systemPrompt, CancellationToken ct)
     {

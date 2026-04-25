@@ -104,9 +104,9 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
 
     public ToolDefinition Definition => new(
         Name: "run_oc",
-        Description: "Run a read-only oc CLI command against a Kubernetes/OpenShift cluster. "
+        Description: "Issue a read-only oc command against a cluster. "
             + "Always fetch complete output -- do NOT add grep, awk, or pipes to filter. "
-            + "Output is saved to disk; use run_shell to search/filter afterward.",
+            + "Output is saved to disk; use run_shell to search or filter afterward.",
         ParameterSchema: s_paramSchema,
         DefaultTimeout: TimeSpan.FromSeconds(30));
 

@@ -42,7 +42,7 @@ internal sealed class RoomToolHandlers
             {
                 var names = string.Join(", ", runningScouts.Select(kv => kv.Key));
                 return new AgentRunner.ToolExecutionResult(
-                    Output: $"Cannot conclude: {runningScouts.Count} Scouts are still working ({names}). Wait for their reports before concluding.",
+                    Output: $"You cannot conclude yet -- {runningScouts.Count} Scouts are still at work ({names}). Await their reports before concluding.",
                     Concluded: false);
             }
 
@@ -61,10 +61,10 @@ internal sealed class RoomToolHandlers
             }
 
             await _emitToUi(new AgentEvent.StatusChanged("conclude-lb-status", false));
-            return new AgentRunner.ToolExecutionResult(Output: "Concluded.", Concluded: true);
+            return new AgentRunner.ToolExecutionResult(Output: "The matter is concluded.", Concluded: true);
         }
 
-        var report = summary ?? "(No summary provided)";
+        var report = summary ?? "(No summary was provided.)";
 
         _logger.LogInformation("Scout {Name} reporting back with {EvidenceSteps} evidence steps",
             callerConfig.Name, evidence?.Steps.Count ?? 0);
@@ -86,10 +86,10 @@ internal sealed class RoomToolHandlers
         if (_agents.TryGetValue("Little Bear", out var lbSlot))
         {
             await lbSlot.Inbox.Writer.WriteAsync(
-                new RoomMessage(callerConfig.Name, $"[reports]\n{report}"), ct);
+                new RoomMessage(callerConfig.Name, $"[enters and reports]\n{report}"), ct);
         }
 
-        return new AgentRunner.ToolExecutionResult(Output: "Report delivered.", Concluded: true);
+        return new AgentRunner.ToolExecutionResult(Output: "Report delivered to Little Bear.", Concluded: true);
     }
 
     internal async Task<AgentRunner.ToolExecutionResult> HandlePresentFinding(
@@ -113,26 +113,30 @@ internal sealed class RoomToolHandlers
             await targetSlot.Inbox.Writer.WriteAsync(new RoomMessage("Little Bear", replyMsg), ct);
             if (!string.IsNullOrWhiteSpace(replyMsg))
                 await _emitToUi(new AgentEvent.Message($"reply-{callerSlot.Id}", replyMsg));
-            return new AgentRunner.ToolExecutionResult(Output: $"Reply sent to {targetName}.");
+            return new AgentRunner.ToolExecutionResult(Output: $"Reply conveyed to {targetName}.");
         }
 
-        return new AgentRunner.ToolExecutionResult(Output: $"Error: no Scout named '{targetName}' is waiting for a reply.");
+        return new AgentRunner.ToolExecutionResult(Output: $"No Scout named '{targetName}' is awaiting a reply.");
     }
 
     internal AgentRunner.ToolExecutionResult HandleDismissScout(JsonElement input)
     {
         var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
+        var force = input.TryGetProperty("force", out var fp) && fp.GetBoolean();
 
-        if (!_agents.TryRemove(name, out var slot) || slot.Id == "little-bear")
-        {
-            if (slot is not null && slot.Id == "little-bear")
-                _agents[name] = slot;
-            return new AgentRunner.ToolExecutionResult($"No active Scout named '{name}'.");
-        }
+        if (!_agents.TryGetValue(name, out var slot) || slot.Id == "little-bear")
+            return new AgentRunner.ToolExecutionResult($"No Scout named '{name}' is active.");
+
+        if (!slot.Concluded && !force)
+            return new AgentRunner.ToolExecutionResult(
+                $"Scout '{name}' has not concluded yet. Use force: true to dismiss a working Scout.");
+
+        if (!_agents.TryRemove(name, out _))
+            return new AgentRunner.ToolExecutionResult($"No Scout named '{name}' is active.");
 
         slot.Inbox.Writer.TryComplete();
-        _logger.LogInformation("Scout {Name} dismissed by Little Bear", name);
-        return new AgentRunner.ToolExecutionResult($"Scout {name} dismissed.");
+        _logger.LogInformation("Scout {Name} dismissed by Little Bear (force={Force})", name, force);
+        return new AgentRunner.ToolExecutionResult($"{name} dismissed.");
     }
 
     internal string BuildCheckAgentsResponse()
@@ -142,10 +146,10 @@ internal sealed class RoomToolHandlers
             return "No Scouts have been dispatched.";
 
         var sb = new StringBuilder();
-        sb.AppendLine("Canopy Scouts:");
+        sb.AppendLine("Banyan Row Scouts:");
         foreach (var (name, slot) in scouts)
         {
-            var status = slot.Concluded ? "completed"
+            var status = slot.Concluded ? "reported"
                 : slot.RunTask switch
                 {
                     null => "working",
@@ -163,7 +167,7 @@ internal sealed class RoomToolHandlers
         if (input.ValueKind != JsonValueKind.Object)
         {
             _logger.LogWarning("conclude tool called with no input");
-            return (null, null, "(No summary provided)");
+            return (null, null, "(No summary was provided.)");
         }
 
         var summary = input.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "";

@@ -24,7 +24,7 @@
                 }
                 else
                 {
-                    <span>not logged in</span>
+                    <span>not signed in</span>
                 }
             </div>
         }
@@ -38,8 +38,8 @@
 {
     <div class="modal-backdrop" @onclick="() => _showNewSessionModal = false">
         <div class="modal-card" @onclick:stopPropagation>
-            <h2>Start new session?</h2>
-            <p>The current session will be permanently lost.</p>
+            <h2>Begin a new investigation?</h2>
+            <p>The current investigation will be permanently lost.</p>
             <div class="modal-actions">
                 <button class="btn-modal-cancel" @onclick="() => _showNewSessionModal = false">Cancel</button>
                 <button class="btn-modal-confirm" @onclick="StartNewSession">New Session</button>

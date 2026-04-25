@@ -12,7 +12,7 @@
 @if (!_isOwner && _session is not null)
 {
     <div class="readonly-banner">
-        <span>Viewing shared conversation (read-only)</span>
+        <span>Viewing a shared record of this investigation (read-only)</span>
         @if (!_forcedReadonly)
         {
             <button class="btn-refresh" @onclick="Refresh">Refresh</button>
@@ -48,7 +48,7 @@
                 @if (_isOwner)
                 {
                     <button class="btn-share-readonly" @onclick="CopyShareLink" title="Copy read-only link to clipboard">
-                        @(_shareCopied ? "Copied!" : "Share Read-Only")
+                        @(_shareCopied ? "Copied!" : "Share Record")
                     </button>
                 }
             </div>
@@ -77,7 +77,7 @@
                 }
                 @if (!FilteredFindings.Any())
                 {
-                    <div class="log-empty">Findings will appear here as Little Bear investigates.</div>
+                    <div class="log-empty">Findings will appear here as the investigation proceeds.</div>
                 }
             </div>
         }
@@ -97,7 +97,7 @@
                 }
                 @if (!FilteredLog.Any())
                 {
-                    <div class="log-empty">Tool calls will appear here when you select a member.</div>
+                    <div class="log-empty">Inquiries will appear here when you select a member.</div>
                 }
             </div>
         }

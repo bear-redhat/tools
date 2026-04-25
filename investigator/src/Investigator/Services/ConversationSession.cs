@@ -9,7 +9,7 @@ public sealed class ConversationSession
         Id = id;
         Members =
         [
-            new("221B Banyan Hollow", "all", MemberStatus.Static),
+            new("221B Banyan Row", "all", MemberStatus.Static),
             new("Client", "user", MemberStatus.Static),
             new("Little Bear", "little-bear", MemberStatus.Idle),
         ];
@@ -25,7 +25,7 @@ public sealed class ConversationSession
 
     private const string WelcomeContent =
         """
-        ╭────── 221B BANYAN HOLLOW ──────╮
+        ╭─────── 221B BANYAN ROW ────────╮
         │ 🌿            🔥            🌿 │
         │                                │
         │        ╭──────╮ ╭──────╮       │
@@ -38,9 +38,9 @@ public sealed class ConversationSession
 
         The game is afoot.
 
-        Welcome to 221B Banyan Hollow. I am Little Bear, consulting detective for OpenShift and Prow mysteries.
+        Pray be seated. You are at 221B Banyan Row, the chambers of Little Bear -- consulting detective for OpenShift and Prow mysteries.
 
-        Present your case, Client.
+        State your case, if you would.
         """;
 
     public string Id { get; }

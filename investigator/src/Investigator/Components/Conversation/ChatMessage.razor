@@ -10,7 +10,7 @@
     {
         <div class="message-role">
             Little Bear
-            <span class="thinking-label">thinking</span>
+            <span class="thinking-label">reasoning</span>
             @if (Item.StepId is not null)
             {
                 <button class="step-badge" @onclick="() => OnStepClick.InvokeAsync(Item.StepId)">@GetStepLabel()</button>
@@ -24,7 +24,7 @@
     {
         <div class="message-role">
             @(Item.SenderDisplayName ?? Item.Sender)
-            <span class="thinking-label">thinking</span>
+            <span class="thinking-label">reasoning</span>
         </div>
         <div class="message-content thinking">
             <MarkdownRenderer Content="@Item.Content" />
@@ -47,7 +47,7 @@
                     <MarkdownRenderer Content="@Item.Summary" />
                 </div>
                 <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                    <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> @(_reportExpanded ? "Hide full report" : "Show full report")
+                    <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Full report
                 </button>
                 @if (_reportExpanded)
                 {
@@ -68,9 +68,9 @@
         else
         {
             <div class="message-content subagent">
-                <div class="report-summary loading">Summarising report...</div>
+                <div class="report-summary loading">Summarising...</div>
                 <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                    <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> @(_reportExpanded ? "Hide full report" : "Show full report")
+                    <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Full report
                 </button>
                 @if (_reportExpanded)
                 {
@@ -99,10 +99,10 @@
             }
             else
             {
-                <div class="conclusion-headline loading">Summarising...</div>
+                <div class="conclusion-headline loading">Summarising conclusion...</div>
             }
             <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> @(_reportExpanded ? "Hide full conclusion" : "Show full conclusion")
+                <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Full conclusion
             </button>
             @if (_reportExpanded)
             {
@@ -138,14 +138,14 @@
     {
         <div class="message-role">
             Little Bear
-            <span class="thinking-label">dispatching @(Item.SenderDisplayName ?? Item.Sender)</span>
+            <span class="thinking-label">commissioning @(Item.SenderDisplayName ?? Item.Sender)</span>
         </div>
         <div class="message-content dispatch">
             <div class="dispatch-summary">
                 <MarkdownRenderer Content="@(Item.Summary ?? "")" />
             </div>
             <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> @(_reportExpanded ? "Hide task" : "Show task")
+                <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Brief
             </button>
             @if (_reportExpanded)
             {
@@ -157,7 +157,7 @@
     }
     else if (Item.Type == ConversationItemType.Welcome)
     {
-        <div class="message-role">221B Banyan Hollow</div>
+        <div class="message-role">221B Banyan Row</div>
         <div class="message-content welcome-content">
             <pre class="ascii-art welcome-room">@FormatWelcomeContent(Item.Content)</pre>
         </div>

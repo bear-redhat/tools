@@ -110,7 +110,7 @@ internal sealed class ScoutCoordinator
         scoutSlot.RunTask = Task.Run(() => _runAgent(scoutSlot, scoutConfig, ct), ct);
 
         return new AgentRunner.ToolExecutionResult(
-            Output: $"Dispatched: {agentName} ({role}) using {resolvedModel}. They will report back when done -- do not duplicate their task.");
+            Output: $"Dispatched {agentName} ({role}) using {resolvedModel}. They will report when finished -- do not duplicate their task.");
     }
 
     internal IReadOnlyList<ToolDefinition> BuildScoutTools()
@@ -119,7 +119,7 @@ internal sealed class ScoutCoordinator
 
         tools.Add(new ToolDefinition(
             Name: "conclude",
-            Description: "Call this when you have completed your assignment. Provide your findings -- this delivers your report to Little Bear.",
+            Description: "Call this when your assignment is complete. Provide your findings -- this delivers your report to Little Bear.",
             ParameterSchema: _concludeSchema,
             DefaultTimeout: TimeSpan.Zero));
 

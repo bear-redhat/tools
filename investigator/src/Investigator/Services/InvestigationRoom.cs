@@ -29,7 +29,7 @@ public sealed class InvestigationRoom
     {
         "type": "object",
         "properties": {
-            "title": { "type": "string", "description": "Short title for the finding" },
+            "title": { "type": "string", "description": "Brief title for the finding" },
             "description": { "type": "string", "description": "What was found and why it matters" }
         },
         "required": ["title", "description"]
@@ -51,7 +51,8 @@ public sealed class InvestigationRoom
     {
         "type": "object",
         "properties": {
-            "agent_name": { "type": "string", "description": "Name of the Scout to dismiss" }
+            "agent_name": { "type": "string", "description": "Name of the Scout to dismiss" },
+            "force": { "type": "boolean", "description": "Force dismissal even if the Scout has not concluded. Default false." }
         },
         "required": ["agent_name"]
     }
@@ -223,7 +224,7 @@ public sealed class InvestigationRoom
                     {
                         _logger.LogInformation("Last scout {Name} finished, nudging Little Bear to conclude", config.Name);
                         await lb.Inbox.Writer.WriteAsync(
-                            new RoomMessage("system", "All scouts have reported back. Conclude now with the evidence you have."),
+                            new RoomMessage("system", "All Scouts have reported back. Conclude now with the evidence you have."),
                             CancellationToken.None);
                     }
                 }
@@ -326,7 +327,7 @@ public sealed class InvestigationRoom
 
         if (_agents.TryGetValue("Little Bear", out var lbSlot))
         {
-            lbSlot.Inbox.Writer.TryWrite(new RoomMessage(agentName, $"[enters the room and asks]: {m.Text}"));
+            lbSlot.Inbox.Writer.TryWrite(new RoomMessage(agentName, $"[enters and asks]: {m.Text}"));
         }
 
         return new AgentEvent.ScoutAsked($"sa-{agentName}-ask", agentName, m.Text);
@@ -359,37 +360,37 @@ public sealed class InvestigationRoom
 
         tools.Add(new ToolDefinition(
             Name: ConcludeToolName,
-            Description: "Call this when you have identified the root cause. Provide the summary, evidence chain, and suggested fix.",
+            Description: "Call this when the evidence has converged and you can state the root cause. Provide the summary, evidence chain, and suggested remedy.",
             ParameterSchema: s_concludeSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: DelegateToolName,
-            Description: "Dispatch a Scout from your Canopy Scouts network. Non-blocking -- returns immediately with their assigned name. They investigate independently in the background and their report arrives as a message. Provide a role, task, and optionally a model profile.",
+            Description: "Dispatch one of your Banyan Row Scouts. Non-blocking -- returns immediately with their assigned name. They investigate independently and report back as a message. Provide a role, task, and optionally a model profile.",
             ParameterSchema: _delegateSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: CheckAgentsToolName,
-            Description: "Check the status of dispatched Scouts. Returns which are still working and which have reported back.",
+            Description: "Review the status of dispatched Scouts -- which are still at work and which have reported.",
             ParameterSchema: s_emptySchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: PresentFindingToolName,
-            Description: "Present a notable discovery to the room. The Client follows your investigation through these findings. Use this whenever you uncover something significant -- a clue, a confirmed hypothesis, or an important elimination. This is how you narrate the investigation in real time.",
+            Description: "Present a notable discovery to the room. The Client follows the investigation through these findings -- use this for significant clues, confirmed hypotheses, or important eliminations.",
             ParameterSchema: s_presentFindingSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: ReplyToToolName,
-            Description: "Reply to a Scout who has entered the room with a question. Provide the Scout's name and your answer. The Scout will resume their work with your reply.",
+            Description: "Reply to a Scout who has entered the room with a question. Provide the name and your answer; they will resume their work.",
             ParameterSchema: s_replyToSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: DismissScoutToolName,
-            Description: "Permanently dismiss a Scout. Use after receiving their report if no follow-up is needed, or to abort a Scout that is no longer useful. The Scout exits and cannot be contacted again.",
+            Description: "Dismiss a Scout from the room. By default, only concluded Scouts can be dismissed. Set force: true to stand down one who is still working. They cannot be contacted again.",
             ParameterSchema: s_dismissScoutSchema,
             DefaultTimeout: TimeSpan.Zero));
 

@@ -15,10 +15,10 @@ public sealed class SkillsLibrary : IInvestigatorTool
             "action": {
                 "type": "string",
                 "enum": ["search", "read", "list"],
-                "description": "search: find relevant skills by query. read: get full content of a named skill. list: show all available skills."
+                "description": "search: find relevant entries by query. read: get full content of a named entry. list: show all entries in the index."
             },
             "query": { "type": "string", "description": "Search query (for search action)" },
-            "name": { "type": "string", "description": "Skill filename without .md extension (for read action)" }
+            "name": { "type": "string", "description": "Entry name without .md extension (for read action)" }
         },
         "required": ["action"]
     }
@@ -41,8 +41,8 @@ public sealed class SkillsLibrary : IInvestigatorTool
 
     public ToolDefinition Definition => new(
         Name: "skills",
-        Description: "Search and read operational runbooks (skills). Use 'search' to find relevant skills by topic, "
-            + "'read' to get the full content, or 'list' to see all available skills.",
+        Description: "Consult the index -- Little Bear's personal reference of operational notes, organised by topic. "
+            + "Use 'search' to find relevant entries, 'read' to study the full content, or 'list' to review what is available.",
         ParameterSchema: s_paramSchema,
         DefaultTimeout: TimeSpan.FromSeconds(30));
 
@@ -113,7 +113,7 @@ public sealed class SkillsLibrary : IInvestigatorTool
             return LogError(context, "search requires a 'query' parameter");
 
         if (_skills.Count == 0)
-            return new ToolResult("No skills available in the library.");
+            return new ToolResult("The index is empty.");
 
         context.Logger.LogInformation("skills: searching for '{Query}' across {Count} skills", query, _skills.Count);
 
@@ -144,17 +144,17 @@ public sealed class SkillsLibrary : IInvestigatorTool
         }
 
         if (results.Count == 0)
-            return new ToolResult("No matching skills found. Use skills(action: 'list') to see all available skills.");
+            return new ToolResult("No matching entries found. Use skills(action: 'list') to review the index.");
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"Found {results.Count} relevant skills:\n");
+        sb.AppendLine($"Found {results.Count} relevant entries:\n");
         foreach (var (skill, score) in results)
         {
             sb.AppendLine($"- **{skill.Title}** (name: `{skill.Name}`, score: {score:F2})");
             sb.AppendLine($"  Tags: {string.Join(", ", skill.Tags)}");
             sb.AppendLine();
         }
-        sb.AppendLine("Use skills(action: 'read', name: '...') to read the full content.");
+        sb.AppendLine("Use skills(action: 'read', name: '...') to study the full entry.");
 
         return new ToolResult(sb.ToString());
     }
@@ -169,7 +169,7 @@ public sealed class SkillsLibrary : IInvestigatorTool
         if (skill is null)
         {
             context.Logger.LogWarning("skills: skill '{Name}' not found", name);
-            return new ToolResult($"Skill '{name}' not found. Use skills(action: 'list') to see available skills.", ExitCode: 1);
+            return new ToolResult($"No entry named '{name}' in the index. Use skills(action: 'list') to see what is available.", ExitCode: 1);
         }
 
         context.Logger.LogInformation("skills: reading skill '{Name}'", name);
@@ -179,12 +179,12 @@ public sealed class SkillsLibrary : IInvestigatorTool
     private ToolResult List(ToolContext context)
     {
         if (_skills.Count == 0)
-            return new ToolResult("No skills available in the library.");
+            return new ToolResult("The index is empty.");
 
         context.Logger.LogInformation("skills: listing {Count} skills", _skills.Count);
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"Available skills ({_skills.Count}):\n");
+        sb.AppendLine($"The index ({_skills.Count} entries):\n");
         foreach (var skill in _skills)
         {
             sb.AppendLine($"- **{skill.Title}** (name: `{skill.Name}`)");

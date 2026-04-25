@@ -45,7 +45,7 @@ public sealed class ReleaseRepoTool : IInvestigatorTool
 
     public ToolDefinition Definition => new(
         Name: "release_repo",
-        Description: "Manage the local clone of openshift/release. "
+        Description: "Access the local copy of the openshift/release repository. "
             + "Actions: get_path (returns local path, clones on first use), pull (update to latest). "
             + "After getting the path, use run_shell to read files (cat, grep, find, etc.).",
         ParameterSchema: s_paramSchema,

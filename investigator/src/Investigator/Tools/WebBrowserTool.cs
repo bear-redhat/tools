@@ -67,7 +67,7 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
 
     public ToolDefinition Definition => new(
         Name: "web_browse",
-        Description: "Browse the web using a real browser. Actions: "
+        Description: "Navigate the web with a full browser. Actions: "
             + "navigate (open a URL), click (click element by number), type (type into an input), "
             + "back (go to previous page), get_text (re-read current page). "
             + "After each action, returns the page text and a numbered list of interactive elements you can click or type into.",
