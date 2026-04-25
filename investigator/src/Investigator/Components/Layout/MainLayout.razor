@@ -1,15 +1,25 @@
 ﻿@inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
+@using Investigator.Models
+@using Investigator.Services
+@inject NavigationManager Nav
+@inject CircuitAuthState CircuitAuth
+@inject AuthSettings AuthSettings
 
 <div class="main-layout">
     <header class="top-bar">
-        <img src="@Assets["little-bear.png"]" alt="Little Bear" class="header-logo" />
-        <h1>Little Bear, the Detective</h1>
+        <div class="header-brand" @onclick="() => _showNewSessionModal = true">
+            <img src="@Assets["little-bear.png"]" alt="Little Bear" class="header-logo" />
+            <h1>Little Bear, the Detective</h1>
+        </div>
         <AuthorizeView>
             <Authorized>
                 <div class="user-info">
-                    <span>@context.User.Identity?.Name</span>
-                    <a href="/logout" class="logout-link">Sign out</a>
+                    <span>@(CircuitAuth.UserName ?? context.User.Identity?.Name)</span>
+                    @if (AuthSettings.Mode == AuthMode.Oidc)
+                    {
+                        <a href="/logout" class="logout-link">Sign out</a>
+                    }
                 </div>
             </Authorized>
         </AuthorizeView>
@@ -18,3 +28,26 @@
         @Body
     </main>
 </div>
+
+@if (_showNewSessionModal)
+{
+    <div class="modal-backdrop" @onclick="() => _showNewSessionModal = false">
+        <div class="modal-card" @onclick:stopPropagation>
+            <h2>Start new session?</h2>
+            <p>The current session will be permanently lost.</p>
+            <div class="modal-actions">
+                <button class="btn-modal-cancel" @onclick="() => _showNewSessionModal = false">Cancel</button>
+                <button class="btn-modal-confirm" @onclick="StartNewSession">New Session</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _showNewSessionModal;
+
+    private void StartNewSession()
+    {
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+}

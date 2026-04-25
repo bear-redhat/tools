@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Investigator.Tools;
 
-public sealed class OcExecutor : IInvestigatorTool
+public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
 {
     private static readonly JsonElement s_paramSchema = JsonDocument.Parse("""
     {
@@ -114,6 +114,15 @@ public sealed class OcExecutor : IInvestigatorTool
         _clusters.Where(c => !_unavailableClusters.Contains(c.Name)).Select(c => c.Name).ToList();
 
     public IReadOnlyList<string> ListAllClusters() => _clusters.Select(c => c.Name).ToList();
+
+    public string? GetSystemPromptSection()
+    {
+        var available = ListClusters();
+        var list = available.Count > 0
+            ? string.Join(", ", available)
+            : "(no clusters configured)";
+        return $"Available clusters: {list}";
+    }
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {

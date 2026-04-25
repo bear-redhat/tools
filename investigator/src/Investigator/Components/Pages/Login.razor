@@ -45,7 +45,7 @@
         if (!string.IsNullOrEmpty(expected) && _token == expected)
         {
             CircuitAuth.IsAuthenticated = true;
-            CircuitAuth.UserName = "token-user";
+            CircuitAuth.UserName = "Authenticated User";
 
             if (!string.IsNullOrEmpty(ReturnUrl))
             {

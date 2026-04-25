@@ -79,8 +79,7 @@ public sealed class InvestigationRoom
 
     private readonly ILlmClientFactory _llmFactory;
     private readonly ToolRegistry _toolRegistry;
-    private readonly OcExecutor _ocExecutor;
-    private readonly ShellExecutor _shellExecutor;
+    private readonly IReadOnlyList<string> _toolSections;
     private readonly WorkspaceManager _workspaceManager;
     private readonly AgentOptions _agentOptions;
     private readonly ILogger<InvestigationRoom> _logger;
@@ -97,16 +96,13 @@ public sealed class InvestigationRoom
     public InvestigationRoom(
         ILlmClientFactory llmFactory,
         ToolRegistry toolRegistry,
-        OcExecutor ocExecutor,
-        ShellExecutor shellExecutor,
         WorkspaceManager workspaceManager,
         IOptions<AgentOptions> agentOptions,
         ILogger<InvestigationRoom> logger)
     {
         _llmFactory = llmFactory;
         _toolRegistry = toolRegistry;
-        _ocExecutor = ocExecutor;
-        _shellExecutor = shellExecutor;
+        _toolSections = toolRegistry.GetSystemPromptContributions();
         _workspaceManager = workspaceManager;
         _agentOptions = agentOptions.Value;
         _logger = logger;
@@ -116,7 +112,7 @@ public sealed class InvestigationRoom
         _roomToolHandlers = new RoomToolHandlers(_agents, _workspaceManager, _logger, EmitToUi);
         _scoutCoordinator = new ScoutCoordinator(
             _agents, _llmFactory, _toolRegistry, _agentOptions,
-            _shellExecutor.IsPowerShell, _logger,
+            _toolSections, _logger,
             EmitToUi, RunAgentWithRouting, s_concludeSchema);
     }
 
@@ -125,10 +121,6 @@ public sealed class InvestigationRoom
         _workspacePath = workspacePath;
         _ct = ct;
         _scoutCoordinator.WorkspacePath = workspacePath;
-
-        var clusters = _ocExecutor.ListClusters();
-        if (clusters.Count == 0)
-            _logger.LogWarning("No clusters registered; agent will have no clusters to investigate");
 
         var littleBearSlot = new AgentSlot
         {
@@ -145,7 +137,7 @@ public sealed class InvestigationRoom
             Name: "Little Bear",
             Role: "lead detective",
             SystemPrompt: InvestigationPrompts.BuildSystemPrompt(
-                clusters, workspacePath, _shellExecutor.IsPowerShell,
+                _toolSections, workspacePath,
                 _llmFactory.Models, _llmFactory.DefaultProfileName),
             LlmClient: _llmFactory.GetClient(_llmFactory.PrimaryProfileName),
             Tools: BuildLittleBearTools(),

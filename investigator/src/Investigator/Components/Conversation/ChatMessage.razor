@@ -159,7 +159,7 @@
     {
         <div class="message-role">221B Banyan Hollow</div>
         <div class="message-content welcome-content">
-            <pre class="welcome-room">@Item.Content</pre>
+            <pre class="welcome-room">@FormatWelcomeContent(Item.Content)</pre>
         </div>
     }
     else if (Item.Type == ConversationItemType.Error)
@@ -213,5 +213,27 @@
         if (Item.StepId is null) return "";
         var num = Item.StepId.Replace("step-", "");
         return int.TryParse(num, out var n) ? ((char)('a' + (n - 1) % 26)).ToString() : num;
+    }
+
+    private static MarkupString FormatWelcomeContent(string content)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var rune in content.EnumerateRunes())
+        {
+            var ch = System.Net.WebUtility.HtmlEncode(rune.ToString());
+            if (IsEmoji(rune))
+                sb.Append("<span class=\"emoji-cell\">").Append(ch).Append("</span>");
+            else
+                sb.Append(ch);
+        }
+        return new MarkupString(sb.ToString());
+    }
+
+    private static bool IsEmoji(System.Text.Rune rune)
+    {
+        int v = rune.Value;
+        return (v >= 0x2600 && v <= 0x27BF)
+            || (v >= 0x1F300 && v <= 0x1F9FF)
+            || (v >= 0x1FA00 && v <= 0x1FAFF);
     }
 }

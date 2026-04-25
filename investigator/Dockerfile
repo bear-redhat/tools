@@ -10,8 +10,10 @@ RUN dotnet publish Investigator/Investigator.csproj -c Release -o /app
 
 # Download Playwright Chromium browser binary
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN dotnet tool install --global Microsoft.Playwright.CLI && \
-    /root/.dotnet/tools/playwright install chromium
+RUN dotnet exec \
+    --runtimeconfig /app/Investigator.runtimeconfig.json \
+    --depsfile /app/Investigator.deps.json \
+    /app/Microsoft.Playwright.dll install chromium
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app

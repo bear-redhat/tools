@@ -2,8 +2,6 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Investigator.Contracts;
 using Investigator.Models;
-using Investigator.Tools;
-
 namespace Investigator.Services;
 
 internal sealed class ScoutCoordinator
@@ -22,7 +20,7 @@ internal sealed class ScoutCoordinator
     private readonly ILlmClientFactory _llmFactory;
     private readonly ToolRegistry _toolRegistry;
     private readonly AgentOptions _agentOptions;
-    private readonly bool _isPowerShell;
+    private readonly IReadOnlyList<string> _toolSections;
     private readonly ILogger _logger;
     private readonly Func<AgentEvent, ValueTask> _emitToUi;
     private readonly Func<InvestigationRoom.AgentSlot, AgentRunner.Config, CancellationToken, Task> _runAgent;
@@ -38,7 +36,7 @@ internal sealed class ScoutCoordinator
         ILlmClientFactory llmFactory,
         ToolRegistry toolRegistry,
         AgentOptions agentOptions,
-        bool isPowerShell,
+        IReadOnlyList<string> toolSections,
         ILogger logger,
         Func<AgentEvent, ValueTask> emitToUi,
         Func<InvestigationRoom.AgentSlot, AgentRunner.Config, CancellationToken, Task> runAgent,
@@ -48,7 +46,7 @@ internal sealed class ScoutCoordinator
         _llmFactory = llmFactory;
         _toolRegistry = toolRegistry;
         _agentOptions = agentOptions;
-        _isPowerShell = isPowerShell;
+        _toolSections = toolSections;
         _logger = logger;
         _emitToUi = emitToUi;
         _runAgent = runAgent;
@@ -98,7 +96,7 @@ internal sealed class ScoutCoordinator
             Id: scoutSlot.Id,
             Name: agentName,
             Role: role,
-            SystemPrompt: InvestigationPrompts.BuildScoutSystemPrompt(agentName, role, task, WorkspacePath, _isPowerShell),
+            SystemPrompt: InvestigationPrompts.BuildScoutSystemPrompt(agentName, role, task, WorkspacePath, _toolSections),
             LlmClient: subClient,
             Tools: BuildScoutTools(),
             InitialMessages: [new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(task) }],

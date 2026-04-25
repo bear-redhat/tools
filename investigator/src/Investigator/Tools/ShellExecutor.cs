@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Investigator.Tools;
 
-public sealed class ShellExecutor : IInvestigatorTool
+public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
 {
     private readonly string _shellPath;
     private readonly bool _isPowerShell;
@@ -15,6 +15,25 @@ public sealed class ShellExecutor : IInvestigatorTool
     private readonly ToolDefinition _definition;
 
     public bool IsPowerShell => _isPowerShell;
+
+    public string? GetSystemPromptSection()
+    {
+        if (_isPowerShell)
+            return """
+                SHELL ENVIRONMENT:
+                Commands via run_shell execute in PowerShell on Windows. Do NOT use bash/Linux syntax:
+                - No heredocs (<< 'EOF'), no 2>/dev/null, no $(...) subshells, no single-quote escaping rules from bash.
+                - No Linux coreutils: 'find -type f', 'grep -r', 'base64 -d', 'sort', 'xargs', 'wc', 'head', 'tail' will fail or behave differently.
+                - Use PowerShell cmdlets: Get-ChildItem (instead of find), Select-String (instead of grep), Get-Content (instead of cat), [Convert]::FromBase64String (instead of base64 -d).
+                - For complex logic, prefer python -c one-liners or write a short .py script.
+                - When piping, use PowerShell pipeline syntax: Get-Content file.txt | Select-String "pattern"
+                """;
+
+        return """
+            SHELL ENVIRONMENT:
+            Commands via run_shell execute in bash on Linux. Standard coreutils are available (grep, awk, sed, jq, curl, openssl, python3, etc.).
+            """;
+    }
 
     public ShellExecutor(IOptions<ShellOptions> options)
     {

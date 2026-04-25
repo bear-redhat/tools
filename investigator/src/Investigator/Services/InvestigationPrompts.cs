@@ -6,15 +6,14 @@ namespace Investigator.Services;
 internal static class InvestigationPrompts
 {
     internal static string BuildSystemPrompt(
-        IReadOnlyList<string> clusters,
+        IReadOnlyList<string> toolSections,
         string workspacePath,
-        bool isPowerShell,
         IReadOnlyDictionary<string, ModelOptions> models,
         string defaultProfileName)
     {
-        var clusterList = clusters.Count > 0
-            ? string.Join(", ", clusters)
-            : "(no clusters configured)";
+        var toolContext = toolSections.Count > 0
+            ? string.Join("\n\n", toolSections)
+            : "";
 
         return $$"""
             You are Little Bear, the Detective -- the world's foremost expert in OpenShift, Hive, HyperShift, and Prow. You have been hired by the DPTP (Developer Productivity and Testing Platform) team at Red Hat, the team that builds and maintains the entire CI/CD testing infrastructure for OpenShift. Your job is to investigate crimes in their infrastructure: failed ProwJobs, broken build farm clusters, misbehaving CI operators, flaky tests, quota exhaustion, certificate expiry, and any other mysteries that arise in the sprawling multi-cluster test platform.
@@ -23,14 +22,12 @@ internal static class InvestigationPrompts
 
             When you present your findings, you tell the story of the investigation itself: what you looked at, what you expected to see, what you actually found, and how each discovery narrowed the possibilities until only the truth remained. As Holmes put it: "When you have eliminated the impossible, whatever remains, however improbable, must be the truth."
 
-            Available clusters: {{clusterList}}
+            {{toolContext}}
 
             WORKSPACE:
             Your working directory is: {{workspacePath}}
             All run_shell commands execute in this directory. Tool output files are saved to tool_outputs/ within it.
             Do NOT change directory (cd) -- always use absolute paths or paths relative to the workspace.
-
-            {{BuildShellEnvironmentSection(isPowerShell)}}
 
             INVESTIGATION METHOD:
             1. Begin by absorbing the problem. Understand what the Client is telling you, what they've already tried, and what they suspect. Then form your own theory.
@@ -81,8 +78,12 @@ internal static class InvestigationPrompts
     internal static string BuildScoutSystemPrompt(
         string name, string role, string task,
         string workspacePath,
-        bool isPowerShell)
+        IReadOnlyList<string> toolSections)
     {
+        var toolContext = toolSections.Count > 0
+            ? string.Join("\n\n", toolSections)
+            : "";
+
         return $$"""
             You are {{name}}, one of Little Bear's Canopy Scouts -- trusted operatives sent to handle specific aspects of an investigation.
 
@@ -92,7 +93,7 @@ internal static class InvestigationPrompts
             WORKSPACE: {{workspacePath}}
             Tool output files are in tool_outputs/ within the workspace. Do NOT change directory.
 
-            {{BuildShellEnvironmentSection(isPowerShell)}}
+            {{toolContext}}
 
             Work independently using the available tools. When you have completed your assignment, call the conclude tool with your findings -- this delivers your report to Little Bear.
 
@@ -131,24 +132,4 @@ internal static class InvestigationPrompts
         return sb.ToString();
     }
 
-    internal static string BuildShellEnvironmentSection(bool isPowerShell)
-    {
-        if (isPowerShell)
-        {
-            return """
-                SHELL ENVIRONMENT:
-                Commands via run_shell execute in PowerShell on Windows. Do NOT use bash/Linux syntax:
-                - No heredocs (<< 'EOF'), no 2>/dev/null, no $(...) subshells, no single-quote escaping rules from bash.
-                - No Linux coreutils: 'find -type f', 'grep -r', 'base64 -d', 'sort', 'xargs', 'wc', 'head', 'tail' will fail or behave differently.
-                - Use PowerShell cmdlets: Get-ChildItem (instead of find), Select-String (instead of grep), Get-Content (instead of cat), [Convert]::FromBase64String (instead of base64 -d).
-                - For complex logic, prefer python -c one-liners or write a short .py script.
-                - When piping, use PowerShell pipeline syntax: Get-Content file.txt | Select-String "pattern"
-                """;
-        }
-
-        return """
-            SHELL ENVIRONMENT:
-            Commands via run_shell execute in bash on Linux. Standard coreutils are available (grep, awk, sed, jq, curl, openssl, python3, etc.).
-            """;
-    }
 }

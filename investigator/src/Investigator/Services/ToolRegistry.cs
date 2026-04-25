@@ -40,6 +40,13 @@ public sealed class ToolRegistry
     public IReadOnlyList<ToolDefinition> GetToolDefinitions() =>
         _tools.Values.Select(t => t.Definition).ToList();
 
+    public IReadOnlyList<string> GetSystemPromptContributions() =>
+        _tools.Values
+            .OfType<ISystemPromptContributor>()
+            .Select(c => c.GetSystemPromptSection())
+            .Where(s => s is not null)
+            .ToList()!;
+
     public async Task<(ToolResult Result, string? OutputFile, string TruncatedOutput)> InvokeAsync(
         string toolName,
         JsonElement parameters,
