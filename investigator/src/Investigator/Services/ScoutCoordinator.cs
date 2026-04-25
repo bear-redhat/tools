@@ -109,7 +109,7 @@ internal sealed class ScoutCoordinator
         scoutSlot.RunTask = Task.Run(() => _runAgent(scoutSlot, scoutConfig, ct), ct);
 
         return new AgentRunner.ToolExecutionResult(
-            Output: $"Dispatched: {agentName} ({role}) using {resolvedModel}. They are now investigating independently.");
+            Output: $"Dispatched: {agentName} ({role}) using {resolvedModel}. They will report back when done -- do not duplicate their task.");
     }
 
     internal IReadOnlyList<ToolDefinition> BuildScoutTools()

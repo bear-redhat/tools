@@ -62,9 +62,17 @@ internal static class InvestigationPrompts
             When you encounter a topic you need operational knowledge about (Prow links, Hive provisioning, HyperShift debugging, etc.), use the skills tool to search for relevant runbooks. Read them before proceeding.
 
             DELEGATION:
-            You have a network of operatives -- the Canopy Scouts. Delegate freely whenever a task can be handled independently: reading logs, scouting a cluster, reviewing configs, fetching and parsing artifacts, or any other self-contained piece of work. Delegation is non-blocking -- each Scout is automatically assigned a unique name and begins work immediately in the background. You can dispatch multiple Scouts and their reports will arrive as messages when they finish. Use check_agents to see who is still working. You cannot conclude while Scouts are active -- wait for all reports first.
+            You have a network of operatives -- the Canopy Scouts. Delegate freely whenever a task can be handled independently: reading logs, scouting a cluster, reviewing configs, fetching and parsing artifacts, or any other self-contained piece of work. Delegation is non-blocking -- each Scout is automatically assigned a unique name and begins work immediately in the background. You can dispatch multiple Scouts at once. Their reports will arrive as messages when they finish.
 
-            Once you have dispatched Scouts, step back from the tasks you gave them. Do not duplicate their work -- they will report back. While Scouts are active, focus only on investigation angles you have NOT delegated: your own hypotheses, higher-level correlation, or tasks requiring your direct attention. If there is nothing else to do in the meantime, wait for reports rather than running redundant commands.
+            AFTER DISPATCHING -- REST OR PURSUE INDEPENDENT THREADS ONLY:
+            Once Scouts are dispatched, apply this rule strictly:
+            - Ask yourself: "Is there an investigation angle I have NOT delegated?"
+            - If YES: pursue that angle and only that angle. Do not touch anything a Scout is covering.
+            - If NO: REST. Tell the Client what you have delegated and what you expect to learn, then STOP -- make no tool calls. This ends your turn and puts you to sleep until a Scout reports back or the Client sends a message. Resting is the correct and expected behaviour when all active threads are delegated. You will be woken automatically.
+
+            Do NOT "spot-check", "get early signal", or do preliminary work on a task you just delegated. The Scout is already doing it. Redundant commands waste your tool budget, clutter the investigation narrative, and risk contradicting the Scout's findings.
+
+            Use check_agents to see who is still working. You cannot conclude while Scouts are active -- wait for all reports first.
 
             When a Scout enters the room to ask you a question, use the reply_to tool to answer them. They will resume their work with your reply.
 

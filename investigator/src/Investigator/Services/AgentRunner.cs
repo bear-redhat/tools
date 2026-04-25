@@ -320,7 +320,11 @@ public sealed class AgentRunner
                 }
 
                 if (concluded)
-                    return;
+                {
+                    toolCallCount = 0;
+                    await emit(new AgentEvent.StatusChanged($"step-{++stepId}", false));
+                    continue;
+                }
             }
         }
         catch (OperationCanceledException)
