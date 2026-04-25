@@ -18,8 +18,11 @@ public static class AnthropicRequestBuilder
         IReadOnlyList<ToolDefinition> tools,
         string? systemPrompt,
         string anthropicVersion,
-        bool stream)
+        bool stream,
+        int? thinkingBudgetOverride = null)
     {
+        var thinkingBudget = thinkingBudgetOverride ?? profile.ThinkingBudget;
+
         var request = new LlmRequest
         {
             AnthropicVersion = anthropicVersion,
@@ -27,7 +30,7 @@ public static class AnthropicRequestBuilder
             System = systemPrompt,
             Messages = messages,
             MaxTokens = profile.MaxTokens,
-            Thinking = new ThinkingConfig { Type = "enabled", BudgetTokens = profile.ThinkingBudget },
+            Thinking = new ThinkingConfig { Type = "enabled", BudgetTokens = thinkingBudget },
             Tools = tools.Select(t => new LlmTool
             {
                 Name = t.Name,

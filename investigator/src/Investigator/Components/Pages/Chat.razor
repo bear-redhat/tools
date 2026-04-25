@@ -29,7 +29,7 @@
                 <ChatMessage Item="item" OnStepClick="ScrollToLogEntry" />
             }
         </div>
-        @if (_isOwner)
+        @if (_isOwner && _selectedMemberId is "all" or "user")
         {
             <div class="input-divider" @ref="_inputDividerRef"></div>
             <ChatInput OnSend="OnSendAsync" OnCancel="OnCancel"

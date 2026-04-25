@@ -28,7 +28,8 @@ public sealed class VertexAiClient : ILlmClient
         List<LlmMessage> messages,
         IReadOnlyList<ToolDefinition> tools,
         string? systemPrompt,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct,
+        int? thinkingBudgetOverride = null)
     {
         var region = _profile.Region;
         var project = _profile.ProjectId;
@@ -53,7 +54,8 @@ public sealed class VertexAiClient : ILlmClient
 
         var json = AnthropicRequestBuilder.BuildRequestJson(
             _profile, messages, tools, systemPrompt,
-            anthropicVersion: "vertex-2023-10-16", stream: true);
+            anthropicVersion: "vertex-2023-10-16", stream: true,
+            thinkingBudgetOverride: thinkingBudgetOverride);
 
         var httpReq = new HttpRequestMessage(HttpMethod.Post, url)
         {

@@ -103,7 +103,8 @@ internal sealed class ScoutCoordinator
             MaxToolCalls: _agentOptions.SubAgentMaxToolCalls,
             MaxRetries: _agentOptions.LlmRetries,
             WorkspacePath: WorkspacePath,
-            CompactionMaxTokens: null);
+            CompactionMaxTokens: null,
+            ThinkingBudget: _llmFactory.GetModelOptions(resolvedModel).ThinkingBudget);
 
         await scoutSlot.Inbox.Writer.WriteAsync(new RoomMessage("Little Bear", task), ct);
         scoutSlot.RunTask = Task.Run(() => _runAgent(scoutSlot, scoutConfig, ct), ct);

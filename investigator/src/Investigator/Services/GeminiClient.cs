@@ -28,7 +28,8 @@ public sealed class GeminiClient : ILlmClient
         List<LlmMessage> messages,
         IReadOnlyList<ToolDefinition> tools,
         string? systemPrompt,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct,
+        int? thinkingBudgetOverride = null)
     {
         var region = _profile.Region;
         var project = _profile.ProjectId;
@@ -51,7 +52,7 @@ public sealed class GeminiClient : ILlmClient
         _logger.LogDebug("Calling Gemini: region={Region}, project={Project}, model={Model}, profile={Profile}, messages={Count}",
             region, project, model, _profileName, messages.Count);
 
-        var geminiRequest = BuildGeminiRequest(messages, tools, systemPrompt);
+        var geminiRequest = BuildGeminiRequest(messages, tools, systemPrompt, thinkingBudgetOverride);
         var json = JsonSerializer.Serialize(geminiRequest, s_jsonOptions);
 
         var httpReq = new HttpRequestMessage(HttpMethod.Post, url)
@@ -87,7 +88,8 @@ public sealed class GeminiClient : ILlmClient
     private JsonElement BuildGeminiRequest(
         List<LlmMessage> messages,
         IReadOnlyList<ToolDefinition> tools,
-        string? systemPrompt)
+        string? systemPrompt,
+        int? thinkingBudgetOverride)
     {
         var request = new Dictionary<string, object>();
 
@@ -123,9 +125,10 @@ public sealed class GeminiClient : ILlmClient
         {
             ["maxOutputTokens"] = _profile.MaxTokens,
         };
-        if (_profile.ThinkingBudget > 0)
+        var effectiveThinkingBudget = thinkingBudgetOverride ?? _profile.ThinkingBudget;
+        if (effectiveThinkingBudget > 0)
         {
-            genConfig["thinkingConfig"] = new { thinkingBudget = _profile.ThinkingBudget };
+            genConfig["thinkingConfig"] = new { thinkingBudget = effectiveThinkingBudget };
         }
         request["generationConfig"] = genConfig;
 

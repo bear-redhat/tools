@@ -15,6 +15,7 @@ public sealed class InvestigationRoom
     private const string CheckAgentsToolName = "check_agents";
     private const string PresentFindingToolName = "present_finding";
     private const string ReplyToToolName = "reply_to";
+    private const string DismissScoutToolName = "dismiss_scout";
 
     private static readonly JsonElement s_emptySchema = JsonDocument.Parse("""
     {
@@ -43,6 +44,16 @@ public sealed class InvestigationRoom
             "message": { "type": "string", "description": "Your answer" }
         },
         "required": ["agent_name", "message"]
+    }
+    """).RootElement.Clone();
+
+    private static readonly JsonElement s_dismissScoutSchema = JsonDocument.Parse("""
+    {
+        "type": "object",
+        "properties": {
+            "agent_name": { "type": "string", "description": "Name of the Scout to dismiss" }
+        },
+        "required": ["agent_name"]
     }
     """).RootElement.Clone();
 
@@ -145,7 +156,8 @@ public sealed class InvestigationRoom
             MaxToolCalls: _agentOptions.MaxToolCalls,
             MaxRetries: _agentOptions.LlmRetries,
             WorkspacePath: workspacePath,
-            CompactionMaxTokens: primaryOptions.MaxTokens * 4);
+            CompactionMaxTokens: primaryOptions.MaxTokens * 4,
+            ThinkingBudget: primaryOptions.ThinkingBudget);
 
         littleBearSlot.RunTask = RunAgentWithRouting(littleBearSlot, runnerConfig, ct);
 
@@ -202,15 +214,18 @@ public sealed class InvestigationRoom
         {
             if (slot.Id != "little-bear")
             {
-                _agents.TryRemove(config.Name, out _);
+                var removed = _agents.TryRemove(config.Name, out _);
 
-                var remainingScouts = _agents.Where(kv => kv.Value.Id != "little-bear").ToList();
-                if (remainingScouts.Count == 0 && _agents.TryGetValue("Little Bear", out var lb))
+                if (removed)
                 {
-                    _logger.LogInformation("Last scout {Name} finished, nudging Little Bear to conclude", config.Name);
-                    await lb.Inbox.Writer.WriteAsync(
-                        new RoomMessage("system", "All scouts have reported back. Conclude now with the evidence you have."),
-                        CancellationToken.None);
+                    var remainingScouts = _agents.Where(kv => kv.Value.Id != "little-bear").ToList();
+                    if (remainingScouts.Count == 0 && _agents.TryGetValue("Little Bear", out var lb))
+                    {
+                        _logger.LogInformation("Last scout {Name} finished, nudging Little Bear to conclude", config.Name);
+                        await lb.Inbox.Writer.WriteAsync(
+                            new RoomMessage("system", "All scouts have reported back. Conclude now with the evidence you have."),
+                            CancellationToken.None);
+                    }
                 }
             }
         }
@@ -234,6 +249,9 @@ public sealed class InvestigationRoom
 
         if (toolName == ReplyToToolName)
             return await _roomToolHandlers.HandleReplyTo(callerSlot, input, ct);
+
+        if (toolName == DismissScoutToolName)
+            return _roomToolHandlers.HandleDismissScout(input);
 
         return await HandleRegistryTool(callerConfig, toolName, input, ct);
     }
@@ -369,6 +387,12 @@ public sealed class InvestigationRoom
             ParameterSchema: s_replyToSchema,
             DefaultTimeout: TimeSpan.Zero));
 
+        tools.Add(new ToolDefinition(
+            Name: DismissScoutToolName,
+            Description: "Permanently dismiss a Scout. Use after receiving their report if no follow-up is needed, or to abort a Scout that is no longer useful. The Scout exits and cannot be contacted again.",
+            ParameterSchema: s_dismissScoutSchema,
+            DefaultTimeout: TimeSpan.Zero));
+
         return tools;
     }
 
@@ -416,5 +440,12 @@ public sealed class InvestigationRoom
         public required string Role { get; init; }
         public Channel<RoomMessage> Inbox { get; } = Channel.CreateUnbounded<RoomMessage>();
         public Task? RunTask { get; set; }
+
+        private volatile bool _concluded;
+        public bool Concluded
+        {
+            get => _concluded;
+            set => _concluded = value;
+        }
     }
 }

@@ -36,7 +36,7 @@ internal sealed class RoomToolHandlers
         {
             var runningScouts = _agents
                 .Where(kv => kv.Value.Id != "little-bear")
-                .Where(kv => kv.Value.RunTask is null || !kv.Value.RunTask.IsCompleted)
+                .Where(kv => !kv.Value.Concluded)
                 .ToList();
             if (runningScouts.Count > 0)
             {
@@ -68,6 +68,8 @@ internal sealed class RoomToolHandlers
 
         _logger.LogInformation("Scout {Name} reporting back with {EvidenceSteps} evidence steps",
             callerConfig.Name, evidence?.Steps.Count ?? 0);
+
+        callerSlot.Concluded = true;
 
         await _workspaceManager.AppendTranscriptAsync(workspacePath, new
         {
@@ -107,6 +109,7 @@ internal sealed class RoomToolHandlers
 
         if (_agents.TryGetValue(targetName, out var targetSlot))
         {
+            targetSlot.Concluded = false;
             await targetSlot.Inbox.Writer.WriteAsync(new RoomMessage("Little Bear", replyMsg), ct);
             if (!string.IsNullOrWhiteSpace(replyMsg))
                 await _emitToUi(new AgentEvent.Message($"reply-{callerSlot.Id}", replyMsg));
@@ -114,6 +117,22 @@ internal sealed class RoomToolHandlers
         }
 
         return new AgentRunner.ToolExecutionResult(Output: $"Error: no Scout named '{targetName}' is waiting for a reply.");
+    }
+
+    internal AgentRunner.ToolExecutionResult HandleDismissScout(JsonElement input)
+    {
+        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
+
+        if (!_agents.TryRemove(name, out var slot) || slot.Id == "little-bear")
+        {
+            if (slot is not null && slot.Id == "little-bear")
+                _agents[name] = slot;
+            return new AgentRunner.ToolExecutionResult($"No active Scout named '{name}'.");
+        }
+
+        slot.Inbox.Writer.TryComplete();
+        _logger.LogInformation("Scout {Name} dismissed by Little Bear", name);
+        return new AgentRunner.ToolExecutionResult($"Scout {name} dismissed.");
     }
 
     internal string BuildCheckAgentsResponse()
@@ -126,13 +145,14 @@ internal sealed class RoomToolHandlers
         sb.AppendLine("Canopy Scouts:");
         foreach (var (name, slot) in scouts)
         {
-            var status = slot.RunTask switch
-            {
-                null => "working",
-                { IsCompletedSuccessfully: true } => "completed",
-                { IsFaulted: true } => "failed",
-                _ => "working",
-            };
+            var status = slot.Concluded ? "completed"
+                : slot.RunTask switch
+                {
+                    null => "working",
+                    { IsCompletedSuccessfully: true } => "completed",
+                    { IsFaulted: true } => "failed",
+                    _ => "working",
+                };
             sb.AppendLine($"- {name} ({slot.Role}): {status}");
         }
         return sb.ToString();

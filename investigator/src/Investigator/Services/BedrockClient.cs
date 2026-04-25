@@ -36,7 +36,8 @@ public sealed class BedrockClient : ILlmClient
         List<LlmMessage> messages,
         IReadOnlyList<ToolDefinition> tools,
         string? systemPrompt,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct,
+        int? thinkingBudgetOverride = null)
     {
         var region = _profile.Region;
         var model = _profile.Model;
@@ -50,7 +51,8 @@ public sealed class BedrockClient : ILlmClient
 
         var json = AnthropicRequestBuilder.BuildRequestJson(
             _profile, messages, tools, systemPrompt,
-            anthropicVersion: "bedrock-2023-05-31", stream: false);
+            anthropicVersion: "bedrock-2023-05-31", stream: false,
+            thinkingBudgetOverride: thinkingBudgetOverride);
 
         _logger.LogDebug("Calling Bedrock: region={Region}, model={Model}, profile={Profile}, messages={Count}, auth={AuthType}",
             region, model, _profileName, messages.Count, !string.IsNullOrEmpty(bearerToken) ? "bearer" : "sigv4");

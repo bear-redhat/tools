@@ -52,15 +52,22 @@ internal sealed class StreamEventProcessor
                     if (completed.Type == "tool_use" && _jsonAccumulators.TryGetValue(stopIdx, out var jsonAcc))
                     {
                         var rawJson = jsonAcc.ToString();
-                        try
+                        if (string.IsNullOrEmpty(rawJson))
                         {
-                            completed.Input = JsonDocument.Parse(rawJson).RootElement.Clone();
+                            completed.Input ??= JsonDocument.Parse("{}").RootElement.Clone();
                         }
-                        catch (JsonException ex)
+                        else
                         {
-                            _logger.LogWarning(ex, "Failed to parse tool input JSON at index {Index}, marking as truncated. Raw length: {RawLength}", stopIdx, rawJson.Length);
-                            completed.Truncated = true;
-                            completed.Input = null;
+                            try
+                            {
+                                completed.Input = JsonDocument.Parse(rawJson).RootElement.Clone();
+                            }
+                            catch (JsonException ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to parse tool input JSON at index {Index}, marking as truncated. Raw length: {RawLength}", stopIdx, rawJson.Length);
+                                completed.Truncated = true;
+                                completed.Input = null;
+                            }
                         }
                     }
                     yield return completed;

@@ -18,7 +18,8 @@ public sealed class AgentRunner
         int MaxToolCalls,
         int MaxRetries,
         string WorkspacePath,
-        int? CompactionMaxTokens);
+        int? CompactionMaxTokens,
+        int ThinkingBudget = 10000);
 
     public record ToolExecutionResult(
         string Output,
@@ -63,6 +64,7 @@ public sealed class AgentRunner
                 var concluded = false;
                 var truncationRetries = 0;
                 var consecutiveTruncationFallthroughs = 0;
+                int? thinkingBudgetOverride = null;
                 while (!concluded && !ct.IsCancellationRequested)
                 {
                     currentStepId = $"step-{++stepId}";
@@ -77,7 +79,7 @@ public sealed class AgentRunner
                     string? llmError = null;
                     try
                     {
-                        contentBlocks = await CallLlmWithRetry(config, messages, ct);
+                        contentBlocks = await CallLlmWithRetry(config, messages, ct, thinkingBudgetOverride);
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
                     {
@@ -126,15 +128,97 @@ public sealed class AgentRunner
                     if (thinkingParts.Count > 0)
                         await emit(new AgentEvent.Thinking(currentStepId, string.Join("\n", thinkingParts)));
 
-                    // Case 0: output was truncated -- tool_use blocks lost their JSON input.
-                    // Strategy: save the text the model already wrote as the assistant turn,
-                    // then ask it to continue with just the tool calls (no new text).
+                    // Case 0: output was truncated -- some tool_use blocks lost their JSON input.
+                    // Strategy: execute the successful tools, save them properly, and provide
+                    // a synthetic error result for truncated ones so the model re-emits them.
                     if (truncatedTools.Count > 0)
                     {
                         var truncatedNames = string.Join(", ", truncatedTools.Select(t => t.Name ?? "unknown"));
-                        _logger.LogWarning("Agent {Name} response truncated at output token limit, lost tool calls: {Tools}",
+                        _logger.LogWarning("Agent {Name} response truncated, lost tool calls: {Tools}",
                             config.Name, truncatedNames);
 
+                        var successfulTools = toolUses.Where(t => !t.Truncated).ToList();
+
+                        if (successfulTools.Count > 0)
+                        {
+                            // Execute the successful tools and ask the model to re-emit the truncated ones.
+                            if (textParts.Count > 0)
+                                await emit(new AgentEvent.Message(currentStepId, string.Join("\n", textParts), IsIntermediate: true));
+
+                            var assistantContent = new List<object>();
+                            foreach (var tp in textParts)
+                                assistantContent.Add(new { type = "text", text = tp });
+
+                            var placeholderInput = JsonDocument.Parse("{}").RootElement.Clone();
+                            foreach (var tu in toolUses)
+                                assistantContent.Add(new
+                                {
+                                    type = "tool_use",
+                                    id = tu.Id,
+                                    name = tu.Name,
+                                    input = tu.Truncated ? (object)placeholderInput : (object)(tu.Input ?? placeholderInput),
+                                });
+
+                            messages.Add(new LlmMessage
+                            {
+                                Role = "assistant",
+                                Content = JsonSerializer.SerializeToElement(assistantContent),
+                            });
+
+                            var toolResults = new List<object>();
+                            var bufferedInbox = new List<LlmMessage>();
+
+                            foreach (var tu in toolUses)
+                            {
+                                if (tu.Truncated)
+                                {
+                                    toolResults.Add(new
+                                    {
+                                        type = "tool_result",
+                                        tool_use_id = tu.Id,
+                                        content = "[system] Your tool call was cut off before the input was complete. Call this tool again.",
+                                    });
+                                    continue;
+                                }
+
+                                toolCallCount++;
+                                var toolStepId = $"step-{++stepId}";
+                                var toolName = tu.Name ?? "unknown";
+                                var toolInput = tu.Input ?? default;
+                                var displayCmd = FormatDisplayCommand(toolName, toolInput);
+
+                                _logger.LogInformation("Agent {Agent} executing tool {Tool} at step {Step}: {Command}",
+                                    config.Name, toolName, toolStepId, displayCmd);
+
+                                await emit(new AgentEvent.ToolCall(toolStepId, toolName, displayCmd, toolInput));
+                                var result = await executeTool(toolName, toolInput, ct);
+                                await emit(new AgentEvent.ToolResult(toolStepId, toolName, result.Output, result.OutputFile, result.ExitCode, result.TimedOut));
+
+                                toolResults.Add(new
+                                {
+                                    type = "tool_result",
+                                    tool_use_id = tu.Id,
+                                    content = result.Output,
+                                });
+
+                                while (inbox.TryRead(out var msg))
+                                    bufferedInbox.Add(FormatInboxMessage(msg));
+                            }
+
+                            messages.Add(new LlmMessage
+                            {
+                                Role = "user",
+                                Content = JsonSerializer.SerializeToElement(toolResults),
+                            });
+                            messages.AddRange(bufferedInbox);
+
+                            truncationRetries++;
+                            consecutiveTruncationFallthroughs = 0;
+                            thinkingBudgetOverride = ReducedThinkingBudget(config);
+                            continue;
+                        }
+
+                        // No successful tools to preserve -- retry with text-only save.
                         truncationRetries++;
                         if (truncationRetries <= MaxTruncationRetries)
                         {
@@ -156,6 +240,7 @@ public sealed class AgentRunner
                                     $"Your text above is saved. Now continue with ONLY the tool call{(truncatedTools.Count > 1 ? "s" : "")} " +
                                     $"({truncatedNames}) — emit the tool_use block{(truncatedTools.Count > 1 ? "s" : "")} with no additional text."),
                             });
+                            thinkingBudgetOverride = ReducedThinkingBudget(config);
                             continue;
                         }
 
@@ -173,6 +258,7 @@ public sealed class AgentRunner
                             CompactMessagesIfNeeded(messages, 0, config.WorkspacePath);
                             truncationRetries = 0;
                             consecutiveTruncationFallthroughs = 0;
+                            thinkingBudgetOverride = null;
                             continue;
                         }
 
@@ -190,6 +276,7 @@ public sealed class AgentRunner
                     {
                         truncationRetries = 0;
                         consecutiveTruncationFallthroughs = 0;
+                        thinkingBudgetOverride = null;
                     }
 
                     // Case 1: conclude
@@ -335,7 +422,9 @@ public sealed class AgentRunner
         _logger.LogInformation("Agent {Name} loop exited", config.Name);
     }
 
-    private async Task<List<ContentBlock>> CallLlmWithRetry(Config config, List<LlmMessage> messages, CancellationToken ct)
+    private async Task<List<ContentBlock>> CallLlmWithRetry(
+        Config config, List<LlmMessage> messages, CancellationToken ct,
+        int? thinkingBudgetOverride = null)
     {
         Exception? lastEx = null;
 
@@ -344,7 +433,8 @@ public sealed class AgentRunner
             try
             {
                 var blocks = new List<ContentBlock>();
-                await foreach (var block in config.LlmClient.StreamMessageAsync(messages, config.Tools, config.SystemPrompt, ct))
+                await foreach (var block in config.LlmClient.StreamMessageAsync(
+                    messages, config.Tools, config.SystemPrompt, ct, thinkingBudgetOverride))
                     blocks.Add(block);
 
                 _logger.LogDebug("Agent {Name} LLM returned {Count} content blocks on attempt {Attempt}",
@@ -363,6 +453,9 @@ public sealed class AgentRunner
 
         throw lastEx ?? new InvalidOperationException("LLM call failed with no exception captured");
     }
+
+    private static int ReducedThinkingBudget(Config config) =>
+        Math.Max(1024, config.ThinkingBudget / 4);
 
     private static bool IsTransientHttpError(HttpRequestException ex)
     {
@@ -524,6 +617,7 @@ public sealed class AgentRunner
             "conclude" => Truncate($"conclude: {Prop(input, "summary")}", 80),
             "present_finding" => $"finding: {Prop(input, "title")}",
             "reply_to" => $"reply_to {Prop(input, "agent_name")}",
+            "dismiss_scout" => $"dismiss_scout {Prop(input, "agent_name")}",
             _ => FormatGenericTool(toolName, input),
         };
     }

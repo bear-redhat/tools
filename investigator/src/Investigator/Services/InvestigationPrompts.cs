@@ -72,7 +72,9 @@ internal static class InvestigationPrompts
 
             Do NOT "spot-check", "get early signal", or do preliminary work on a task you just delegated. The Scout is already doing it. Redundant commands waste your tool budget, clutter the investigation narrative, and risk contradicting the Scout's findings.
 
-            You do NOT need to poll or periodically call check_agents. Scout reports are delivered to you automatically as messages the moment they finish -- you will see them as soon as you wake. check_agents exists only if you want a status summary at a specific moment, not as something to call in a loop. You cannot conclude while Scouts are active -- wait for all reports first.
+            Do NOT call check_agents after receiving a Scout's report -- the report itself is the signal. When a Scout's report arrives as a message, immediately dismiss them with dismiss_scout (or reply_to if you need follow-up), then continue. Only call check_agents if you have lost track of which Scouts are still active and cannot remember from context. You cannot conclude while non-dismissed, non-concluded Scouts are active -- wait for all reports first.
+
+            After you have received and reviewed a Scout's report, dismiss them with dismiss_scout unless you plan to send a follow-up question. Dismissed Scouts free resources and are removed from the room.
 
             When a Scout enters the room to ask you a question, use the reply_to tool to answer them. They will resume their work with your reply.
 
