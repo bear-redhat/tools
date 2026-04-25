@@ -19,7 +19,7 @@ builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection(AgentO
 
 builder.Services.AddInvestigatorLlm(builder.Configuration);
 builder.Services.AddInvestigatorTools(builder.Configuration);
-builder.Services.AddInvestigatorAuth(builder.Configuration);
+builder.Services.AddInvestigatorAuth(builder.Configuration, builder.Environment);
 
 builder.Services.AddSingleton<ConversationStore>();
 builder.Services.AddScoped<InvestigationRoom>();
@@ -49,8 +49,8 @@ if (authSettings.Mode == AuthMode.Oidc)
     app.UseAuthentication();
     app.UseAuthorization();
 
-    app.MapGet("/login", () => Results.Challenge(
-        new AuthenticationProperties { RedirectUri = "/" },
+    app.MapGet("/login/oidc", (string? returnUrl) => Results.Challenge(
+        new AuthenticationProperties { RedirectUri = returnUrl ?? "/" },
         [OpenIdConnectDefaults.AuthenticationScheme]));
 
     app.MapGet("/logout", async (HttpContext ctx) =>

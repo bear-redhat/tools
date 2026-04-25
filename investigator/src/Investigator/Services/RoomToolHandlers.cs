@@ -161,7 +161,7 @@ internal sealed class RoomToolHandlers
                     Cluster: item.TryGetProperty("cluster", out var c) ? c.GetString() : null,
                     Command: item.TryGetProperty("command", out var cmd) ? cmd.GetString() ?? "" : ""));
             }
-            evidence = new EvidenceChain(steps);
+            evidence = new EvidenceChain(steps.OrderBy(s => s.Step).ToList());
         }
 
         FixSuggestion? fix = null;

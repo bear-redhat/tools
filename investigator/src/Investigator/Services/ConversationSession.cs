@@ -26,14 +26,14 @@ public sealed class ConversationSession
     private const string WelcomeContent =
         """
         ╭────── 221B BANYAN HOLLOW ──────╮
-        │  🌿            🔥           🌿 │
+        │ 🌿            🔥            🌿 │
         │                                │
         │        ╭──────╮ ╭──────╮       │
         │        │  🐻  │ │  👤  │       │
         │        │  🪑  │ │  🪑  │       │
         │        ╰──────╯ ╰──────╯       │
         │                                │
-        │            ☕  🔎  🐾          │
+        │           ☕  🔎  🐾           │
         ╰────────────────────────────────╯
 
         The game is afoot.

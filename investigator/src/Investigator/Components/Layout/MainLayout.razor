@@ -17,7 +17,7 @@
                 @if (CircuitAuth.IsAuthenticated)
                 {
                     <span>@CircuitAuth.UserName</span>
-                    @if (AuthSettings.Mode == AuthMode.Oidc)
+                    @if (CircuitAuth.AuthMethod == AuthMode.Oidc)
                     {
                         <a href="/logout" class="logout-link">Sign out</a>
                     }

@@ -56,14 +56,14 @@ public sealed class InvestigationRoom
                 "items": {
                     "type": "object",
                     "properties": {
-                        "step": { "type": "integer" },
+                        "step": { "type": "integer", "description": "Position in the logical chain (1 = starting point of the reasoning)" },
                         "reasoning": { "type": "string" },
                         "finding": { "type": "string" },
                         "cluster": { "type": "string" },
                         "command": { "type": "string" }
                     }
                 },
-                "description": "Only the commands that form the logical proof of the root cause"
+                "description": "Ordered chain of proof. Each step must logically connect to the next -- forward (observation to cause) or reverse (symptom to origin). Do NOT submit unrelated findings as a flat list."
             },
             "fix_description": { "type": "string" },
             "fix_commands": { "type": "array", "items": { "type": "string" } },

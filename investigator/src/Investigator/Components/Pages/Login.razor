@@ -32,6 +32,26 @@
                 <div class="art-footer">That letter of introduction doesn't check out.</div>
             </div>
         }
+        else if (_oidcRedirecting)
+        {
+            <div class="login-art login-art--success login-art--active">
+                <div class="art-header">221B Banyan Hollow</div>
+                <div class="art-flora">🌿 🏮 🌿</div>
+                <div class="art-bear">🐻</div>
+                <div class="art-magnifier">🕊️</div>
+                <div class="art-footer">A telegram has been dispatched...</div>
+            </div>
+        }
+        else if (_showTokenInput)
+        {
+            <div class="login-art login-art--active">
+                <div class="art-header">221B Banyan Hollow</div>
+                <div class="art-flora">🌿 🏮 🌿</div>
+                <div class="art-bear">🐻</div>
+                <div class="art-magnifier">✉️</div>
+                <div class="art-footer">Let us see this letter of yours...</div>
+            </div>
+        }
         else
         {
             <div class="login-art">
@@ -43,14 +63,27 @@
             </div>
         }
 
-        @if (AuthSettings.Mode == AuthMode.Token)
+        @if (AuthSettings.HasOidc && !_showTokenInput)
         {
-            <form @onsubmit="Submit" @onsubmit:preventDefault>
-                <input type="password" @bind="_token" placeholder="Present your letter of introduction..." class="login-input" autofocus />
-                <button type="submit" class="login-button">🔎 The Game Is Afoot</button>
-            </form>
+            <button class="login-button" @onclick="RedirectToOidc">📜 I Bear a Letter from Abroad</button>
         }
-        else
+
+        @if (AuthSettings.HasToken)
+        {
+            @if (!_showTokenInput)
+            {
+                <button class="login-button" @onclick="() => _showTokenInput = true">✉️ I Carry My Own Letter of Introduction</button>
+            }
+            else
+            {
+                <form @onsubmit="Submit" @onsubmit:preventDefault>
+                    <input type="password" @bind="_token" placeholder="Unseal your letter..." class="login-input" autofocus />
+                    <button type="submit" class="login-button">📜 Present the Letter</button>
+                </form>
+            }
+        }
+
+        @if (AuthSettings.Mode == AuthMode.None)
         {
             <p class="login-hint">🚪 The door to 221B stands open. No letter of introduction required.</p>
         }
@@ -64,6 +97,8 @@
     private string _token = "";
     private bool _error;
     private bool _success;
+    private bool _showTokenInput;
+    private bool _oidcRedirecting;
 
     private async Task Submit()
     {
@@ -72,6 +107,7 @@
         {
             CircuitAuth.IsAuthenticated = true;
             CircuitAuth.UserName = "token-user";
+            CircuitAuth.AuthMethod = AuthMode.Token;
 
             _error = false;
             _success = true;
@@ -92,5 +128,13 @@
         {
             _error = true;
         }
+    }
+
+    private async Task RedirectToOidc()
+    {
+        _oidcRedirecting = true;
+        StateHasChanged();
+        await Task.Delay(600);
+        Nav.NavigateTo($"/login/oidc?returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/")}", forceLoad: true);
     }
 }

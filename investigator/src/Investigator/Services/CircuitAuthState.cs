@@ -10,4 +10,5 @@ public class CircuitAuthState
 {
     public bool IsAuthenticated { get; set; }
     public string? UserName { get; set; }
+    public AuthMode AuthMethod { get; set; }
 }

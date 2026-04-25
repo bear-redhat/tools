@@ -36,17 +36,24 @@ window.initDividerResize = (divider, direction) => {
   let dragging = false;
 
   const applyResize = (clientPos) => {
-    const rect = container.getBoundingClientRect();
-    let pct;
     if (isCol) {
-      pct = ((clientPos - rect.left) / rect.width) * 100;
+      const rect = container.getBoundingClientRect();
+      let pct = ((clientPos - rect.left) / rect.width) * 100;
+      pct = Math.min(Math.max(pct, minPct), maxPct);
+      before.style.flexBasis = pct + '%';
+      after.style.flexBasis = (100 - pct) + '%';
+      after.style.width = 'auto';
     } else {
-      pct = ((clientPos - rect.top) / rect.height) * 100;
+      const beforeRect = before.getBoundingClientRect();
+      const afterRect = after.getBoundingClientRect();
+      const available = beforeRect.height + afterRect.height;
+      const beforeH = clientPos - beforeRect.top;
+      const minH = available * minPct / 100;
+      const maxH = available * maxPct / 100;
+      const clamped = Math.min(Math.max(beforeH, minH), maxH);
+      before.style.flexBasis = clamped + 'px';
+      after.style.flexBasis = (available - clamped) + 'px';
     }
-    pct = Math.min(Math.max(pct, minPct), maxPct);
-    before.style.flexBasis = pct + '%';
-    after.style.flexBasis = (100 - pct) + '%';
-    if (isCol) after.style.width = 'auto';
   };
 
   const resizingClass = isCol ? 'resizing' : 'resizing-row';

@@ -53,7 +53,7 @@ internal static class InvestigationPrompts
             CONCLUDING:
             When the evidence has converged and you can explain the root cause, call the conclude tool. Your conclusion should tell a coherent story:
             - summary: the root cause, stated plainly -- what went wrong, why, and what the impact is
-            - evidence: the chain of proof. Each step should state what you checked, what you found, and why it matters. Only include the steps that actually contribute to the logical chain -- not every command you ran
+            - evidence: a logically connected chain of proof -- NOT a bag of independent findings. Each step must connect to the next by a clear causal or inferential link. The chain may flow forward (initial observation -> inference -> root cause) or in reverse (symptom -> what caused it -> underlying origin), but adjacent steps must always be logically connected. A reader should be able to follow the chain from first step to last and understand how each discovery led to the next. Only include the steps that actually form the chain -- not every command you ran, and not a collection of loosely related observations. Number the steps sequentially to reflect their position in the chain.
             - fix_description, fix_commands, fix_warning: what to do about it. Normally this means reproduction steps and pointers to the responsible component, not a full fix. But if the Client has asked you to go the extra mile, provide concrete remediation commands.
 
             Do NOT conclude prematurely. A weak conclusion with thin evidence is worse than continuing to investigate. Do NOT put evidence or fix suggestions in plain text -- always use the conclude tool so the Client gets structured, actionable output.
@@ -72,7 +72,7 @@ internal static class InvestigationPrompts
 
             Do NOT "spot-check", "get early signal", or do preliminary work on a task you just delegated. The Scout is already doing it. Redundant commands waste your tool budget, clutter the investigation narrative, and risk contradicting the Scout's findings.
 
-            Use check_agents to see who is still working. You cannot conclude while Scouts are active -- wait for all reports first.
+            You do NOT need to poll or periodically call check_agents. Scout reports are delivered to you automatically as messages the moment they finish -- you will see them as soon as you wake. check_agents exists only if you want a status summary at a specific moment, not as something to call in a loop. You cannot conclude while Scouts are active -- wait for all reports first.
 
             When a Scout enters the room to ask you a question, use the reply_to tool to answer them. They will resume their work with your reply.
 
@@ -104,6 +104,9 @@ internal static class InvestigationPrompts
             {{toolContext}}
 
             Work independently using the available tools. When you have completed your assignment, call the conclude tool with your findings -- this delivers your report to Little Bear.
+
+            CONCLUDING:
+            Your evidence must be a logically connected chain, not a bag of independent findings. Each step must connect to the next -- either forward (observation -> inference -> conclusion) or reverse (symptom -> cause -> deeper cause). Adjacent steps must have a clear causal or inferential link so the chain reads as a coherent narrative. Number steps sequentially to reflect their position in the chain.
 
             THINKING:
             Before each tool call, always include a short text block explaining what you are about to do and why. Your reasoning must appear as text in your response, NOT as comments inside commands. The Client follows your investigation through this narration -- tool calls without preceding text look like silent black-box steps.

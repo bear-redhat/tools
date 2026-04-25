@@ -133,20 +133,20 @@ public partial class Chat : IAsyncDisposable
             return;
         }
 
-        if (AuthSettings.Mode == AuthMode.Oidc && AuthStateTask is not null)
+        if (AuthSettings.HasOidc && AuthStateTask is not null)
         {
             var authState = await AuthStateTask;
             if (authState.User.Identity?.IsAuthenticated == true)
             {
                 CircuitAuth.IsAuthenticated = true;
                 CircuitAuth.UserName = authState.User.Identity.Name;
+                CircuitAuth.AuthMethod = AuthMode.Oidc;
             }
         }
 
         if (AuthSettings.Mode != AuthMode.None && !CircuitAuth.IsAuthenticated)
         {
-            Nav.NavigateTo($"/login?returnUrl=/c/{ConversationId}",
-                forceLoad: AuthSettings.Mode == AuthMode.Oidc);
+            Nav.NavigateTo($"/login?returnUrl=/c/{ConversationId}");
             return;
         }
 

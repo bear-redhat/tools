@@ -84,14 +84,21 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddInvestigatorAuth(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddInvestigatorAuth(this IServiceCollection services, IConfiguration config,
+        IHostEnvironment environment)
     {
         services.Configure<AuthOptions>(config.GetSection(AuthOptions.Section));
 
         var authSection = config.GetSection(AuthOptions.Section);
         var oidcEnabled = !string.IsNullOrEmpty(authSection["ClientId"]) && !string.IsNullOrEmpty(authSection["Authority"]);
-        var tokenAuthEnabled = !oidcEnabled && !string.IsNullOrEmpty(authSection["SharedToken"]);
-        var authMode = oidcEnabled ? AuthMode.Oidc : tokenAuthEnabled ? AuthMode.Token : AuthMode.None;
+        var tokenEnabled = !string.IsNullOrEmpty(authSection["SharedToken"]);
+        var authMode = (oidcEnabled, tokenEnabled) switch
+        {
+            (true, true)   => AuthMode.TokenAndOidc,
+            (true, false)  => AuthMode.Oidc,
+            (false, true)  => AuthMode.Token,
+            _              => AuthMode.None,
+        };
 
         services.AddSingleton(new AuthSettings { Mode = authMode });
         services.AddScoped<CircuitAuthState>();
@@ -112,6 +119,9 @@ public static class ServiceCollectionExtensions
                 options.ResponseType = "code";
                 options.SaveTokens = true;
                 options.GetClaimsFromUserInfoEndpoint = true;
+
+                if (environment.IsDevelopment())
+                    options.RequireHttpsMetadata = false;
 
                 var scopes = authSection.GetSection("Scopes").Get<string[]>() ?? ["openid", "profile", "email"];
                 foreach (var scope in scopes)
