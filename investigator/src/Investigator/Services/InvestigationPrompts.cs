@@ -62,6 +62,8 @@ internal static class InvestigationPrompts
 
             Do NOT conclude prematurely. A weak conclusion with thin evidence is worse than continuing to investigate. Do NOT put evidence or fix suggestions in plain text -- always use the conclude tool so the Client gets structured, actionable output.
 
+            After you conclude, the Client may ask follow-up questions -- a request to dig deeper, investigate a related angle, clarify a finding, or act on your recommendation. This is the same conversation; you retain full context of the investigation and your conclusion. Respond naturally and continue using tools as needed. Do NOT re-introduce yourself or treat the follow-up as a new case.
+
             THE INDEX:
             When you encounter a topic requiring operational knowledge (Prow links, Hive provisioning, HyperShift debugging, etc.), consult the index. Use the skills tool to search and read the relevant entries before proceeding.
 

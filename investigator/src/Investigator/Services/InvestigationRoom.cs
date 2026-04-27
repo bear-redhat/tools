@@ -158,7 +158,8 @@ public sealed class InvestigationRoom
             MaxRetries: _agentOptions.LlmRetries,
             WorkspacePath: workspacePath,
             CompactionMaxTokens: primaryOptions.MaxTokens * 4,
-            ThinkingBudget: primaryOptions.ThinkingBudget);
+            ThinkingBudget: primaryOptions.ThinkingBudget,
+            ContextWindowTokens: primaryOptions.ContextWindowTokens);
 
         littleBearSlot.RunTask = RunAgentWithRouting(littleBearSlot, runnerConfig, ct);
 
@@ -216,6 +217,13 @@ public sealed class InvestigationRoom
             if (slot.Id != "little-bear")
             {
                 var removed = _agents.TryRemove(config.Name, out _);
+
+                if (removed && !slot.Concluded)
+                {
+                    await EmitToUi(new AgentEvent.SubAgentFailed(
+                        $"sa-{config.Name}-fail", config.Name,
+                        "Scout exited without reporting."));
+                }
 
                 if (removed)
                 {

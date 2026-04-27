@@ -19,7 +19,8 @@ public sealed class AgentRunner
         int MaxRetries,
         string WorkspacePath,
         int? CompactionMaxTokens,
-        int ThinkingBudget = 10000);
+        int ThinkingBudget = 10000,
+        int ContextWindowTokens = 1_000_000);
 
     public record ToolExecutionResult(
         string Output,
@@ -58,6 +59,8 @@ public sealed class AgentRunner
                 while (inbox.TryRead(out var msg))
                     messages.Add(FormatInboxMessage(msg));
 
+                toolCallCount = 0;
+
                 var currentStepId = $"step-{++stepId}";
                 await emit(new AgentEvent.StatusChanged(currentStepId, true));
 
@@ -65,6 +68,7 @@ public sealed class AgentRunner
                 var truncationRetries = 0;
                 var consecutiveTruncationFallthroughs = 0;
                 int? thinkingBudgetOverride = null;
+                var promptTooLongRetried = false;
                 while (!concluded && !ct.IsCancellationRequested)
                 {
                     currentStepId = $"step-{++stepId}";
@@ -72,17 +76,29 @@ public sealed class AgentRunner
                     _logger.LogDebug("Agent {Name} loop iteration {Step}, toolCallCount={Count}/{Max}",
                         config.Name, stepId, toolCallCount, config.MaxToolCalls);
 
-                    if (config.CompactionMaxTokens is not null)
-                        CompactMessagesIfNeeded(messages, config.CompactionMaxTokens.Value, config.WorkspacePath);
+                    var compactionBudget = config.CompactionMaxTokens
+                        ?? (int)(config.ContextWindowTokens * 0.7);
+                    CompactMessagesIfNeeded(messages, compactionBudget, config.WorkspacePath);
 
                     List<ContentBlock>? contentBlocks = null;
                     string? llmError = null;
                     try
                     {
                         contentBlocks = await CallLlmWithRetry(config, messages, ct, thinkingBudgetOverride);
+                        promptTooLongRetried = false;
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
                     {
+                        if (!promptTooLongRetried && ex.Message.Contains("prompt is too long", StringComparison.OrdinalIgnoreCase))
+                        {
+                            promptTooLongRetried = true;
+                            var emergencyBudget = (int)(config.ContextWindowTokens * 0.5);
+                            _logger.LogWarning("Agent {Name} prompt too long at step {Step}, emergency compaction to {Budget} tokens",
+                                config.Name, currentStepId, emergencyBudget);
+                            CompactMessagesIfNeeded(messages, emergencyBudget, config.WorkspacePath);
+                            continue;
+                        }
+
                         LogMessageStructure(config.Name, messages);
                         _logger.LogError(ex, "Agent {Name} LLM call rejected (HTTP 400) at step {Step}",
                             config.Name, currentStepId);
@@ -308,6 +324,25 @@ public sealed class AgentRunner
                             });
                             continue;
                         }
+
+                        var concludeContent = new List<object>();
+                        foreach (var tp in textParts)
+                            concludeContent.Add(new { type = "text", text = tp });
+                        concludeContent.Add(new { type = "tool_use", id = concludeCall.Id, name = "conclude", input = concludeCall.Input });
+
+                        messages.Add(new LlmMessage
+                        {
+                            Role = "assistant",
+                            Content = JsonSerializer.SerializeToElement(concludeContent),
+                        });
+                        messages.Add(new LlmMessage
+                        {
+                            Role = "user",
+                            Content = JsonSerializer.SerializeToElement(new[]
+                            {
+                                new { type = "tool_result", tool_use_id = concludeCall.Id, content = result.Output }
+                            }),
+                        });
 
                         concluded = true;
                         break;

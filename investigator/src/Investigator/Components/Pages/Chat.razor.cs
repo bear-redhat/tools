@@ -481,6 +481,14 @@ public partial class Chat : IAsyncDisposable
                 }
                 break;
             }
+
+            case AgentEvent.SubAgentFailed saf:
+            {
+                var saId = saf.AgentName.ToLowerInvariant().Replace(" ", "-");
+                SetMemberStatus(saId, MemberStatus.Idle);
+                UpdateHasWorkingAgents();
+                break;
+            }
         }
     }
 

@@ -29,6 +29,7 @@ public sealed class ModelOptions
     public string? EmbeddingModel { get; set; }
     public int MaxTokens { get; set; } = 16000;
     public int ThinkingBudget { get; set; } = 10000;
+    public int ContextWindowTokens { get; set; } = 1_000_000;
     public string Strengths { get; set; } = "";
 }
 

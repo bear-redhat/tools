@@ -92,6 +92,7 @@ internal sealed class ScoutCoordinator
         };
         _agents[agentName] = scoutSlot;
 
+        var modelOptions = _llmFactory.GetModelOptions(resolvedModel);
         var scoutConfig = new AgentRunner.Config(
             Id: scoutSlot.Id,
             Name: agentName,
@@ -104,7 +105,8 @@ internal sealed class ScoutCoordinator
             MaxRetries: _agentOptions.LlmRetries,
             WorkspacePath: WorkspacePath,
             CompactionMaxTokens: null,
-            ThinkingBudget: _llmFactory.GetModelOptions(resolvedModel).ThinkingBudget);
+            ThinkingBudget: modelOptions.ThinkingBudget,
+            ContextWindowTokens: modelOptions.ContextWindowTokens);
 
         await scoutSlot.Inbox.Writer.WriteAsync(new RoomMessage("Little Bear", task), ct);
         scoutSlot.RunTask = Task.Run(() => _runAgent(scoutSlot, scoutConfig, ct), ct);
