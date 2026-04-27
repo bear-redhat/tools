@@ -10,6 +10,7 @@ metadata:
     haproxy.router.openshift.io/balance: source
     haproxy.router.openshift.io/disable_cookies: "false"
 spec:
+  host: investigator.apps.core.ci.devcluster.openshift.com
   to:
     kind: Service
     name: investigator
