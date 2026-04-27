@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  IAM role for the Investigator on an OpenShift STS cluster.
+  Grants read-only access to AWS resources the cluster uses.
+
+Parameters:
+  OIDCProviderArn:
+    Type: String
+    Description: >-
+      ARN of the IAM OIDC provider registered by the cluster installer,
+      e.g. arn:aws:iam::123456789012:oidc-provider/rh-oidc.s3.us-east-1.amazonaws.com/abc123
+  OIDCProviderURL:
+    Type: String
+    Description: >-
+      OIDC issuer URL without the https:// prefix,
+      e.g. rh-oidc.s3.us-east-1.amazonaws.com/abc123
+  ServiceAccountName:
+    Type: String
+    Default: investigator
+  ServiceAccountNamespace:
+    Type: String
+    Default: investigator
+
+Resources:
+  InvestigatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: investigator
+      AssumeRolePolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": { "Federated": "${OIDCProviderArn}" },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": {
+                "${OIDCProviderURL}:sub": "system:serviceaccount:${ServiceAccountNamespace}:${ServiceAccountName}",
+                "${OIDCProviderURL}:aud": "sts.amazonaws.com"
+              }
+            }
+          }]
+        }
+      Policies:
+        - PolicyName: investigator-readonly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadOnly
+                Effect: Allow
+                Action:
+                  # Compute & networking
+                  - "ec2:Describe*"
+                  - "ec2:Get*"
+                  - "ec2:List*"
+                  - "ec2:Search*"
+                  - "elasticloadbalancing:Describe*"
+                  - "autoscaling:Describe*"
+                  # Storage
+                  - "s3:GetBucket*"
+                  - "s3:GetObject*"
+                  - "s3:GetLifecycle*"
+                  - "s3:GetEncryption*"
+                  - "s3:ListBucket"
+                  - "s3:ListAllMyBuckets"
+                  - "s3:HeadBucket"
+                  - "s3:HeadObject"
+                  - "ebs:Get*"
+                  - "ebs:List*"
+                  - "efs:Describe*"
+                  # DNS & certificates
+                  - "route53:Get*"
+                  - "route53:List*"
+                  - "acm:Describe*"
+                  - "acm:Get*"
+                  - "acm:List*"
+                  # Identity & access
+                  - "iam:Get*"
+                  - "iam:List*"
+                  - "sts:GetCallerIdentity"
+                  - "sts:GetAccessKeyInfo"
+                  # Monitoring & logging
+                  - "cloudwatch:Describe*"
+                  - "cloudwatch:Get*"
+                  - "cloudwatch:List*"
+                  - "logs:Describe*"
+                  - "logs:Get*"
+                  - "logs:Filter*"
+                  - "logs:List*"
+                  - "logs:StartQuery"
+                  - "logs:StopQuery"
+                  - "logs:GetQueryResults"
+                  # Encryption
+                  - "kms:Describe*"
+                  - "kms:Get*"
+                  - "kms:List*"
+                  # Infrastructure / IaC
+                  - "cloudformation:Describe*"
+                  - "cloudformation:Get*"
+                  - "cloudformation:List*"
+                  # Audit & compliance
+                  - "cloudtrail:Describe*"
+                  - "cloudtrail:Get*"
+                  - "cloudtrail:List*"
+                  - "cloudtrail:LookupEvents"
+                  # Messaging
+                  - "sns:Get*"
+                  - "sns:List*"
+                  - "sqs:Get*"
+                  - "sqs:List*"
+                  # Quotas & tagging
+                  - "servicequotas:Get*"
+                  - "servicequotas:List*"
+                  - "tag:Get*"
+                  # Resource groups
+                  - "resource-groups:Get*"
+                  - "resource-groups:List*"
+                  - "resource-groups:Search*"
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: >-
+      ARN of the investigator IAM role. The app auto-discovers the account ID
+      from existing CCO secrets and constructs this ARN by convention.
+      No manual secret creation is required.
+    Value: !GetAtt InvestigatorRole.Arn

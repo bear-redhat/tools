@@ -38,6 +38,7 @@ public partial class Chat : IAsyncDisposable
     private bool _forceScrollOnRender;
     private bool _scrollAfterRender;
     private bool _jsInitialized;
+    private bool _wasWorking;
     private ElementReference _messagesRef;
     private ElementReference _logRef;
     private ElementReference _dividerRef;
@@ -150,7 +151,13 @@ public partial class Chat : IAsyncDisposable
             return;
         }
 
-        _isOwner = Store.TryClaim(ConversationId, _circuitId);
+        var claim = Store.TryClaim(ConversationId, _circuitId, CircuitAuth.UserName);
+        if (claim == ClaimResult.WrongUser)
+        {
+            Nav.NavigateTo($"/c/{ConversationId}/view", forceLoad: true);
+            return;
+        }
+        _isOwner = claim == ClaimResult.Success;
     }
 
     private void Refresh()
@@ -175,6 +182,10 @@ public partial class Chat : IAsyncDisposable
         _forceScrollOnRender = true;
         StateHasChanged();
     }
+
+    private async Task OnRecallScout(string scoutName) => await Room.RecallScoutAsync(scoutName);
+    private async Task OnStandDownScout(string scoutName) => await Room.StandDownScoutAsync(scoutName);
+
 
     private GroupMember? GetOrAddMember(string agentName)
     {
@@ -215,6 +226,8 @@ public partial class Chat : IAsyncDisposable
 
         _history.Add(new ChatMessage(ChatRole.User, message, DateTimeOffset.UtcNow));
 
+        _wasWorking = true;
+
         if (!_started)
         {
             _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
@@ -235,7 +248,7 @@ public partial class Chat : IAsyncDisposable
         {
             await foreach (var evt in Room.Events.ReadAllAsync(ct))
             {
-                HandleAgentEvent(evt);
+                await HandleAgentEventAsync(evt);
                 _scrollAfterRender = true;
                 await InvokeAsync(StateHasChanged);
             }
@@ -260,18 +273,25 @@ public partial class Chat : IAsyncDisposable
                 await WorkspaceMgr.SaveSessionAsync(_session);
             }
             SetMemberStatus("little-bear", MemberStatus.Idle);
+            if (_wasWorking)
+            {
+                _wasWorking = false;
+                try { await JS.InvokeVoidAsync("playCaseClosedSound"); }
+                catch (JSDisconnectedException) { }
+            }
             _scrollAfterRender = true;
             await InvokeAsync(StateHasChanged);
         }
     }
 
-    private void HandleAgentEvent(AgentEvent evt)
+    private async Task HandleAgentEventAsync(AgentEvent evt)
     {
         switch (evt)
         {
             case AgentEvent.StatusChanged sc:
                 if (_session is not null) _session.IsInvestigating = sc.IsActive;
                 SetMemberStatus("little-bear", sc.IsActive ? MemberStatus.Active : MemberStatus.Idle);
+                if (!sc.IsActive) await TryPlayCaseClosedSoundAsync();
                 break;
 
             case AgentEvent.Thinking t:
@@ -286,7 +306,7 @@ public partial class Chat : IAsyncDisposable
                 break;
 
             case AgentEvent.ToolCall tc:
-                _logEntries.Add(new LogEntryModel
+                var tcEntry = new LogEntryModel
                 {
                     Sender = "little-bear",
                     StepId = tc.StepId,
@@ -295,18 +315,38 @@ public partial class Chat : IAsyncDisposable
                     Timestamp = DateTimeOffset.UtcNow,
                     Status = LogEntryStatus.Running,
                     Context = AgentRunner.ExtractContext(tc.Tool, tc.Parameters),
-                });
+                };
+                if (tc.ParentStepId is not null)
+                {
+                    var tcParent = FindLogEntryByStepId(_logEntries, tc.ParentStepId);
+                    if (tcParent is not null)
+                    {
+                        tcParent.Children ??= [];
+                        tcParent.Children.Add(tcEntry);
+                        break;
+                    }
+                }
+                _logEntries.Add(tcEntry);
                 break;
 
             case AgentEvent.ToolResult tr:
-                var entry = _logEntries.LastOrDefault(e => e.StepId == tr.StepId)
-                    ?? _logEntries.LastOrDefault();
-                if (entry is not null)
+                LogEntryModel? trEntry;
+                if (tr.ParentStepId is not null)
                 {
-                    entry.Output = tr.Output;
-                    entry.OutputFile = tr.OutputFile;
-                    entry.ExitCode = tr.ExitCode;
-                    entry.Status = tr.TimedOut ? LogEntryStatus.TimedOut : LogEntryStatus.Completed;
+                    var trParent = FindLogEntryByStepId(_logEntries, tr.ParentStepId);
+                    trEntry = trParent?.Children?.LastOrDefault(e => e.StepId == tr.StepId);
+                }
+                else
+                {
+                    trEntry = _logEntries.LastOrDefault(e => e.StepId == tr.StepId)
+                        ?? _logEntries.LastOrDefault();
+                }
+                if (trEntry is not null)
+                {
+                    trEntry.Output = tr.Output;
+                    trEntry.OutputFile = tr.OutputFile;
+                    trEntry.ExitCode = tr.ExitCode;
+                    trEntry.Status = tr.TimedOut ? LogEntryStatus.TimedOut : LogEntryStatus.Completed;
                 }
                 break;
 
@@ -461,6 +501,7 @@ public partial class Chat : IAsyncDisposable
                 var saId = sad.AgentName.ToLowerInvariant().Replace(" ", "-");
                 SetMemberStatus(saId, MemberStatus.Idle);
                 UpdateHasWorkingAgents();
+                await TryPlayCaseClosedSoundAsync();
 
                 if (!string.IsNullOrWhiteSpace(sad.Report))
                 {
@@ -487,12 +528,35 @@ public partial class Chat : IAsyncDisposable
                 var saId = saf.AgentName.ToLowerInvariant().Replace(" ", "-");
                 SetMemberStatus(saId, MemberStatus.Idle);
                 UpdateHasWorkingAgents();
+                await TryPlayCaseClosedSoundAsync();
                 break;
             }
         }
     }
 
+    private async Task TryPlayCaseClosedSoundAsync()
+    {
+        if (_isInvestigating || _hasWorkingAgents || !_wasWorking) return;
+        _wasWorking = false;
+        try { await JS.InvokeVoidAsync("playCaseClosedSound"); }
+        catch (JSDisconnectedException) { }
+    }
+
     private void OnCancel() => _cts?.Cancel();
+
+    private static LogEntryModel? FindLogEntryByStepId(IEnumerable<LogEntryModel> entries, string stepId)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.StepId == stepId) return entry;
+            if (entry.Children is not null)
+            {
+                var found = FindLogEntryByStepId(entry.Children, stepId);
+                if (found is not null) return found;
+            }
+        }
+        return null;
+    }
 
     private void EnsureDetailCollections(string saId)
     {

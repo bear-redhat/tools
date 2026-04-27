@@ -16,6 +16,7 @@ public sealed class InvestigationRoom
     private const string PresentFindingToolName = "present_finding";
     private const string ReplyToToolName = "reply_to";
     private const string DismissScoutToolName = "dismiss_scout";
+    private const string RecallScoutToolName = "recall_scout";
 
     private static readonly JsonElement s_emptySchema = JsonDocument.Parse("""
     {
@@ -51,8 +52,17 @@ public sealed class InvestigationRoom
     {
         "type": "object",
         "properties": {
-            "agent_name": { "type": "string", "description": "Name of the Scout to dismiss" },
-            "force": { "type": "boolean", "description": "Force dismissal even if the Scout has not concluded. Default false." }
+            "agent_name": { "type": "string", "description": "Name of the Scout to dismiss" }
+        },
+        "required": ["agent_name"]
+    }
+    """).RootElement.Clone();
+
+    private static readonly JsonElement s_recallScoutSchema = JsonDocument.Parse("""
+    {
+        "type": "object",
+        "properties": {
+            "agent_name": { "type": "string", "description": "Name of the Scout to recall" }
         },
         "required": ["agent_name"]
     }
@@ -72,7 +82,7 @@ public sealed class InvestigationRoom
                         "reasoning": { "type": "string" },
                         "finding": { "type": "string" },
                         "cluster": { "type": "string" },
-                        "command": { "type": "string" }
+                        "command": { "type": "string", "description": "The command run (if any) and the raw log line(s) or output that support this step, copied verbatim. Command on the first line, raw output below it." }
                     }
                 },
                 "description": "Ordered chain of proof. Each step must logically connect to the next -- forward (observation to cause) or reverse (symptom to origin). Do NOT submit unrelated findings as a flat list."
@@ -173,6 +183,32 @@ public sealed class InvestigationRoom
         }
     }
 
+    public async Task RecallScoutAsync(string scoutName)
+    {
+        if (!_agents.TryGetValue(scoutName, out var slot) || slot.Id == "little-bear") return;
+
+        await slot.Inbox.Writer.WriteAsync(
+            new RoomMessage("Little Bear",
+                "Return to Banyan Row at once. Report back immediately with whatever "
+                + "you have uncovered thus far. Call conclude now."),
+            CancellationToken.None);
+    }
+
+    public async Task StandDownScoutAsync(string scoutName)
+    {
+        if (!_agents.TryGetValue(scoutName, out var slot) || slot.Id == "little-bear") return;
+
+        slot.StoodDown = true;
+        slot.CurrentToolCts?.Cancel();
+
+        await slot.Inbox.Writer.WriteAsync(
+            new RoomMessage("Little Bear",
+                "Stand down at once. Your current inquiries are abandoned. "
+                + "Report back immediately with whatever evidence you have gathered. "
+                + "Call conclude now -- no further tool calls are permitted."),
+            CancellationToken.None);
+    }
+
     public ValueTask PostUserMessageAsync(string text, CancellationToken ct)
     {
         if (_agents.TryGetValue("Little Bear", out var slot))
@@ -197,9 +233,9 @@ public sealed class InvestigationRoom
             }
         }
 
-        async Task<AgentRunner.ToolExecutionResult> ExecuteTool(string toolName, JsonElement input, CancellationToken toolCt)
+        async Task<AgentRunner.ToolExecutionResult> ExecuteTool(string toolName, JsonElement input, string stepId, CancellationToken toolCt)
         {
-            return await HandleToolExecution(slot, config, toolName, input, toolCt);
+            return await HandleToolExecution(slot, config, toolName, input, stepId, Emit, toolCt);
         }
 
         try
@@ -242,8 +278,16 @@ public sealed class InvestigationRoom
 
     private async Task<AgentRunner.ToolExecutionResult> HandleToolExecution(
         AgentSlot callerSlot, AgentRunner.Config callerConfig,
-        string toolName, JsonElement input, CancellationToken ct)
+        string toolName, JsonElement input, string stepId,
+        Func<AgentEvent, ValueTask> emit, CancellationToken ct)
     {
+        if (callerSlot.StoodDown && toolName != ConcludeToolName)
+        {
+            return new AgentRunner.ToolExecutionResult(
+                "[Stood down] Further inquiries are not permitted. Report to Little Bear -- call conclude now.",
+                ExitCode: -1);
+        }
+
         if (toolName == ConcludeToolName)
             return await _roomToolHandlers.HandleConclude(callerSlot, callerConfig, input, _workspacePath, ct);
 
@@ -262,18 +306,46 @@ public sealed class InvestigationRoom
         if (toolName == DismissScoutToolName)
             return _roomToolHandlers.HandleDismissScout(input);
 
-        return await HandleRegistryTool(callerConfig, toolName, input, ct);
+        if (toolName == RecallScoutToolName)
+            return await _roomToolHandlers.HandleRecallScout(input);
+
+        callerSlot.CurrentToolCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        try
+        {
+            return await HandleRegistryTool(callerConfig, toolName, input, stepId, emit, callerSlot.CurrentToolCts.Token);
+        }
+        finally
+        {
+            callerSlot.CurrentToolCts = null;
+        }
     }
 
     private async Task<AgentRunner.ToolExecutionResult> HandleRegistryTool(
-        AgentRunner.Config callerConfig, string toolName, JsonElement input, CancellationToken ct)
+        AgentRunner.Config callerConfig, string toolName, JsonElement input,
+        string stepId, Func<AgentEvent, ValueTask> emit, CancellationToken ct)
     {
+        var childCounter = 0;
+
+        string StartChild(string childTool, string command)
+        {
+            var childId = $"{stepId}-child-{Interlocked.Increment(ref childCounter)}";
+            _ = emit(new AgentEvent.ToolCall(childId, childTool, command, default, ParentStepId: stepId));
+            return childId;
+        }
+
+        void CompleteChild(string childId, string childTool, string output, int exitCode, bool timedOut)
+        {
+            _ = emit(new AgentEvent.ToolResult(childId, childTool, output, null, exitCode, timedOut, ParentStepId: stepId));
+        }
+
         var context = new ToolContext(
             _logger,
             callerConfig.WorkspacePath,
             line => _logger.LogTrace("[{Agent}/{Tool}] {Line}", callerConfig.Name, toolName, line),
             () => Interlocked.Increment(ref _outputCounter),
-            callerConfig.Name);
+            callerConfig.Name,
+            StartChild,
+            CompleteChild);
 
         var (result, outFile, truncated) = await _toolRegistry.InvokeAsync(toolName, input, context, ct);
 
@@ -398,8 +470,14 @@ public sealed class InvestigationRoom
 
         tools.Add(new ToolDefinition(
             Name: DismissScoutToolName,
-            Description: "Dismiss a Scout from the room. By default, only concluded Scouts can be dismissed. Set force: true to stand down one who is still working. They cannot be contacted again.",
+            Description: "Dismiss a Scout from the room once they have reported. They depart Banyan Row and cannot be contacted again. If the Scout is still abroad, use recall_scout to summon them back first.",
             ParameterSchema: s_dismissScoutSchema,
+            DefaultTimeout: TimeSpan.Zero));
+
+        tools.Add(new ToolDefinition(
+            Name: RecallScoutToolName,
+            Description: "Recall a Scout to Banyan Row. They will report back immediately with whatever they have uncovered. Use when you no longer require their investigation or need their interim findings now.",
+            ParameterSchema: s_recallScoutSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         return tools;
@@ -456,5 +534,8 @@ public sealed class InvestigationRoom
             get => _concluded;
             set => _concluded = value;
         }
+
+        public volatile bool StoodDown;
+        public CancellationTokenSource? CurrentToolCts;
     }
 }

@@ -21,12 +21,17 @@ public sealed class ToolRegistry
         _logger = logger;
         _options = toolOutputOptions.Value;
 
-        foreach (var type in toolTypes)
+        var toolTypeList = toolTypes.ToList();
+        var sorted = TopologicalSort(toolTypeList);
+        var toolSp = new ToolAwareServiceProvider(sp);
+
+        foreach (var type in sorted)
         {
             try
             {
-                var tool = (IInvestigatorTool)ActivatorUtilities.CreateInstance(sp, type);
+                var tool = (IInvestigatorTool)ActivatorUtilities.CreateInstance(toolSp, type);
                 _tools[tool.Definition.Name] = tool;
+                toolSp.Register(type, tool);
                 _logger.LogInformation("Registered tool: {Name} (timeout={Timeout}s, truncate={Truncate})",
                     tool.Definition.Name, tool.Definition.DefaultTimeout.TotalSeconds, tool.Definition.TruncateOutput);
             }
@@ -135,5 +140,52 @@ public sealed class ToolRegistry
         if (output.Length <= maxBytes) return output;
         _logger.LogWarning("Tool output exceeded hard cap ({Length} > {Max}), truncating", output.Length, maxBytes);
         return output[..maxBytes] + $"\n... [truncated at {maxBytes / 1024}KB hard cap]";
+    }
+
+    private static List<Type> TopologicalSort(List<Type> toolTypes)
+    {
+        var toolTypeSet = new HashSet<Type>(toolTypes);
+        var deps = new Dictionary<Type, List<Type>>();
+        foreach (var type in toolTypes)
+        {
+            var ctor = type.GetConstructors().OrderByDescending(c => c.GetParameters().Length).First();
+            deps[type] = ctor.GetParameters()
+                .Select(p => p.ParameterType)
+                .Where(toolTypeSet.Contains)
+                .ToList();
+        }
+
+        var inDegree = deps.ToDictionary(kv => kv.Key, kv => kv.Value.Count);
+        var queue = new Queue<Type>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
+        var sorted = new List<Type>();
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            sorted.Add(current);
+            foreach (var (type, typeDeps) in deps)
+            {
+                if (!typeDeps.Remove(current)) continue;
+                inDegree[type]--;
+                if (inDegree[type] == 0)
+                    queue.Enqueue(type);
+            }
+        }
+
+        if (sorted.Count != toolTypes.Count)
+            throw new InvalidOperationException(
+                $"Circular dependency detected among tool types: {string.Join(", ", toolTypes.Except(sorted).Select(t => t.Name))}");
+
+        return sorted;
+    }
+
+    private sealed class ToolAwareServiceProvider(IServiceProvider inner) : IServiceProvider
+    {
+        private readonly Dictionary<Type, object> _created = new();
+
+        public object? GetService(Type serviceType)
+            => _created.GetValueOrDefault(serviceType) ?? inner.GetService(serviceType);
+
+        public void Register(Type type, object instance) => _created[type] = instance;
     }
 }

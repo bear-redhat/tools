@@ -43,7 +43,7 @@ public sealed class AgentRunner
         Config config,
         ChannelReader<RoomMessage> inbox,
         Func<AgentEvent, ValueTask> emit,
-        Func<string, JsonElement, CancellationToken, Task<ToolExecutionResult>> executeTool,
+        Func<string, JsonElement, string, CancellationToken, Task<ToolExecutionResult>> executeTool,
         CancellationToken ct)
     {
         var stepId = 0;
@@ -207,7 +207,7 @@ public sealed class AgentRunner
                                     config.Name, toolName, toolStepId, displayCmd);
 
                                 await emit(new AgentEvent.ToolCall(toolStepId, toolName, displayCmd, toolInput));
-                                var result = await executeTool(toolName, toolInput, ct);
+                                var result = await executeTool(toolName, toolInput, toolStepId, ct);
                                 await emit(new AgentEvent.ToolResult(toolStepId, toolName, result.Output, result.OutputFile, result.ExitCode, result.TimedOut));
 
                                 toolResults.Add(new
@@ -298,7 +298,7 @@ public sealed class AgentRunner
                     // Case 1: conclude
                     if (concludeCall is not null)
                     {
-                        var result = await executeTool("conclude", concludeCall.Input ?? default, ct);
+                        var result = await executeTool("conclude", concludeCall.Input ?? default, currentStepId, ct);
 
                         if (!result.Concluded)
                         {
@@ -384,7 +384,7 @@ public sealed class AgentRunner
 
                             await emit(new AgentEvent.ToolCall(toolStepId, toolName, displayCmd, toolInput));
 
-                            var result = await executeTool(toolName, toolInput, ct);
+                            var result = await executeTool(toolName, toolInput, toolStepId, ct);
 
                             await emit(new AgentEvent.ToolResult(toolStepId, toolName, result.Output, result.OutputFile, result.ExitCode, result.TimedOut));
 
@@ -645,14 +645,16 @@ public sealed class AgentRunner
         return toolName switch
         {
             "run_oc" => "oc " + Prop(input, "command"),
+            "run_aws" => "aws " + Prop(input, "command"),
             "run_shell" => Prop(input, "command"),
-            "release_repo" => $"release_repo({Prop(input, "action")})",
+            "ci_repo" => $"ci_repo {Prop(input, "repo")}({Prop(input, "action")})",
             "skills" => $"skills {Prop(input, "action")}" + OptProp(input, "query", " ") + OptProp(input, "name", " "),
             "delegate" => $"delegate {Prop(input, "role")}",
             "conclude" => Truncate($"conclude: {Prop(input, "summary")}", 80),
             "present_finding" => $"finding: {Prop(input, "title")}",
             "reply_to" => $"reply_to {Prop(input, "agent_name")}",
             "dismiss_scout" => $"dismiss_scout {Prop(input, "agent_name")}",
+            "recall_scout" => $"recall_scout {Prop(input, "agent_name")}",
             _ => FormatGenericTool(toolName, input),
         };
     }
@@ -673,6 +675,10 @@ public sealed class AgentRunner
         {
             case "run_oc":
                 Add("cluster", Prop(input, "cluster"));
+                break;
+            case "run_aws":
+                Add("cluster", Prop(input, "cluster"));
+                Add("account", Prop(input, "account"));
                 break;
             case "delegate":
                 Add("model", Prop(input, "model"));

@@ -57,5 +57,6 @@ public sealed class ConversationSession
     public Dictionary<string, List<ConversationItem>> DetailEvents { get; } = new();
     public Dictionary<string, List<LogEntryModel>> DetailLogEntries { get; } = new();
 
+    public string? OwnerUserName { get; set; }
     public string? OwnerCircuitId { get; set; }
 }

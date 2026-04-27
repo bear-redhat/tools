@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -29,12 +30,14 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
     private static readonly TimeSpan s_expiryBuffer = TimeSpan.FromSeconds(60);
 
     private readonly string _ocPath = "oc";
-    private readonly string _kubeconfigPath = Path.Combine(Path.GetTempPath(), "investigator-kubeconfig");
+    private readonly string _kubeconfigDir = Path.Combine(Path.GetTempPath(), "investigator-kc");
     private readonly List<ClusterEntry> _clusters = [];
     private readonly HashSet<string> _unavailableClusters = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, CachedLogin> _loggedInContexts = new(StringComparer.OrdinalIgnoreCase);
-    private readonly SemaphoreSlim _loginLock = new(1, 1);
+    private readonly ConcurrentDictionary<string, CachedLogin> _loggedInContexts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _loginLocks = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<OcExecutor> _logger;
+
+    private string KubeconfigPath(string cluster) => Path.Combine(_kubeconfigDir, cluster);
 
     public OcExecutor(IOptions<OcOptions> options, ILogger<OcExecutor> logger)
     {
@@ -42,6 +45,8 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         var opts = options.Value;
         if (!string.IsNullOrEmpty(opts.Path))
             _ocPath = opts.Path;
+
+        Directory.CreateDirectory(_kubeconfigDir);
 
         foreach (var c in opts.Clusters)
         {
@@ -197,7 +202,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
-        psi.Environment["KUBECONFIG"] = _kubeconfigPath;
+        psi.Environment["KUBECONFIG"] = KubeconfigPath(entry.Name);
         foreach (var arg in args) psi.ArgumentList.Add(arg);
 
         var output = new StringBuilder();
@@ -277,13 +282,14 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         if (_loggedInContexts.TryGetValue(entry.Name, out var cached) && !cached.IsExpired(s_expiryBuffer))
             return cached.ContextName;
 
-        await _loginLock.WaitAsync(ct);
+        var clusterLock = _loginLocks.GetOrAdd(entry.Name, _ => new SemaphoreSlim(1, 1));
+        await clusterLock.WaitAsync(ct);
         try
         {
             if (_loggedInContexts.TryGetValue(entry.Name, out cached) && !cached.IsExpired(s_expiryBuffer))
                 return cached.ContextName;
 
-            _loggedInContexts.Remove(entry.Name);
+            _loggedInContexts.TryRemove(entry.Name, out _);
 
             if (string.IsNullOrEmpty(entry.Server))
             {
@@ -314,6 +320,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
 
             context.Logger.LogInformation("run_oc: logging in to cluster {Name} at {Server}", entry.Name, entry.Server);
 
+            var kcPath = KubeconfigPath(entry.Name);
             var psi = new ProcessStartInfo(_ocPath)
             {
                 UseShellExecute = false,
@@ -321,7 +328,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
                 RedirectStandardError = true,
                 CreateNoWindow = true,
             };
-            psi.Environment["KUBECONFIG"] = _kubeconfigPath;
+            psi.Environment["KUBECONFIG"] = kcPath;
             foreach (var arg in loginArgs) psi.ArgumentList.Add(arg);
 
             using var proc = Process.Start(psi);
@@ -343,10 +350,10 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             }
 
             var contextName = $"investigator-{entry.Name}";
-            var actualContext = await GetCurrentContext(ct);
+            var actualContext = await GetCurrentContext(kcPath, ct);
             if (actualContext is not null && actualContext != contextName)
             {
-                if (!await RenameContext(actualContext, contextName, ct))
+                if (!await RenameContext(kcPath, actualContext, contextName, ct))
                 {
                     context.Logger.LogWarning("run_oc: failed to rename context {Actual} to {Expected}, using actual",
                         actualContext, contextName);
@@ -366,7 +373,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         }
         finally
         {
-            _loginLock.Release();
+            clusterLock.Release();
         }
     }
 
@@ -399,7 +406,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         return null;
     }
 
-    private async Task<string?> GetCurrentContext(CancellationToken ct)
+    private async Task<string?> GetCurrentContext(string kubeconfigPath, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(_ocPath)
         {
@@ -408,7 +415,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
-        psi.Environment["KUBECONFIG"] = _kubeconfigPath;
+        psi.Environment["KUBECONFIG"] = kubeconfigPath;
         psi.ArgumentList.Add("config");
         psi.ArgumentList.Add("current-context");
 
@@ -420,7 +427,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         return proc.ExitCode == 0 ? stdout.Trim() : null;
     }
 
-    private async Task<bool> RenameContext(string oldName, string newName, CancellationToken ct)
+    private async Task<bool> RenameContext(string kubeconfigPath, string oldName, string newName, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(_ocPath)
         {
@@ -429,7 +436,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
-        psi.Environment["KUBECONFIG"] = _kubeconfigPath;
+        psi.Environment["KUBECONFIG"] = kubeconfigPath;
         psi.ArgumentList.Add("config");
         psi.ArgumentList.Add("rename-context");
         psi.ArgumentList.Add(oldName);

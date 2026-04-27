@@ -122,21 +122,42 @@ internal sealed class RoomToolHandlers
     internal AgentRunner.ToolExecutionResult HandleDismissScout(JsonElement input)
     {
         var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
-        var force = input.TryGetProperty("force", out var fp) && fp.GetBoolean();
 
         if (!_agents.TryGetValue(name, out var slot) || slot.Id == "little-bear")
-            return new AgentRunner.ToolExecutionResult($"No Scout named '{name}' is active.");
+            return new AgentRunner.ToolExecutionResult($"No Scout by the name of '{name}' is present.");
 
-        if (!slot.Concluded && !force)
+        if (!slot.Concluded)
             return new AgentRunner.ToolExecutionResult(
-                $"Scout '{name}' has not concluded yet. Use force: true to dismiss a working Scout.");
+                $"{name} is still abroad on their inquiry. Use recall_scout to summon them back first.");
 
         if (!_agents.TryRemove(name, out _))
-            return new AgentRunner.ToolExecutionResult($"No Scout named '{name}' is active.");
+            return new AgentRunner.ToolExecutionResult($"No Scout by the name of '{name}' is present.");
 
         slot.Inbox.Writer.TryComplete();
-        _logger.LogInformation("Scout {Name} dismissed by Little Bear (force={Force})", name, force);
+        _logger.LogInformation("Scout {Name} dismissed by Little Bear", name);
         return new AgentRunner.ToolExecutionResult($"{name} dismissed.");
+    }
+
+    internal async Task<AgentRunner.ToolExecutionResult> HandleRecallScout(JsonElement input)
+    {
+        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
+
+        if (!_agents.TryGetValue(name, out var slot) || slot.Id == "little-bear")
+            return new AgentRunner.ToolExecutionResult($"No Scout by the name of '{name}' is abroad.");
+
+        if (slot.Concluded)
+            return new AgentRunner.ToolExecutionResult(
+                $"{name} has already reported back. Use dismiss_scout to send them on their way.");
+
+        await slot.Inbox.Writer.WriteAsync(
+            new RoomMessage("Little Bear",
+                "Return to Banyan Row at once. Report back immediately with whatever "
+                + "you have uncovered thus far. Call conclude now."),
+            CancellationToken.None);
+
+        _logger.LogInformation("Scout {Name} recalled by Little Bear", name);
+        return new AgentRunner.ToolExecutionResult(
+            $"Word has been sent to {name}. They will return to Banyan Row presently.");
     }
 
     internal string BuildCheckAgentsResponse()

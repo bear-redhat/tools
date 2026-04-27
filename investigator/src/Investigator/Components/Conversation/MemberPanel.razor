@@ -3,11 +3,24 @@
 <div class="member-panel">
     @foreach (var member in Members)
     {
-        <button class="member-chip @GetStatusClass(member) @(member.Id == SelectedId ? "selected" : "")"
-                @onclick="() => OnSelect.InvokeAsync(member.Id)">
-            <span class="member-dot"></span>
-            <span class="member-name">@member.Name</span>
-        </button>
+        <div class="member-chip-row">
+            <button class="member-chip @GetStatusClass(member) @(member.Id == SelectedId ? "selected" : "")"
+                    @onclick="() => OnSelect.InvokeAsync(member.Id)">
+                <span class="member-dot"></span>
+                <span class="member-name">@member.Name</span>
+            </button>
+            @if (member.Status == MemberStatus.Working && !IsStaticMember(member))
+            {
+                <button class="btn-recall" @onclick="() => OnRecall.InvokeAsync(member.Name)"
+                        title="Little Bear recalls this Scout to report back.">
+                    Recall
+                </button>
+                <button class="btn-stand-down" @onclick="() => OnStandDown.InvokeAsync(member.Name)"
+                        title="Little Bear stands this Scout down immediately.">
+                    Stand Down
+                </button>
+            }
+        </div>
     }
 </div>
 
@@ -15,6 +28,11 @@
     [Parameter, EditorRequired] public IReadOnlyList<GroupMember> Members { get; set; } = [];
     [Parameter] public string SelectedId { get; set; } = "all";
     [Parameter] public EventCallback<string> OnSelect { get; set; }
+    [Parameter] public EventCallback<string> OnRecall { get; set; }
+    [Parameter] public EventCallback<string> OnStandDown { get; set; }
+
+    private static bool IsStaticMember(GroupMember m) =>
+        m.Id is "all" or "user" or "little-bear";
 
     private static string GetStatusClass(GroupMember m) => m.Status switch
     {

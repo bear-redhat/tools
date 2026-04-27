@@ -22,7 +22,8 @@
 
 <div class="investigator-layout">
     <div class="conversation-panel">
-        <MemberPanel Members="_members" SelectedId="_selectedMemberId" OnSelect="OnMemberSelected" />
+        <MemberPanel Members="_members" SelectedId="_selectedMemberId" OnSelect="OnMemberSelected"
+                     OnRecall="OnRecallScout" OnStandDown="OnStandDownScout" />
         <div class="conversation-messages" @ref="_messagesRef">
             @foreach (var item in FilteredConversation)
             {

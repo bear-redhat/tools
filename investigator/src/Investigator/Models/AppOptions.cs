@@ -87,16 +87,42 @@ public sealed class ClusterOptions
     public string? CaFile { get; set; }
 }
 
+public sealed class AwsOptions
+{
+    public string? Path { get; set; }
+    public List<AwsEntry> Clusters { get; set; } = [];
+    public List<AwsEntry> Accounts { get; set; } = [];
+}
+
+public sealed class AwsEntry
+{
+    public string Name { get; set; } = "";
+    public string? RoleArn { get; set; }
+    public string? Region { get; set; }
+    public string? Description { get; set; }
+    public string? IntermediaryRoleArn { get; set; }
+    public string? IntermediaryRegion { get; set; }
+}
+
 public sealed class ShellOptions
 {
     public string? Path { get; set; }
     public bool? UseRunUser { get; set; }
 }
 
-public sealed class ReleaseRepoOptions
+public sealed class CiRepoOptions
 {
     public string? Path { get; set; }
-    public string Url { get; set; } = "https://github.com/openshift/release.git";
+    public Dictionary<string, RepoConfig> Repos { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["release"] = new() { Url = "https://github.com/openshift/release.git" },
+        ["ci-tools"] = new() { Url = "https://github.com/openshift/ci-tools.git" },
+    };
+}
+
+public sealed class RepoConfig
+{
+    public string Url { get; set; } = "";
     public string? LocalPath { get; set; }
     public bool ShallowClone { get; set; } = true;
     /// <summary>

@@ -6,9 +6,9 @@ public abstract record AgentEvent(string StepId)
 {
     public record Thinking(string StepId, string Text) : AgentEvent(StepId);
 
-    public record ToolCall(string StepId, string Tool, string DisplayCommand, JsonElement Parameters) : AgentEvent(StepId);
+    public record ToolCall(string StepId, string Tool, string DisplayCommand, JsonElement Parameters, string? ParentStepId = null) : AgentEvent(StepId);
 
-    public record ToolResult(string StepId, string Tool, string Output, string? OutputFile, int ExitCode, bool TimedOut) : AgentEvent(StepId);
+    public record ToolResult(string StepId, string Tool, string Output, string? OutputFile, int ExitCode, bool TimedOut, string? ParentStepId = null) : AgentEvent(StepId);
 
     public record Message(string StepId, string Text, bool IsIntermediate = false) : AgentEvent(StepId);
 

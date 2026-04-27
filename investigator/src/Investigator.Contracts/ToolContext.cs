@@ -7,4 +7,6 @@ public record ToolContext(
     string WorkspacePath,
     Action<string>? OnOutputLine,
     Func<int> NextOutputNumber,
-    string CallerId);
+    string CallerId,
+    Func<string, string, string>? StartChildCall = null,
+    Action<string, string, string, int, bool>? CompleteChildCall = null);

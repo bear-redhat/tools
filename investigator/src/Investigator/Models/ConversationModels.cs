@@ -34,6 +34,7 @@ public class LogEntryModel
     public string? OutputFile { get; set; }
     public int ExitCode { get; set; }
     public Dictionary<string, string>? Context { get; set; }
+    public List<LogEntryModel>? Children { get; set; }
 }
 
 public enum LogEntryStatus { Running, Completed, TimedOut }

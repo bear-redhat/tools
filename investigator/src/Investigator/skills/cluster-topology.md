@@ -19,7 +19,9 @@ Key namespaces: `ci` (ProwJobs, CI services).
 
 ## buildXX (build01, build02, build03, build04, build05, build09, build10, ...)
 
-Build farm clusters. These execute the actual CI workloads dispatched from app.ci/core-ci: ci-operator pods, test step pods, build pods, and release image mirrors. Each cluster runs independently -- a job lands on whichever build cluster the dispatcher selects (configured per job or via cluster profiles). Some build clusters run on AWS, others on GCP.
+Build farm clusters. These execute the actual CI workloads dispatched from app.ci/core-ci: ci-operator pods, test step pods, build pods, and release image mirrors. Each cluster runs independently -- a job lands on whichever build cluster the dispatcher selects (configured per job or via cluster profiles).
+
+AWS clusters: build01, build03, build05, build06, build07, build09, build10, build11. GCP clusters: build02, build04.
 
 When a ProwJob fails, the pod that ran it lives on one of these clusters. Check `prowjob.json` for the `cluster` field to know which one, then inspect pods/events there.
 
@@ -33,3 +35,16 @@ Management cluster for the fleet's cluster lifecycle. Runs:
 - **HyperShift operator**: manages HostedCluster and NodePool resources for hosted control plane test clusters. Hosted control planes run as pods on this cluster while worker nodes run elsewhere.
 
 Key namespaces: `hive` (Hive operator + cluster pools), `hypershift` (HyperShift operator), `clusters` or `clusters-*` (individual HostedCluster control planes).
+
+## AWS Access
+
+Build farm clusters running on AWS (build01, build03, build05-07, build09-11, hosted-mgmt, core-ci) support AWS resource investigation via `run_aws`. Use the `cluster` parameter to target a cluster's underlying AWS account:
+
+- `run_aws(cluster="build01", command="ec2 describe-instances")` -- auto-discovers the cluster's AWS account and region
+- `run_aws(cluster="core-ci", command="s3 ls")` -- works on any AWS cluster with a CCO-managed credentials secret
+
+For standalone AWS accounts not tied to a cluster (e.g. shared artifact storage), use the `account` parameter instead:
+
+- `run_aws(account="ci-artifacts", command="s3 ls s3://ci-artifacts-bucket")`
+
+The `cluster` and `account` parameters are mutually exclusive. Use `cluster` for cluster-linked AWS accounts, `account` for standalone ones. The system prompt lists which clusters and accounts are available.

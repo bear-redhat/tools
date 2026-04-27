@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  IAM jump role for the Investigator on the infra AWS account.
+  Trusts core-ci's investigator role for cross-account AssumeRole
+  and is permitted to AssumeRole into downstream test-account roles.
+
+Parameters:
+  TrustedRoleArn:
+    Type: String
+    Description: >-
+      ARN of the investigator IAM role on core-ci's AWS account,
+      e.g. arn:aws:iam::123456789012:role/investigator
+
+Resources:
+  InvestigatorJumpRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: investigator-jump
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref TrustedRoleArn
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: assume-downstream
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: "arn:aws:iam::*:role/investigator"
+
+Outputs:
+  RoleArn:
+    Description: >-
+      ARN of the jump role. Use this as the IntermediaryRoleArn in the
+      investigator config for downstream test accounts, and as
+      the TrustedRoleArn when deploying standalone-role.cf in
+      those test accounts.
+    Value: !GetAtt InvestigatorJumpRole.Arn

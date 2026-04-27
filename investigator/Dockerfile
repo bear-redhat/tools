@@ -57,6 +57,13 @@ COPY --from=build /ms-playwright /ms-playwright
 RUN curl -sL https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz \
     | tar xz -C /usr/local/bin oc kubectl
 
+# Install AWS CLI v2
+RUN curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+    -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/aws /tmp/awscliv2.zip
+
 # Install yq
 RUN curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
     -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq
@@ -69,7 +76,7 @@ RUN groupadd -g 1001 investigator \
     && useradd -u 1001 -g investigator -m agent
 
 # Create data directories
-RUN mkdir -p /data/investigator/workspaces /data/release-repo /secrets \
+RUN mkdir -p /data/investigator/workspaces /data/release-repo /data/ci-tools-repo /secrets \
     && chown root:investigator /data/investigator/workspaces \
     && chmod 2775 /data/investigator/workspaces \
     && chmod 0600 /secrets

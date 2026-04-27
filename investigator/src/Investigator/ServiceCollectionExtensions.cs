@@ -9,9 +9,10 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddInvestigatorTools(this IServiceCollection services, IConfiguration config)
     {
+        services.Configure<AwsOptions>(config.GetSection("Tools:run_aws"));
         services.Configure<OcOptions>(config.GetSection("Tools:run_oc"));
         services.Configure<ShellOptions>(config.GetSection("Tools:run_shell"));
-        services.Configure<ReleaseRepoOptions>(config.GetSection("Tools:release_repo"));
+        services.Configure<CiRepoOptions>(config.GetSection("Tools:ci_repo"));
         services.Configure<SkillsOptions>(config.GetSection("Tools:skills"));
         services.Configure<WebSearchOptions>(config.GetSection("Tools:web_search"));
         services.Configure<WebBrowserOptions>(config.GetSection("Tools:web_browse"));
@@ -28,8 +29,9 @@ public static class ServiceCollectionExtensions
             var toolTypes = new List<Type>
             {
                 typeof(OcExecutor),
+                typeof(AwsExecutor),
                 typeof(ShellExecutor),
-                typeof(ReleaseRepoTool),
+                typeof(CiRepoTool),
                 typeof(SkillsLibrary),
                 typeof(WebSearchTool),
                 typeof(WebBrowserTool),

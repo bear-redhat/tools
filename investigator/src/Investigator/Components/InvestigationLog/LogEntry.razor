@@ -30,6 +30,16 @@
         </div>
     }
 
+    @if (_expanded && Entry.Children is { Count: > 0 })
+    {
+        <div class="log-entry-children">
+            @foreach (var child in Entry.Children)
+            {
+                <LogEntry Entry="child" HighlightedStepId="HighlightedStepId" />
+            }
+        </div>
+    }
+
     @if (Entry.Status == LogEntryStatus.Running)
     {
         <div class="log-entry-spinner">Executing...</div>

@@ -96,6 +96,31 @@ window.initDividerResize = (divider, direction) => {
   return true;
 };
 
+window.playCaseClosedSound = () => {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const t = ctx.currentTime;
+  const notes = [
+    { freq: 329.63, start: 0,    dur: 0.12 }, // E4
+    { freq: 392.00, start: 0.10, dur: 0.12 }, // G4
+    { freq: 493.88, start: 0.20, dur: 0.12 }, // B4
+    { freq: 659.25, start: 0.30, dur: 0.15 }, // E5
+    { freq: 783.99, start: 0.42, dur: 0.35 }, // G5 (resolve)
+  ];
+  for (const n of notes) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = n.freq;
+    const onset = t + n.start;
+    gain.gain.setValueAtTime(0, onset);
+    gain.gain.linearRampToValueAtTime(0.25, onset + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, onset + n.dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(onset);
+    osc.stop(onset + n.dur);
+  }
+};
+
 window.initPasteHandler = (textarea) => {
   if (!textarea) return;
   textarea.addEventListener('paste', (e) => {

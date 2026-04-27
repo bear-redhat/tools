@@ -5,6 +5,7 @@ namespace Investigator.Models;
 public sealed class SessionSnapshot
 {
     public required string Id { get; init; }
+    public string? OwnerUserName { get; init; }
     public List<ConversationItem> Items { get; init; } = [];
     public List<LogEntryModel> LogEntries { get; init; } = [];
     public List<GroupMember> Members { get; init; } = [];
@@ -14,6 +15,7 @@ public sealed class SessionSnapshot
     public static SessionSnapshot FromSession(ConversationSession session) => new()
     {
         Id = session.Id,
+        OwnerUserName = session.OwnerUserName,
         Items = session.Items.ToList(),
         LogEntries = session.LogEntries.ToList(),
         Members = session.Members.ToList(),
@@ -28,6 +30,7 @@ public sealed class SessionSnapshot
     public ConversationSession ToSession()
     {
         var session = new ConversationSession(Id);
+        session.OwnerUserName = OwnerUserName;
 
         session.Items.Clear();
         session.Items.AddRange(Items);

@@ -4,6 +4,8 @@ using Visus.Cuid;
 
 namespace Investigator.Services;
 
+public enum ClaimResult { Success, Busy, WrongUser }
+
 public sealed class ConversationStore
 {
     private readonly ConcurrentDictionary<string, ConversationSession> _sessions = new();
@@ -40,21 +42,29 @@ public sealed class ConversationStore
     }
 
     /// <summary>
-    /// Attempts to claim ownership of the session. Succeeds if the session
-    /// has no current owner (new session or previous owner released).
+    /// Attempts to claim ownership of the session.
+    /// Returns <see cref="ClaimResult.WrongUser"/> when the persistent owner
+    /// doesn't match <paramref name="userName"/>, <see cref="ClaimResult.Busy"/>
+    /// when the right user is blocked by another circuit, or
+    /// <see cref="ClaimResult.Success"/> when the claim is granted.
     /// </summary>
-    public bool TryClaim(string id, string circuitId)
+    public ClaimResult TryClaim(string id, string circuitId, string? userName)
     {
         var session = TryGetSession(id);
-        if (session is null) return false;
+        if (session is null) return ClaimResult.WrongUser;
 
         lock (session.Lock)
         {
-            if (session.OwnerCircuitId is not null && session.OwnerCircuitId != circuitId)
-                return false;
+            if (session.OwnerUserName is not null
+                && !string.Equals(session.OwnerUserName, userName, StringComparison.OrdinalIgnoreCase))
+                return ClaimResult.WrongUser;
 
+            if (session.OwnerCircuitId is not null && session.OwnerCircuitId != circuitId)
+                return ClaimResult.Busy;
+
+            session.OwnerUserName ??= userName;
             session.OwnerCircuitId = circuitId;
-            return true;
+            return ClaimResult.Success;
         }
     }
 
