@@ -314,7 +314,12 @@ pre.ascii-art {
     cursor: pointer;
 }
 
-.login-button:hover {
+.login-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.login-button:hover:not(:disabled) {
     background: #3a6dee;
 }
 

@@ -77,8 +77,12 @@
             else
             {
                 <form @onsubmit="Submit" @onsubmit:preventDefault>
-                    <input type="password" @bind="_token" placeholder="Unseal your letter..." class="login-input" autofocus />
-                    <button type="submit" class="login-button">📜 Present the Letter</button>
+                    <input type="password" @bind="_token"
+                           placeholder="@(_submitting ? "The wax seal crackles beneath steady hands..." : "Place your sealed letter upon the tray...")"
+                           class="login-input" autofocus disabled="@_submitting" />
+                    <button type="submit" class="login-button" disabled="@_submitting">
+                        @(_submitting ? "🔍 One moment... the seal is being examined." : "📜 Present the Letter")
+                    </button>
                 </form>
             }
         }
@@ -99,9 +103,13 @@
     private bool _success;
     private bool _showTokenInput;
     private bool _oidcRedirecting;
+    private bool _submitting;
 
     private async Task Submit()
     {
+        if (_submitting) return;
+        _submitting = true;
+
         var expected = AuthOpts.Value.SharedToken;
         if (!string.IsNullOrEmpty(expected) && _token == expected)
         {
@@ -127,6 +135,7 @@
         else
         {
             _error = true;
+            _submitting = false;
         }
     }
 
