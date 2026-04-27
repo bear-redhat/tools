@@ -1,3 +1,5 @@
+@inject IJSRuntime JS
+
 <div class="chat-input">
     @if (IsInvestigating)
     {
@@ -15,7 +17,7 @@
         </div>
     }
     <div class="chat-input-row">
-        <textarea @bind="_message" @bind:event="oninput"
+        <textarea @ref="_textareaRef" @bind="_message" @bind:event="oninput"
                   @onkeydown="OnKeyDown"
                   placeholder="Describe your case..."></textarea>
         <div class="chat-input-buttons">
@@ -34,7 +36,18 @@
     [Parameter] public bool IsInvestigating { get; set; }
     [Parameter] public bool HasWorkingAgents { get; set; }
 
+    private ElementReference _textareaRef;
     private string _message = "";
+    private bool _initialized;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialized)
+        {
+            _initialized = true;
+            await JS.InvokeVoidAsync("initPasteHandler", _textareaRef);
+        }
+    }
 
     private async Task Send()
     {

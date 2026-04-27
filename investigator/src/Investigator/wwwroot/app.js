@@ -95,3 +95,48 @@ window.initDividerResize = (divider, direction) => {
 
   return true;
 };
+
+window.initPasteHandler = (textarea) => {
+  if (!textarea) return;
+  textarea.addEventListener('paste', (e) => {
+    const html = e.clipboardData?.getData('text/html');
+    if (!html) return;
+
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    if (!doc.body.querySelector('a[href]')) return;
+
+    const convert = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+      if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+      if (node.tagName === 'A' && node.href) {
+        const text = node.textContent.trim();
+        const url = node.getAttribute('href');
+        if (!text || text === url) return url;
+        return `[${text}](${url})`;
+      }
+
+      if (node.tagName === 'BR') return '\n';
+
+      let result = '';
+      for (const child of node.childNodes) result += convert(child);
+
+      const block = /^(P|DIV|LI|TR|H[1-6]|BLOCKQUOTE)$/.test(node.tagName);
+      if (block) result = result.trim() + '\n';
+
+      return result;
+    };
+
+    const text = convert(doc.body).replace(/\n{3,}/g, '\n\n').trim();
+    if (!text) return;
+
+    e.preventDefault();
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const before = textarea.value.substring(0, start);
+    const after = textarea.value.substring(end);
+    textarea.value = before + text + after;
+    textarea.selectionStart = textarea.selectionEnd = start + text.length;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+};
