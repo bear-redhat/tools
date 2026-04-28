@@ -68,6 +68,13 @@ RUN curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
 RUN curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
     -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq
 
+# Install Google Cloud CLI (gsutil, gcloud storage)
+RUN curl -sL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+    | tar xz -C /opt \
+    && /opt/google-cloud-sdk/install.sh --quiet --path-update true \
+    && ln -s /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud \
+    && ln -s /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil
+
 # Install useful Python packages
 RUN pip3 install --no-cache-dir --break-system-packages requests tabulate
 

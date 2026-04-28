@@ -1,14 +1,22 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  IAM jump role for the Investigator on the infra AWS account.
-  Trusts core-ci's investigator role for cross-account AssumeRole
-  and is permitted to AssumeRole into downstream test-account roles.
+  IAM jump role for the Investigator. Deploy in the infra AWS account.
+  Trusts the home role cross-account from core-ci's account. This role
+  is the single intermediary for all downstream access: the home role
+  assumes into this role (hop 1), and this role assumes into
+  investigator roles in target cluster accounts (hop 2).
+
+  The assume chain is:
+    pod IRSA -> investigator (home-role.cf, core-ci account)
+      -> investigator-jump (this, infra account)
+      -> investigator (target-role.cf, each cluster account)
 
 Parameters:
   TrustedRoleArn:
     Type: String
     Description: >-
-      ARN of the investigator IAM role on core-ci's AWS account,
+      ARN of the investigator home role in the core-ci account
+      (output of home-role.cf),
       e.g. arn:aws:iam::123456789012:role/investigator
 
 Resources:
@@ -36,8 +44,8 @@ Resources:
 Outputs:
   RoleArn:
     Description: >-
-      ARN of the jump role. Use this as the IntermediaryRoleArn in the
-      investigator config for downstream test accounts, and as
-      the TrustedRoleArn when deploying standalone-role.cf in
-      those test accounts.
+      ARN of the jump role. Use this as:
+        - IntermediaryRoleArn in the app config for each target entry
+        - TrustedRoleArn when deploying target-role.cf in target accounts
+        - An entry in AssumeRoleTargets when deploying home-role.cf
     Value: !GetAtt InvestigatorJumpRole.Arn

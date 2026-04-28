@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Bedrock target role for the Investigator. Deploy in the infra AWS
+  account. Trusts the home role cross-account from core-ci's account.
+  The home role assumes directly into this role (single hop, no
+  intermediary needed).
+
+  The assume chain is:
+    pod IRSA -> investigator (home-role.cf, core-ci account)
+      -> investigator-bedrock (this, infra account)
+
+  App configuration:
+    - Llm:Providers:bedrock:RoleArn = output RoleArn of this stack
+
+Parameters:
+  TrustedRoleArn:
+    Type: String
+    Description: >-
+      ARN of the investigator home role in the core-ci account
+      (output of home-role.cf),
+      e.g. arn:aws:iam::123456789012:role/investigator
+
+Resources:
+  InvestigatorBedrockRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: investigator-bedrock
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref TrustedRoleArn
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: bedrock-invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: BedrockInvoke
+                Effect: Allow
+                Action:
+                  - "bedrock:InvokeModel"
+                  - "bedrock:InvokeModelWithResponseStream"
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: >-
+      ARN of the investigator-bedrock role. Set this as
+      Llm:Providers:bedrock:RoleArn in the app configuration.
+      Also include this ARN in the AssumeRoleTargets parameter
+      of the home-role.cf stack.
+    Value: !GetAtt InvestigatorBedrockRole.Arn

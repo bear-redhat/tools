@@ -1,46 +1,34 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  IAM role for the Investigator on an OpenShift STS cluster.
-  Grants read-only access to AWS resources the cluster uses.
+  IAM role for the Investigator on a target AWS account. Deploy in every
+  AWS account the Investigator needs read-only access to -- both accounts
+  backing OpenShift clusters and standalone (non-cluster) accounts.
+
+  Trusts the investigator-jump role from the jumper account. The assume
+  chain is: pod IRSA (home-role) -> investigator-jump -> this role.
+
+  Replaces the former cluster-role.cf and standalone-role.cf templates.
 
 Parameters:
-  OIDCProviderArn:
+  TrustedRoleArn:
     Type: String
     Description: >-
-      ARN of the IAM OIDC provider registered by the cluster installer,
-      e.g. arn:aws:iam::123456789012:oidc-provider/rh-oidc.s3.us-east-1.amazonaws.com/abc123
-  OIDCProviderURL:
-    Type: String
-    Description: >-
-      OIDC issuer URL without the https:// prefix,
-      e.g. rh-oidc.s3.us-east-1.amazonaws.com/abc123
-  ServiceAccountName:
-    Type: String
-    Default: investigator
-  ServiceAccountNamespace:
-    Type: String
-    Default: investigator
+      ARN of the investigator-jump role in the jumper account
+      (output of jump-role.cf),
+      e.g. arn:aws:iam::123456789012:role/investigator-jump
 
 Resources:
   InvestigatorRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: investigator
-      AssumeRolePolicyDocument: !Sub |
-        {
-          "Version": "2012-10-17",
-          "Statement": [{
-            "Effect": "Allow",
-            "Principal": { "Federated": "${OIDCProviderArn}" },
-            "Action": "sts:AssumeRoleWithWebIdentity",
-            "Condition": {
-              "StringEquals": {
-                "${OIDCProviderURL}:sub": "system:serviceaccount:${ServiceAccountNamespace}:${ServiceAccountName}",
-                "${OIDCProviderURL}:aud": "sts.amazonaws.com"
-              }
-            }
-          }]
-        }
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref TrustedRoleArn
+            Action: sts:AssumeRole
       Policies:
         - PolicyName: investigator-readonly
           PolicyDocument:
@@ -121,7 +109,7 @@ Resources:
 Outputs:
   RoleArn:
     Description: >-
-      ARN of the investigator IAM role. The app auto-discovers the account ID
-      from existing CCO secrets and constructs this ARN by convention.
-      No manual secret creation is required.
+      ARN of the investigator role in this account. Use this value as the
+      RoleArn in the run_aws Clusters or Accounts configuration entry.
+      Set IntermediaryRoleArn to the jump role ARN for each entry.
     Value: !GetAtt InvestigatorRole.Arn

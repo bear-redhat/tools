@@ -149,3 +149,17 @@ public sealed class WebBrowserOptions
     public bool Headless { get; set; } = true;
     public int SessionIdleMinutes { get; set; } = 30;
 }
+
+public sealed class GitHubOptions
+{
+    public string? AppId { get; set; }
+    public string? PrivateKeyFile { get; set; }
+    public string? InstallationId { get; set; }
+}
+
+public sealed class ProwOptions
+{
+    public string DeckUrl { get; set; } = "https://prow.ci.openshift.org";
+    public string GcsWebUrl { get; set; } = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com";
+    public string DefaultBucket { get; set; } = "test-platform-results";
+}

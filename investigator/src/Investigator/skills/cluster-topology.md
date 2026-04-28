@@ -38,6 +38,8 @@ Key namespaces: `hive` (Hive operator + cluster pools), `hypershift` (HyperShift
 
 ## AWS Access
 
+app.ci does not support STS (no OIDC provider configured), so it has no AWS access via `run_aws`.
+
 Build farm clusters running on AWS (build01, build03, build05-07, build09-11, hosted-mgmt, core-ci) support AWS resource investigation via `run_aws`. Use the `cluster` parameter to target a cluster's underlying AWS account:
 
 - `run_aws(cluster="build01", command="ec2 describe-instances")` -- auto-discovers the cluster's AWS account and region

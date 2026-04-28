@@ -1,29 +1,69 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  IAM role for the Investigator on a standalone AWS account
-  not tied to any OpenShift cluster. Trusts core-ci's investigator role
-  for cross-account AssumeRole.
+  IRSA home role for the Investigator. Deploy in the core-ci cluster's
+  AWS account (where the OIDC provider is registered). This is the single
+  root identity for all AWS access.
+
+  The pod authenticates via its projected ServiceAccount token (OIDC) and
+  assumes this role. It has read-only access to the core-ci account's AWS
+  resources directly, and can AssumeRole cross-account into other roles.
+
+  Deploy this stack once in core-ci's account. The output RoleArn becomes
+  the AWS_ROLE_ARN environment variable in the pod's ConfigMap.
 
 Parameters:
-  TrustedRoleArn:
+  OIDCProviderArn:
     Type: String
     Description: >-
-      ARN of the investigator IAM role on core-ci's AWS account,
-      e.g. arn:aws:iam::123456789012:role/investigator
+      ARN of the IAM OIDC provider registered by the cluster installer,
+      e.g. arn:aws:iam::123456789012:oidc-provider/rh-oidc.s3.us-east-1.amazonaws.com/abc123
+  OIDCProviderURL:
+    Type: String
+    Description: >-
+      OIDC issuer URL without the https:// prefix,
+      e.g. rh-oidc.s3.us-east-1.amazonaws.com/abc123
+  AssumeRoleTargets:
+    Type: CommaDelimitedList
+    Description: >-
+      Comma-separated list of IAM role ARNs this role may AssumeRole into.
+      Must include the investigator-jump and investigator-bedrock role ARNs
+      from the infra account (cross-account).
+  ServiceAccountName:
+    Type: String
+    Default: investigator
+  ServiceAccountNamespace:
+    Type: String
+    Default: investigator
 
 Resources:
-  InvestigatorRole:
+  InvestigatorHomeRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: investigator
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              AWS: !Ref TrustedRoleArn
-            Action: sts:AssumeRole
+      AssumeRolePolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": { "Federated": "${OIDCProviderArn}" },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": {
+                "${OIDCProviderURL}:sub": "system:serviceaccount:${ServiceAccountNamespace}:${ServiceAccountName}",
+                "${OIDCProviderURL}:aud": "sts.amazonaws.com"
+              }
+            }
+          }]
+        }
       Policies:
+        - PolicyName: assume-target-roles
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AssumeTargets
+                Effect: Allow
+                Action: "sts:AssumeRole"
+                Resource: !Ref AssumeRoleTargets
         - PolicyName: investigator-readonly
           PolicyDocument:
             Version: "2012-10-17"
@@ -31,14 +71,12 @@ Resources:
               - Sid: ReadOnly
                 Effect: Allow
                 Action:
-                  # Compute & networking
                   - "ec2:Describe*"
                   - "ec2:Get*"
                   - "ec2:List*"
                   - "ec2:Search*"
                   - "elasticloadbalancing:Describe*"
                   - "autoscaling:Describe*"
-                  # Storage
                   - "s3:GetBucket*"
                   - "s3:GetObject*"
                   - "s3:GetLifecycle*"
@@ -50,18 +88,15 @@ Resources:
                   - "ebs:Get*"
                   - "ebs:List*"
                   - "efs:Describe*"
-                  # DNS & certificates
                   - "route53:Get*"
                   - "route53:List*"
                   - "acm:Describe*"
                   - "acm:Get*"
                   - "acm:List*"
-                  # Identity & access
                   - "iam:Get*"
                   - "iam:List*"
                   - "sts:GetCallerIdentity"
                   - "sts:GetAccessKeyInfo"
-                  # Monitoring & logging
                   - "cloudwatch:Describe*"
                   - "cloudwatch:Get*"
                   - "cloudwatch:List*"
@@ -72,29 +107,23 @@ Resources:
                   - "logs:StartQuery"
                   - "logs:StopQuery"
                   - "logs:GetQueryResults"
-                  # Encryption
                   - "kms:Describe*"
                   - "kms:Get*"
                   - "kms:List*"
-                  # Infrastructure / IaC
                   - "cloudformation:Describe*"
                   - "cloudformation:Get*"
                   - "cloudformation:List*"
-                  # Audit & compliance
                   - "cloudtrail:Describe*"
                   - "cloudtrail:Get*"
                   - "cloudtrail:List*"
                   - "cloudtrail:LookupEvents"
-                  # Messaging
                   - "sns:Get*"
                   - "sns:List*"
                   - "sqs:Get*"
                   - "sqs:List*"
-                  # Quotas & tagging
                   - "servicequotas:Get*"
                   - "servicequotas:List*"
                   - "tag:Get*"
-                  # Resource groups
                   - "resource-groups:Get*"
                   - "resource-groups:List*"
                   - "resource-groups:Search*"
@@ -103,6 +132,7 @@ Resources:
 Outputs:
   RoleArn:
     Description: >-
-      ARN of the investigator IAM role. Use this value in the run_aws.Accounts
-      configuration entry for this standalone account.
-    Value: !GetAtt InvestigatorRole.Arn
+      ARN of the investigator home role. Set this as AWS_ROLE_ARN in the
+      pod ConfigMap. Also supply this ARN as TrustedRoleArn when deploying
+      jump-role.cf and bedrock-role.cf in the infra account.
+    Value: !GetAtt InvestigatorHomeRole.Arn

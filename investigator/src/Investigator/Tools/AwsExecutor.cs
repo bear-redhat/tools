@@ -25,13 +25,15 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
             "command": {
                 "type": "string",
                 "description": "The aws subcommand and arguments, e.g. 'ec2 describe-instances'. Do NOT include the 'aws' prefix. Always fetch complete output -- do NOT add grep, awk, or pipes."
+            },
+            "region": {
+                "type": "string",
+                "description": "AWS region override, e.g. 'us-west-2'. Omit to use the target's default region."
             }
         },
         "required": ["command"]
     }
     """).RootElement.Clone();
-
-    private static readonly TimeSpan s_expiryBuffer = TimeSpan.FromSeconds(60);
 
     private static readonly HashSet<string> s_readOnlyPrefixes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -47,30 +49,26 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
     private static readonly Regex s_accountIdRegex = new(@"arn:aws:iam::(\d+):role/", RegexOptions.Compiled);
 
     private readonly string _awsPath = "aws";
+    private readonly string _configPath;
     private readonly OcExecutor _ocExecutor;
     private readonly List<AwsEntry> _accounts = [];
     private readonly Dictionary<string, DiscoveredCluster> _discoveredClusters = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, CachedAwsSession> _sessionCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly SemaphoreSlim _sessionLock = new(1, 1);
+    private readonly Dictionary<string, string> _profileMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<AwsExecutor> _logger;
     private readonly Task _probeTask;
 
     public record AwsTarget(string Name, AwsTargetKind Kind, string? Description);
     public enum AwsTargetKind { Cluster, Account }
 
-    private sealed record DiscoveredCluster(string RoleArn, string Region);
-
-    private sealed record CachedAwsSession(
-        string RoleArn, string Region, string AccessKeyId,
-        string SecretAccessKey, string SessionToken, DateTimeOffset ExpiresAt)
-    {
-        public bool IsExpired(TimeSpan buffer) => DateTimeOffset.UtcNow + buffer >= ExpiresAt;
-    }
+    private sealed record DiscoveredCluster(
+        string RoleArn, string Region,
+        string? IntermediaryRoleArn, string? IntermediaryRegion);
 
     public AwsExecutor(IOptions<AwsOptions> options, OcExecutor ocExecutor, ILogger<AwsExecutor> logger)
     {
         _ocExecutor = ocExecutor;
         _logger = logger;
+        _configPath = Path.Combine(Path.GetTempPath(), "investigator-aws-config");
         var opts = options.Value;
         if (!string.IsNullOrEmpty(opts.Path))
             _awsPath = opts.Path;
@@ -92,7 +90,7 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
         {
             var allClusters = new HashSet<string>(_ocExecutor.ListClusters(), StringComparer.OrdinalIgnoreCase);
             var skipSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var overrides = new Dictionary<string, AwsEntry>(StringComparer.OrdinalIgnoreCase);
+            var clusterEntries = new Dictionary<string, AwsEntry>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var entry in opts.Clusters.Where(c => !string.IsNullOrEmpty(c.Name)))
             {
@@ -101,9 +99,9 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
                     skipSet.Add(entry.Name);
                     logger.LogInformation("AWS explicitly disabled for cluster {Cluster}", entry.Name);
                 }
-                else if (!string.IsNullOrEmpty(entry.RoleArn))
+                else
                 {
-                    overrides[entry.Name] = entry;
+                    clusterEntries[entry.Name] = entry;
                 }
             }
 
@@ -113,9 +111,10 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
                 {
                     try
                     {
+                        clusterEntries.TryGetValue(cluster, out var entry);
                         string? region;
 
-                        if (overrides.TryGetValue(cluster, out var entry))
+                        if (entry is not null && !string.IsNullOrEmpty(entry.RoleArn))
                         {
                             region = entry.Region;
                             if (string.IsNullOrEmpty(region))
@@ -126,7 +125,9 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
                                 return;
                             }
                             lock (_discoveredClusters)
-                                _discoveredClusters[cluster] = new(entry.RoleArn!, region);
+                                _discoveredClusters[cluster] = new(
+                                    entry.RoleArn!, region,
+                                    entry.IntermediaryRoleArn, entry.IntermediaryRegion);
                             logger.LogInformation("AWS cluster {Cluster}: configured via override (role={RoleArn})",
                                 cluster, entry.RoleArn);
                             return;
@@ -164,7 +165,9 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
 
                         var roleArn = $"arn:aws:iam::{accountId}:role/investigator";
                         lock (_discoveredClusters)
-                            _discoveredClusters[cluster] = new(roleArn, region);
+                            _discoveredClusters[cluster] = new(
+                                roleArn, region,
+                                entry?.IntermediaryRoleArn, entry?.IntermediaryRegion);
                         logger.LogInformation("AWS cluster {Cluster}: discovered (account={AccountId}, region={Region})",
                             cluster, accountId, region);
                     }
@@ -182,6 +185,8 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
 
             logger.LogInformation("AWS-enabled clusters: {Clusters}",
                 discovered.Count > 0 ? string.Join(", ", discovered) : "(none)");
+
+            GenerateAwsConfig();
         });
     }
 
@@ -232,6 +237,7 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
         var cluster = parameters.TryGetProperty("cluster", out var cProp) ? cProp.GetString() : null;
         var account = parameters.TryGetProperty("account", out var aProp) ? aProp.GetString() : null;
         var command = parameters.TryGetProperty("command", out var cmdProp) ? cmdProp.GetString() : null;
+        var region = parameters.TryGetProperty("region", out var rProp) ? rProp.GetString() : null;
 
         if (string.IsNullOrWhiteSpace(command))
             return new ToolResult("Error: 'command' parameter is required and was empty.", ExitCode: 1);
@@ -247,24 +253,26 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
                 "Error: only read-only AWS commands are allowed (describe-*, get-*, list-*, search-*, lookup-*, check-*, batch-get-*, filter-*, sts get-caller-identity, sts get-access-key-info).",
                 ExitCode: 1);
 
-        CachedAwsSession session;
-        try
+        await _probeTask;
+
+        var targetName = hasCluster ? cluster! : account!;
+        string? profileName;
+        lock (_profileMap)
         {
-            session = hasCluster
-                ? await GetClusterSession(cluster!, context, ct)
-                : await GetAccountSession(account!, context, ct);
-        }
-        catch (Exception ex)
-        {
-            context.Logger.LogError(ex, "run_aws: failed to obtain AWS credentials");
-            return new ToolResult($"Error obtaining AWS credentials: {ex.Message}", ExitCode: 1);
+            if (!_profileMap.TryGetValue(targetName, out profileName))
+            {
+                var available = string.Join(", ", _profileMap.Keys);
+                return new ToolResult(
+                    $"Error: no AWS profile for '{targetName}'. Available: {available}", ExitCode: 1);
+            }
         }
 
         var args = SplitArgs(command).ToList();
-        var reproCommand = $"aws {command}";
+        var regionSuffix = !string.IsNullOrWhiteSpace(region) ? $" --region {region}" : "";
+        var reproCommand = $"aws --profile {profileName}{regionSuffix} {command}";
 
-        context.Logger.LogDebug("run_aws: executing 'aws {Command}' against {Target}",
-            command, hasCluster ? $"cluster {cluster}" : $"account {account}");
+        context.Logger.LogDebug("run_aws: executing 'aws {Command}' against {Target} (profile={Profile})",
+            command, hasCluster ? $"cluster {cluster}" : $"account {account}", profileName);
 
         var psi = new ProcessStartInfo(_awsPath)
         {
@@ -273,10 +281,14 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
-        psi.Environment["AWS_ACCESS_KEY_ID"] = session.AccessKeyId;
-        psi.Environment["AWS_SECRET_ACCESS_KEY"] = session.SecretAccessKey;
-        psi.Environment["AWS_SESSION_TOKEN"] = session.SessionToken;
-        psi.Environment["AWS_DEFAULT_REGION"] = session.Region;
+        psi.Environment["AWS_CONFIG_FILE"] = _configPath;
+        psi.ArgumentList.Add("--profile");
+        psi.ArgumentList.Add(profileName);
+        if (!string.IsNullOrWhiteSpace(region))
+        {
+            psi.ArgumentList.Add("--region");
+            psi.ArgumentList.Add(region);
+        }
         foreach (var arg in args) psi.ArgumentList.Add(arg);
 
         var output = new StringBuilder();
@@ -360,188 +372,85 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
         return false;
     }
 
-    private async Task<CachedAwsSession> GetClusterSession(string cluster, ToolContext context, CancellationToken ct)
+    private void GenerateAwsConfig()
     {
-        if (_sessionCache.TryGetValue(cluster, out var cached) && !cached.IsExpired(s_expiryBuffer))
-            return cached;
+        var sb = new StringBuilder();
+        var intermediaryProfiles = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        await _sessionLock.WaitAsync(ct);
-        try
+        var tokenFile = Environment.GetEnvironmentVariable("AWS_WEB_IDENTITY_TOKEN_FILE")
+            ?? "/var/run/secrets/aws/token";
+        var roleArn = Environment.GetEnvironmentVariable("AWS_ROLE_ARN");
+        if (string.IsNullOrEmpty(roleArn))
         {
-            if (_sessionCache.TryGetValue(cluster, out cached) && !cached.IsExpired(s_expiryBuffer))
-                return cached;
+            _logger.LogWarning("AWS_ROLE_ARN not set, cannot generate AWS config profiles");
+            return;
+        }
 
-            _sessionCache.Remove(cluster);
+        sb.AppendLine("[profile home]");
+        sb.AppendLine($"web_identity_token_file = {tokenFile}");
+        sb.AppendLine($"role_arn = {roleArn}");
+        sb.AppendLine("role_session_name = investigator");
+        sb.AppendLine();
 
-            DiscoveredCluster info;
-            lock (_discoveredClusters)
+        string EnsureIntermediaryProfile(string arn, string region)
+        {
+            if (intermediaryProfiles.TryGetValue(arn, out var existing))
+                return existing;
+            var parts = arn.Split(':');
+            var name = $"intermediary--{(parts.Length > 4 ? parts[4] : arn.GetHashCode().ToString("x"))}";
+            intermediaryProfiles[arn] = name;
+            sb.AppendLine($"[profile {name}]");
+            sb.AppendLine("source_profile = home");
+            sb.AppendLine($"role_arn = {arn}");
+            sb.AppendLine("role_session_name = investigator");
+            sb.AppendLine($"region = {region}");
+            sb.AppendLine();
+            return name;
+        }
+
+        lock (_discoveredClusters)
+        {
+            foreach (var (cluster, info) in _discoveredClusters)
             {
-                if (!_discoveredClusters.TryGetValue(cluster, out info!))
-                    throw new InvalidOperationException(
-                        $"Cluster {cluster} is not AWS-enabled. " +
-                        $"Available: {string.Join(", ", _discoveredClusters.Keys)}");
+                if (string.Equals(info.RoleArn, roleArn, StringComparison.OrdinalIgnoreCase))
+                {
+                    _profileMap[cluster] = "home";
+                    _logger.LogInformation("AWS cluster {Cluster}: home account, using home profile directly", cluster);
+                    continue;
+                }
+
+                var profileName = $"cluster--{cluster}";
+                var sourceProfile = !string.IsNullOrEmpty(info.IntermediaryRoleArn)
+                    ? EnsureIntermediaryProfile(info.IntermediaryRoleArn, info.IntermediaryRegion ?? info.Region)
+                    : "home";
+                sb.AppendLine($"[profile {profileName}]");
+                sb.AppendLine($"source_profile = {sourceProfile}");
+                sb.AppendLine($"role_arn = {info.RoleArn}");
+                sb.AppendLine("role_session_name = investigator");
+                sb.AppendLine($"region = {info.Region}");
+                sb.AppendLine();
+                _profileMap[cluster] = profileName;
             }
-
-            var tokenResult = await RunOcQuiet(cluster,
-                "create token investigator -n investigator --audience sts.amazonaws.com --duration 900s",
-                context);
-            if (tokenResult.ExitCode != 0)
-                throw new InvalidOperationException($"Failed to create token on cluster {cluster}: {tokenResult.Output}");
-            var webIdentityToken = tokenResult.Output.Trim();
-
-            var session = await AssumeRoleWithWebIdentity(info.RoleArn, webIdentityToken, info.Region, ct);
-            _sessionCache[cluster] = session;
-            context?.Logger.LogInformation("run_aws: obtained AWS session for cluster {Cluster} (expires {Expiry})",
-                cluster, session.ExpiresAt.ToString("u"));
-            return session;
-        }
-        finally
-        {
-            _sessionLock.Release();
-        }
-    }
-
-    private async Task<CachedAwsSession> GetAccountSession(string account, ToolContext context, CancellationToken ct)
-    {
-        if (_sessionCache.TryGetValue(account, out var cached) && !cached.IsExpired(s_expiryBuffer))
-            return cached;
-
-        var entry = _accounts.FirstOrDefault(a => a.Name.Equals(account, StringComparison.OrdinalIgnoreCase));
-        if (entry is null)
-        {
-            var available = string.Join(", ", _accounts.Select(a => a.Name));
-            throw new InvalidOperationException($"Unknown account: {account}. Available: {available}");
         }
 
-        var parent = !string.IsNullOrEmpty(entry.IntermediaryRoleArn)
-            ? await GetIntermediarySession(entry, context, ct)
-            : await GetClusterSession("core-ci", context, ct);
-
-        await _sessionLock.WaitAsync(ct);
-        try
+        foreach (var entry in _accounts)
         {
-            if (_sessionCache.TryGetValue(account, out cached) && !cached.IsExpired(s_expiryBuffer))
-                return cached;
-
-            _sessionCache.Remove(account);
-
-            var session = await AssumeRole(entry.RoleArn!, entry.Region!, parent, ct);
-            _sessionCache[account] = session;
-            context.Logger.LogInformation("run_aws: obtained AWS session for account {Account} (expires {Expiry})",
-                account, session.ExpiresAt.ToString("u"));
-            return session;
+            var profileName = $"account--{entry.Name}";
+            var sourceProfile = !string.IsNullOrEmpty(entry.IntermediaryRoleArn)
+                ? EnsureIntermediaryProfile(entry.IntermediaryRoleArn, entry.IntermediaryRegion ?? entry.Region!)
+                : "home";
+            sb.AppendLine($"[profile {profileName}]");
+            sb.AppendLine($"source_profile = {sourceProfile}");
+            sb.AppendLine($"role_arn = {entry.RoleArn}");
+            sb.AppendLine("role_session_name = investigator");
+            sb.AppendLine($"region = {entry.Region}");
+            sb.AppendLine();
+            _profileMap[entry.Name] = profileName;
         }
-        finally
-        {
-            _sessionLock.Release();
-        }
-    }
 
-    private async Task<CachedAwsSession> GetIntermediarySession(
-        AwsEntry entry, ToolContext context, CancellationToken ct)
-    {
-        var key = $"intermediary:{entry.IntermediaryRoleArn}";
-
-        if (_sessionCache.TryGetValue(key, out var cached) && !cached.IsExpired(s_expiryBuffer))
-            return cached;
-
-        var coreCi = await GetClusterSession("core-ci", context, ct);
-
-        await _sessionLock.WaitAsync(ct);
-        try
-        {
-            if (_sessionCache.TryGetValue(key, out cached) && !cached.IsExpired(s_expiryBuffer))
-                return cached;
-
-            _sessionCache.Remove(key);
-            var region = entry.IntermediaryRegion ?? entry.Region!;
-            var session = await AssumeRole(entry.IntermediaryRoleArn!, region, coreCi, ct);
-            _sessionCache[key] = session;
-            context.Logger.LogInformation(
-                "run_aws: obtained intermediary session via {IntermediaryRole} (expires {Expiry})",
-                entry.IntermediaryRoleArn, session.ExpiresAt.ToString("u"));
-            return session;
-        }
-        finally
-        {
-            _sessionLock.Release();
-        }
-    }
-
-    private async Task<CachedAwsSession> AssumeRoleWithWebIdentity(
-        string roleArn, string webIdentityToken, string region, CancellationToken ct)
-    {
-        var psi = new ProcessStartInfo(_awsPath)
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        psi.Environment["AWS_DEFAULT_REGION"] = region;
-        foreach (var arg in new[]
-        {
-            "sts", "assume-role-with-web-identity",
-            "--role-arn", roleArn,
-            "--role-session-name", "investigator",
-            "--web-identity-token", webIdentityToken,
-            "--duration-seconds", "900",
-            "--output", "json"
-        })
-            psi.ArgumentList.Add(arg);
-
-        return await RunStsCommand(psi, roleArn, region, ct);
-    }
-
-    private async Task<CachedAwsSession> AssumeRole(
-        string roleArn, string region, CachedAwsSession parentSession, CancellationToken ct)
-    {
-        var psi = new ProcessStartInfo(_awsPath)
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        psi.Environment["AWS_ACCESS_KEY_ID"] = parentSession.AccessKeyId;
-        psi.Environment["AWS_SECRET_ACCESS_KEY"] = parentSession.SecretAccessKey;
-        psi.Environment["AWS_SESSION_TOKEN"] = parentSession.SessionToken;
-        psi.Environment["AWS_DEFAULT_REGION"] = region;
-        foreach (var arg in new[]
-        {
-            "sts", "assume-role",
-            "--role-arn", roleArn,
-            "--role-session-name", "investigator",
-            "--duration-seconds", "900",
-            "--output", "json"
-        })
-            psi.ArgumentList.Add(arg);
-
-        return await RunStsCommand(psi, roleArn, region, ct);
-    }
-
-    private async Task<CachedAwsSession> RunStsCommand(
-        ProcessStartInfo psi, string roleArn, string region, CancellationToken ct)
-    {
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start aws sts process");
-
-        var stdout = await proc.StandardOutput.ReadToEndAsync(ct);
-        var stderr = await proc.StandardError.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
-
-        if (proc.ExitCode != 0)
-            throw new InvalidOperationException($"aws sts failed (exit {proc.ExitCode}): {stderr}");
-
-        using var doc = JsonDocument.Parse(stdout);
-        var creds = doc.RootElement.GetProperty("Credentials");
-        return new CachedAwsSession(
-            RoleArn: roleArn,
-            Region: region,
-            AccessKeyId: creds.GetProperty("AccessKeyId").GetString()!,
-            SecretAccessKey: creds.GetProperty("SecretAccessKey").GetString()!,
-            SessionToken: creds.GetProperty("SessionToken").GetString()!,
-            ExpiresAt: DateTimeOffset.Parse(creds.GetProperty("Expiration").GetString()!));
+        File.WriteAllText(_configPath, sb.ToString());
+        _logger.LogInformation("AWS config written to {Path} ({ProfileCount} target profiles, {IntermediaryCount} intermediary profiles)",
+            _configPath, _profileMap.Count, intermediaryProfiles.Count);
     }
 
     private async Task<ToolResult> RunOcQuiet(string cluster, string command, ToolContext? callerContext)

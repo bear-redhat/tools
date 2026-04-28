@@ -6,8 +6,6 @@ using Amazon;
 using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
 using Amazon.Runtime;
-using Amazon.SecurityToken;
-using Amazon.SecurityToken.Model;
 using Investigator.Contracts;
 using Investigator.Models;
 using ContentBlock = Investigator.Models.ContentBlock;
@@ -105,7 +103,7 @@ public sealed class BedrockClient : ILlmClient
         string region, string model, string json,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var client = await GetOrCreateSdkClient(region, ct);
+        var client = GetOrCreateSdkClient(region);
 
         var invokeRequest = new InvokeModelWithResponseStreamRequest
         {
@@ -259,12 +257,11 @@ public sealed class BedrockClient : ILlmClient
     private static int ReadBigEndianInt32(byte[] data, int offset) =>
         (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
 
-    private async Task<AmazonBedrockRuntimeClient> GetOrCreateSdkClient(
-        string region, CancellationToken ct)
+    private AmazonBedrockRuntimeClient GetOrCreateSdkClient(string region)
     {
         if (_sdkClient is not null) return _sdkClient;
 
-        var credentials = await ResolveCredentials(ct);
+        var credentials = BedrockCredentialHelper.Resolve(_creds, _profileName, _logger);
         var regionEndpoint = RegionEndpoint.GetBySystemName(region);
 
         _sdkClient = credentials is not null
@@ -272,50 +269,5 @@ public sealed class BedrockClient : ILlmClient
             : new AmazonBedrockRuntimeClient(regionEndpoint);
 
         return _sdkClient;
-    }
-
-    private async Task<AWSCredentials?> ResolveCredentials(CancellationToken ct)
-    {
-        var accessKey = _creds.AccessKeyId;
-        var secretKey = _creds.SecretAccessKey;
-        var roleArn = _creds.RoleArn;
-        var sessionName = _creds.RoleSessionName ?? "investigator";
-
-        AWSCredentials? baseCreds = null;
-
-        if (!string.IsNullOrEmpty(accessKey) && !string.IsNullOrEmpty(secretKey))
-        {
-            _logger.LogInformation("Using static AWS credentials from profile '{Profile}'", _profileName);
-            baseCreds = new BasicAWSCredentials(accessKey, secretKey);
-        }
-
-        if (!string.IsNullOrEmpty(roleArn))
-        {
-            _logger.LogInformation("Assuming role {RoleArn} with session {Session}", roleArn, sessionName);
-
-            var stsClient = baseCreds is not null
-                ? new AmazonSecurityTokenServiceClient(baseCreds)
-                : new AmazonSecurityTokenServiceClient();
-
-            var assumeResponse = await stsClient.AssumeRoleAsync(new AssumeRoleRequest
-            {
-                RoleArn = roleArn,
-                RoleSessionName = sessionName,
-            }, ct);
-
-            var stsCreds = assumeResponse.Credentials;
-            _logger.LogInformation("Assumed role successfully, expires {Expiration}", stsCreds.Expiration);
-
-            return new SessionAWSCredentials(
-                stsCreds.AccessKeyId,
-                stsCreds.SecretAccessKey,
-                stsCreds.SessionToken);
-        }
-
-        if (baseCreds is not null)
-            return baseCreds;
-
-        _logger.LogInformation("Using default AWS credential chain (env, instance profile, etc.)");
-        return null;
     }
 }

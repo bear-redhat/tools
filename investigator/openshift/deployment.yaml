@@ -22,7 +22,17 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+          env:
+            - name: HOME
+              value: "/tmp"
+            - name: AWS_WEB_IDENTITY_TOKEN_FILE
+              value: "/var/run/secrets/aws/token"
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/var/run/secrets/gcp/credential-config.json"
           envFrom:
+            - configMapRef:
+                name: investigator-aws-irsa
+                optional: true
             - secretRef:
                 name: investigator-env
                 optional: true
@@ -34,6 +44,17 @@ spec:
               subPath: appsettings.Production.json
             - name: secrets
               mountPath: /secrets
+              readOnly: true
+            - name: aws-token
+              mountPath: /var/run/secrets/aws
+              readOnly: true
+            - name: gcp-token
+              mountPath: /var/run/secrets/gcp/token
+              subPath: token
+              readOnly: true
+            - name: gcp-wif-config
+              mountPath: /var/run/secrets/gcp/credential-config.json
+              subPath: credential-config.json
               readOnly: true
           resources:
             requests:
@@ -65,3 +86,23 @@ spec:
           secret:
             secretName: investigator-cluster-creds
             defaultMode: 0600
+        - name: aws-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: sts.amazonaws.com
+                  expirationSeconds: 3600
+                  path: token
+        - name: gcp-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  # Replace with your GCP WIF provider audience URI:
+                  # //iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID
+                  audience: "PLACEHOLDER_GCP_WIF_AUDIENCE"
+                  expirationSeconds: 3600
+                  path: token
+        - name: gcp-wif-config
+          configMap:
+            name: investigator-gcp-wif
+            optional: true

@@ -1,7 +1,11 @@
+using Google.Apis.Auth.OAuth2;
+using Google.Cloud.Storage.V1;
 using Investigator.Models;
 using Investigator.Services;
 using Investigator.Tools;
 using Microsoft.Extensions.Options;
+
+#pragma warning disable CS0618 // GoogleCredential.FromFile -- CredentialFactory not yet available in all target environments
 
 namespace Investigator;
 
@@ -16,11 +20,62 @@ public static class ServiceCollectionExtensions
         services.Configure<SkillsOptions>(config.GetSection("Tools:skills"));
         services.Configure<WebSearchOptions>(config.GetSection("Tools:web_search"));
         services.Configure<WebBrowserOptions>(config.GetSection("Tools:web_browse"));
+        services.Configure<GitHubOptions>(config.GetSection("Tools:github"));
+        services.Configure<ProwOptions>(config.GetSection("Tools:prow"));
         services.Configure<ToolOutputOptions>(config.GetSection(ToolOutputOptions.Section));
         services.Configure<PluginOptions>(config.GetSection(PluginOptions.Section));
         services.Configure<WorkspaceOptions>(config.GetSection(WorkspaceOptions.Section));
 
         services.AddSingleton<WorkspaceManager>();
+
+        services.AddHttpClient("GitHub", client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "Investigator");
+            client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+            client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+        });
+        services.AddHttpClient("Prow", client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "Investigator");
+        });
+        services.AddSingleton<GitHubAppAuth>();
+
+        services.AddSingleton(sp =>
+        {
+            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("GcsInit");
+            StorageClient? client = null;
+
+            var credFile = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
+            if (!string.IsNullOrEmpty(credFile) && File.Exists(credFile))
+            {
+                try
+                {
+                    var credential = GoogleCredential.FromFile(credFile);
+                    client = StorageClient.Create(credential);
+                    logger.LogInformation("GCS StorageClient created from {CredFile}", credFile);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to create GCS StorageClient from {CredFile}", credFile);
+                }
+            }
+
+            if (client is null)
+            {
+                try
+                {
+                    var credential = GoogleCredential.GetApplicationDefault();
+                    client = StorageClient.Create(credential);
+                    logger.LogInformation("GCS StorageClient created from application default credentials");
+                }
+                catch
+                {
+                    logger.LogInformation("No GCP credentials available, ProwTool will use anonymous GCS Web fallback");
+                }
+            }
+
+            return new GcsClientHolder(client);
+        });
 
         services.AddSingleton<ToolRegistry>(sp =>
         {
@@ -35,6 +90,8 @@ public static class ServiceCollectionExtensions
                 typeof(SkillsLibrary),
                 typeof(WebSearchTool),
                 typeof(WebBrowserTool),
+                typeof(GitHubTool),
+                typeof(ProwTool),
             };
 
             var pluginOpts = sp.GetRequiredService<IOptions<PluginOptions>>().Value;
@@ -85,6 +142,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<SummarizationService>();
         return services;
     }
+
+    public record GcsClientHolder(StorageClient? Client);
 
     public static IServiceCollection AddInvestigatorAuth(this IServiceCollection services, IConfiguration config,
         IHostEnvironment environment)

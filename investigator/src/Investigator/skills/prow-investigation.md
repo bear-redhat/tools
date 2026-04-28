@@ -1,59 +1,68 @@
 ---
 title: Investigating Failed ProwJobs
-tags: [prow, prowjob, spyglass, test-failure, ci, build-log, gcs, gcsweb, artifacts, junit, ci-operator]
+tags: [prow, prowjob, spyglass, test-failure, ci, build-log, gcs, gcsweb, artifacts, junit, ci-operator, tide]
 ---
 
 # Investigating Failed ProwJobs
 
-## URL Patterns
+Use the `prow` tool for all Prow CI interactions. It handles URL parsing, artifact fetching, log downloads, and Tide status natively.
 
-Users often share Prow links. There are three types:
+## When a user shares a Prow link
 
-### 1. Spyglass link (single job run)
-
-```
-https://prow.ci.openshift.org/view/gs/{bucket}/{path}/{job-id}
-```
-
-The Spyglass page is a JavaScript SPA -- the raw HTML is empty scaffolding. Do NOT try to fetch it directly. Instead, transform it to a GCS web URL by swapping the prefix:
+Always start with `resolve_url` to extract structured coordinates:
 
 ```
-https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/{bucket}/{path}/{job-id}/
+prow action=resolve_url url="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/org_repo/1234/job-name/1234567890"
 ```
 
-Example:
-- Spyglass: `https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/org_repo/1234/job-name/1234567890`
-- GCS web: `https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pr-logs/pull/org_repo/1234/job-name/1234567890/`
+This returns the bucket, storage_path, job_name, and build_id -- use these with other actions.
 
-### 2. Deck search link (job listing)
+## Investigation workflow
+
+1. **Get job status** -- confirms pass/fail, timestamps, metadata:
+   ```
+   prow action=job_status storage_path="pr-logs/pull/org_repo/1234/job-name/1234567890"
+   ```
+
+2. **Download the build log** -- the log is saved to disk, use `run_shell` to search it:
+   ```
+   prow action=log storage_path="pr-logs/pull/org_repo/1234/job-name/1234567890"
+   ```
+   Then: `run_shell grep -i 'error\|fail' "<path from above>" | head -50`
+
+3. **Parse JUnit results** -- see which specific tests failed:
+   ```
+   prow action=junit storage_path="pr-logs/pull/org_repo/1234/job-name/1234567890"
+   ```
+
+4. **Browse artifacts** -- list must-gather data, container logs, step outputs:
+   ```
+   prow action=artifacts storage_path="pr-logs/pull/org_repo/1234/job-name/1234567890"
+   prow action=artifacts storage_path="pr-logs/pull/org_repo/1234/job-name/1234567890" path="artifacts/test-name/"
+   ```
+
+5. **Check job config** -- `job_status` includes prowjob.json summary (cluster, refs, job type)
+
+## Finding jobs without a URL
+
+List recent runs by job name, org/repo, PR, state, or type:
 
 ```
-https://prow.ci.openshift.org/?job=periodic-ci-secret-bootstrap
+prow action=jobs job_name="pull-ci-openshift-release" state="failure" count=10
+prow action=jobs org="openshift" repo="release" pr=1234
 ```
 
-This is also a JavaScript SPA. To get job run data, query ProwJob resources directly via `run_oc` on the app.ci cluster:
+## Tide merge status
+
+Check why a PR isn't merging:
 
 ```
-oc get prowjobs -n ci -l prow.k8s.io/job={job-name} --sort-by=.metadata.creationTimestamp -o json
+prow action=tide org="openshift" repo="release"
 ```
 
-### 3. Direct GCS web link
+Shows required labels, blocking labels, and which PRs are ready/pending/missing requirements.
 
-```
-https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/...
-```
-
-These can be fetched directly with curl via `run_shell`.
-
-## Fetching Artifacts
-
-Once you have the GCS web URL, fetch artifacts with `run_shell`:
-
-```bash
-curl -s https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/{bucket}/{path}/{job-id}/finished.json
-```
-
-### Key artifacts in every job run
+## Key artifacts in every job run
 
 | File | Description |
 |------|-------------|
@@ -64,23 +73,9 @@ curl -s https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/{bucket}/{path}/
 | `prowjob_junit.xml` | JUnit XML test results (which tests passed/failed) |
 | `artifacts/` | Directory containing all test artifacts (must-gather, logs, etc.) |
 
-### Investigation workflow
+## Common build log patterns
 
-1. **Start with `finished.json`** -- confirms the failure, gives you the work namespace and pod name
-2. **Check `build-log.txt`** -- the full ci-operator log. Look for error messages, step failures, timeout messages
-3. **Parse `prowjob_junit.xml`** -- if tests ran, see which specific test cases failed
-4. **Browse `artifacts/`** -- may contain must-gather data, container logs, or step-specific outputs
-5. **Check `prowjob.json`** -- if you need to understand the job configuration (which cluster it ran on, what refs were tested)
-
-### Browsing artifact directories
-
-Append `/` to any GCS web directory URL to list its contents. The HTML page contains links you can parse:
-
-```bash
-curl -s "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/{bucket}/{path}/{job-id}/artifacts/" | grep -oP 'href="[^"]*"'
-```
-
-### Common build log patterns
+After downloading with `prow action=log`, search with `run_shell`:
 
 - `"step .* failed"` -- a ci-operator step failed
 - `"error creating"` -- resource creation failure
