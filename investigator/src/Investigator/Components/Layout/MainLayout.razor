@@ -11,12 +11,12 @@
             <img src="@Assets["little-bear.png"]" alt="Little Bear" class="header-logo" />
             <h1>Little Bear, the Detective</h1>
         </div>
-        @if (AuthSettings.Mode != AuthMode.None)
+        @if (AuthSettings.IsEnabled)
         {
             <div class="user-info">
                 @if (CircuitAuth.IsAuthenticated)
                 {
-                    <span>@CircuitAuth.UserName</span>
+                    <span>@CircuitAuth.DisplayName</span>
                     @if (CircuitAuth.AuthMethod == AuthMode.Oidc)
                     {
                         <a href="/logout" class="logout-link">Sign out</a>

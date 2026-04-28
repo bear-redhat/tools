@@ -156,15 +156,7 @@ public static class ServiceCollectionExtensions
         var authSection = config.GetSection(AuthOptions.Section);
         var oidcEnabled = !string.IsNullOrEmpty(authSection["ClientId"]) && !string.IsNullOrEmpty(authSection["Authority"]);
         var tokenEnabled = !string.IsNullOrEmpty(authSection["SharedToken"]);
-        var authMode = (oidcEnabled, tokenEnabled) switch
-        {
-            (true, true)   => AuthMode.TokenAndOidc,
-            (true, false)  => AuthMode.Oidc,
-            (false, true)  => AuthMode.Token,
-            _              => AuthMode.None,
-        };
-
-        services.AddSingleton(new AuthSettings { Mode = authMode });
+        services.AddSingleton(new AuthSettings { HasOidc = oidcEnabled, HasToken = tokenEnabled });
         services.AddScoped<CircuitAuthState>();
 
         if (oidcEnabled)

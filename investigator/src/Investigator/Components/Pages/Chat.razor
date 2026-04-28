@@ -118,9 +118,20 @@
         }
         @if (_session is not null && _session.TotalCost > 0)
         {
-            <CostPanel UsageByAgent="_session.UsageByAgent"
-                       PanelSummarizationUsage="_session.PanelSummarizationUsage"
-                       TotalCost="_session.TotalCost" />
+            @if (_selectedMemberId == "all")
+            {
+                <CostPanel UsageByAgent="_session.UsageByAgent"
+                           PanelSummarizationUsage="_session.PanelSummarizationUsage"
+                           TotalCost="_session.TotalCost" />
+            }
+            else
+            {
+                var agentUsage = GetSelectedAgentUsage();
+                @if (agentUsage is not null)
+                {
+                    <CostPanel SelectedAgent="agentUsage" />
+                }
+            }
         }
     </div>
 </div>

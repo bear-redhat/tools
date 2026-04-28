@@ -111,6 +111,7 @@ internal sealed class ScoutCoordinator
             CompactionMaxTokens: null,
             ThinkingBudget: modelOptions.ThinkingBudget,
             ContextWindowTokens: modelOptions.ContextWindowTokens,
+            ModelProfile: resolvedModel,
             InputPricePerMToken: modelOptions.InputPricePerMToken,
             OutputPricePerMToken: modelOptions.OutputPricePerMToken,
             CacheReadPricePerMToken: modelOptions.CacheReadPricePerMToken,

@@ -23,6 +23,7 @@ public sealed class AgentRunner
         int ContextWindowTokens = 1_000_000,
         string? UserId = null,
         string? ConversationId = null,
+        string? ModelProfile = null,
         decimal InputPricePerMToken = 0,
         decimal OutputPricePerMToken = 0,
         decimal CacheReadPricePerMToken = 0,
@@ -167,7 +168,10 @@ public sealed class AgentRunner
                             config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken);
                         await emit(new AgentEvent.Usage(currentStepId, config.Name,
                             usageInfo.InputTokens, usageInfo.OutputTokens,
-                            usageInfo.CacheReadInputTokens, usageInfo.CacheCreationInputTokens, cost));
+                            usageInfo.CacheReadInputTokens, usageInfo.CacheCreationInputTokens, cost,
+                            config.ModelProfile,
+                            config.InputPricePerMToken, config.OutputPricePerMToken,
+                            config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken));
                     }
 
                     // Case 0: output was truncated -- some tool_use blocks lost their JSON input.
@@ -629,7 +633,10 @@ public sealed class AgentRunner
         await emit(new AgentEvent.Compaction(stepId, config.Name, tokensBefore, tokensAfter,
             compactionUsage?.InputTokens ?? 0, compactionUsage?.OutputTokens ?? 0,
             compactionUsage?.CacheReadInputTokens ?? 0, compactionUsage?.CacheCreationInputTokens ?? 0,
-            costDelta));
+            costDelta,
+            config.ModelProfile,
+            config.InputPricePerMToken, config.OutputPricePerMToken,
+            config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken));
     }
 
     private static bool IsToolBoundary(List<LlmMessage> messages, int index)

@@ -44,25 +44,25 @@ public sealed class ConversationStore
     /// <summary>
     /// Attempts to claim ownership of the session.
     /// Returns <see cref="ClaimResult.WrongUser"/> when the persistent owner
-    /// doesn't match <paramref name="userName"/>, <see cref="ClaimResult.Busy"/>
+    /// doesn't match <paramref name="userId"/>, <see cref="ClaimResult.Busy"/>
     /// when the right user is blocked by another circuit, or
     /// <see cref="ClaimResult.Success"/> when the claim is granted.
     /// </summary>
-    public ClaimResult TryClaim(string id, string circuitId, string? userName)
+    public ClaimResult TryClaim(string id, string circuitId, string? userId)
     {
         var session = TryGetSession(id);
         if (session is null) return ClaimResult.WrongUser;
 
         lock (session.Lock)
         {
-            if (session.OwnerUserName is not null
-                && !string.Equals(session.OwnerUserName, userName, StringComparison.OrdinalIgnoreCase))
+            if (session.OwnerUserId is not null
+                && !string.Equals(session.OwnerUserId, userId, StringComparison.OrdinalIgnoreCase))
                 return ClaimResult.WrongUser;
 
             if (session.OwnerCircuitId is not null && session.OwnerCircuitId != circuitId)
                 return ClaimResult.Busy;
 
-            session.OwnerUserName ??= userName;
+            session.OwnerUserId ??= userId;
             session.OwnerCircuitId = circuitId;
             return ClaimResult.Success;
         }

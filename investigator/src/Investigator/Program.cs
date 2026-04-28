@@ -44,7 +44,7 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseHttpsRedirection();
 
 var authSettings = app.Services.GetRequiredService<AuthSettings>();
-if (authSettings.Mode == AuthMode.Oidc)
+if (authSettings.HasOidc)
 {
     app.UseAuthentication();
     app.UseAuthorization();

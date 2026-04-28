@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Investigator.Services;
 
 namespace Investigator.Models;
@@ -5,7 +6,8 @@ namespace Investigator.Models;
 public sealed class SessionSnapshot
 {
     public required string Id { get; init; }
-    public string? OwnerUserName { get; init; }
+    [JsonPropertyName("OwnerUserName")]
+    public string? OwnerUserId { get; init; }
     public List<ConversationItem> Items { get; init; } = [];
     public List<LogEntryModel> LogEntries { get; init; } = [];
     public List<GroupMember> Members { get; init; } = [];
@@ -17,7 +19,7 @@ public sealed class SessionSnapshot
     public static SessionSnapshot FromSession(ConversationSession session) => new()
     {
         Id = session.Id,
-        OwnerUserName = session.OwnerUserName,
+        OwnerUserId = session.OwnerUserId,
         Items = session.Items.ToList(),
         LogEntries = session.LogEntries.ToList(),
         Members = session.Members.ToList(),
@@ -36,6 +38,11 @@ public sealed class SessionSnapshot
                 CacheReadTokens = kvp.Value.CacheReadTokens,
                 CacheCreateTokens = kvp.Value.CacheCreateTokens,
                 Cost = kvp.Value.Cost,
+                ModelProfile = kvp.Value.ModelProfile,
+                InputPricePerMToken = kvp.Value.InputPricePerMToken,
+                OutputPricePerMToken = kvp.Value.OutputPricePerMToken,
+                CacheReadPricePerMToken = kvp.Value.CacheReadPricePerMToken,
+                CacheCreationPricePerMToken = kvp.Value.CacheCreationPricePerMToken,
             }),
         PanelSummarizationUsage = new AgentUsage
         {
@@ -50,7 +57,7 @@ public sealed class SessionSnapshot
     public ConversationSession ToSession()
     {
         var session = new ConversationSession(Id);
-        session.OwnerUserName = OwnerUserName;
+        session.OwnerUserId = OwnerUserId;
 
         session.Items.Clear();
         session.Items.AddRange(Items);

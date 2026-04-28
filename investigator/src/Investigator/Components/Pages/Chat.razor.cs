@@ -60,6 +60,14 @@ public partial class Chat : IAsyncDisposable
     private bool _selectedScoutIsWorking => _selectedScout?.Status == MemberStatus.Working;
     private bool _isAgentSelected => _selectedMemberId is not "all";
 
+    private AgentUsage? GetSelectedAgentUsage()
+    {
+        if (_session is null || _selectedMemberId == "all") return null;
+        var member = _members.FirstOrDefault(m => m.Id == _selectedMemberId);
+        if (member is null) return null;
+        return _session.UsageByAgent.TryGetValue(member.Name, out var usage) ? usage : null;
+    }
+
     private static readonly HashSet<ConversationItemType> s_roomTypes =
     [
         ConversationItemType.UserMessage,
@@ -144,19 +152,22 @@ public partial class Chat : IAsyncDisposable
             var authState = await AuthStateTask;
             if (authState.User.Identity?.IsAuthenticated == true)
             {
+                var sub = authState.User.FindFirst("sub")?.Value;
+                var name = authState.User.Identity.Name;
                 CircuitAuth.IsAuthenticated = true;
-                CircuitAuth.UserName = authState.User.Identity.Name;
+                CircuitAuth.UserId = sub;
+                CircuitAuth.DisplayName = !string.IsNullOrEmpty(name) ? name : sub;
                 CircuitAuth.AuthMethod = AuthMode.Oidc;
             }
         }
 
-        if (AuthSettings.Mode != AuthMode.None && !CircuitAuth.IsAuthenticated)
+        if (AuthSettings.IsEnabled && !CircuitAuth.IsAuthenticated)
         {
             Nav.NavigateTo($"/login?returnUrl=/c/{ConversationId}");
             return;
         }
 
-        var claim = Store.TryClaim(ConversationId, _circuitId, CircuitAuth.UserName);
+        var claim = Store.TryClaim(ConversationId, _circuitId, CircuitAuth.UserId);
         if (claim == ClaimResult.WrongUser)
         {
             Nav.NavigateTo($"/c/{ConversationId}/view", forceLoad: true);
@@ -239,7 +250,7 @@ public partial class Chat : IAsyncDisposable
             _cts = new CancellationTokenSource();
             _eventLoopTask = RunEventLoopAsync(_cts.Token);
             _ = Room.StartAsync(_session.WorkspacePath, _history, _cts.Token,
-                userId: _session.OwnerUserName, conversationId: _session.Id);
+                userId: _session.OwnerUserId, conversationId: _session.Id);
             _started = true;
         }
 
@@ -559,6 +570,14 @@ public partial class Chat : IAsyncDisposable
                     agentUsage.CacheReadTokens += usage.CacheReadTokens;
                     agentUsage.CacheCreateTokens += usage.CacheCreateTokens;
                     agentUsage.Cost += usage.CostDelta;
+                    agentUsage.ModelProfile ??= usage.ModelProfile;
+                    if (agentUsage.InputPricePerMToken == 0 && usage.InputPricePerMToken != 0)
+                    {
+                        agentUsage.InputPricePerMToken = usage.InputPricePerMToken;
+                        agentUsage.OutputPricePerMToken = usage.OutputPricePerMToken;
+                        agentUsage.CacheReadPricePerMToken = usage.CacheReadPricePerMToken;
+                        agentUsage.CacheCreationPricePerMToken = usage.CacheCreationPricePerMToken;
+                    }
 
                     var senderId = usage.AgentName.ToLowerInvariant().Replace(" ", "-");
                     _pendingUsage[senderId] = new TurnUsage
@@ -587,6 +606,14 @@ public partial class Chat : IAsyncDisposable
                     agentUsage.CacheReadTokens += compaction.CacheReadTokens;
                     agentUsage.CacheCreateTokens += compaction.CacheCreateTokens;
                     agentUsage.Cost += compaction.CostDelta;
+                    agentUsage.ModelProfile ??= compaction.ModelProfile;
+                    if (agentUsage.InputPricePerMToken == 0 && compaction.InputPricePerMToken != 0)
+                    {
+                        agentUsage.InputPricePerMToken = compaction.InputPricePerMToken;
+                        agentUsage.OutputPricePerMToken = compaction.OutputPricePerMToken;
+                        agentUsage.CacheReadPricePerMToken = compaction.CacheReadPricePerMToken;
+                        agentUsage.CacheCreationPricePerMToken = compaction.CacheCreationPricePerMToken;
+                    }
 
                     var compactUsage = new TurnUsage
                     {

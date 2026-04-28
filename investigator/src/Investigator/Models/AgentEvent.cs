@@ -37,9 +37,15 @@ public abstract record AgentEvent(string StepId)
     public record SubAgentFailed(string StepId, string AgentName, string Reason) : AgentEvent(StepId);
 
     public record Usage(string StepId, string AgentName, int InputTokens, int OutputTokens,
-        int CacheReadTokens, int CacheCreateTokens, decimal CostDelta) : AgentEvent(StepId);
+        int CacheReadTokens, int CacheCreateTokens, decimal CostDelta,
+        string? ModelProfile = null,
+        decimal InputPricePerMToken = 0, decimal OutputPricePerMToken = 0,
+        decimal CacheReadPricePerMToken = 0, decimal CacheCreationPricePerMToken = 0) : AgentEvent(StepId);
 
     public record Compaction(string StepId, string AgentName, int TokensBefore, int TokensAfter,
         int InputTokens, int OutputTokens, int CacheReadTokens, int CacheCreateTokens,
-        decimal CostDelta) : AgentEvent(StepId);
+        decimal CostDelta,
+        string? ModelProfile = null,
+        decimal InputPricePerMToken = 0, decimal OutputPricePerMToken = 0,
+        decimal CacheReadPricePerMToken = 0, decimal CacheCreationPricePerMToken = 0) : AgentEvent(StepId);
 }

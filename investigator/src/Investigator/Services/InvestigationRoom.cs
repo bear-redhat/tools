@@ -180,6 +180,7 @@ public sealed class InvestigationRoom
             CompactionMaxTokens: primaryOptions.MaxTokens * 4,
             ThinkingBudget: primaryOptions.ThinkingBudget,
             ContextWindowTokens: primaryOptions.ContextWindowTokens,
+            ModelProfile: _llmFactory.PrimaryProfileName,
             InputPricePerMToken: primaryOptions.InputPricePerMToken,
             OutputPricePerMToken: primaryOptions.OutputPricePerMToken,
             CacheReadPricePerMToken: primaryOptions.CacheReadPricePerMToken,
@@ -325,7 +326,15 @@ public sealed class InvestigationRoom
             return await _scoutCoordinator.HandleDelegate(input, ct);
 
         if (toolName == CheckAgentsToolName)
-            return new AgentRunner.ToolExecutionResult(_roomToolHandlers.BuildCheckAgentsResponse());
+        {
+            var response = _roomToolHandlers.BuildCheckAgentsResponse();
+            if (_roomToolHandlers.HasActiveScouts())
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                response += "\n\nScouts are still at work. Do NOT call check_agents again -- end your turn with text only and wait patiently. You will be woken automatically when a Scout reports back.";
+            }
+            return new AgentRunner.ToolExecutionResult(response);
+        }
 
         if (toolName == PresentFindingToolName)
             return await _roomToolHandlers.HandlePresentFinding(callerSlot, input);
@@ -484,7 +493,7 @@ public sealed class InvestigationRoom
 
         tools.Add(new ToolDefinition(
             Name: CheckAgentsToolName,
-            Description: "Review the status of dispatched Scouts -- which are still at work and which have reported.",
+            Description: "Review the status of dispatched Scouts. NOT a polling tool -- call only if you have genuinely lost track of which Scouts are afield. You will be woken automatically when Scouts report; do not call this repeatedly to check.",
             ParameterSchema: s_emptySchema,
             DefaultTimeout: TimeSpan.Zero));
 

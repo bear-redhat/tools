@@ -14,7 +14,8 @@ public sealed class AnonymousAuthHandler(
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var identity = new ClaimsIdentity("anonymous");
-        identity.AddClaim(new Claim(ClaimTypes.Name, "dev-user"));
+        identity.AddClaim(new Claim("sub", "anonymous"));
+        identity.AddClaim(new Claim(ClaimTypes.Name, "Developer"));
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, "anonymous");
         return Task.FromResult(AuthenticateResult.Success(ticket));

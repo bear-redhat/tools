@@ -1379,6 +1379,13 @@ pre.ascii-art {
 .cost-row-total .cost-row-amount { font-weight: 700; color: #e0e0e0; }
 .cost-row-total .cost-row-amount { color: #d97706; }
 
+.cost-panel-model {
+    color: #6b7280;
+    font-size: 0.75rem;
+    font-family: monospace;
+    margin-left: 0.2rem;
+}
+
 /* Per-turn usage in conversation bubbles */
 .message-footer {
     display: flex;

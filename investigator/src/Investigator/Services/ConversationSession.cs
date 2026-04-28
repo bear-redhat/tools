@@ -10,6 +10,11 @@ public sealed class AgentUsage
     public int CacheReadTokens { get; set; }
     public int CacheCreateTokens { get; set; }
     public decimal Cost { get; set; }
+    public string? ModelProfile { get; set; }
+    public decimal InputPricePerMToken { get; set; }
+    public decimal OutputPricePerMToken { get; set; }
+    public decimal CacheReadPricePerMToken { get; set; }
+    public decimal CacheCreationPricePerMToken { get; set; }
 }
 
 public sealed class ConversationSession
@@ -66,7 +71,7 @@ public sealed class ConversationSession
     public Dictionary<string, List<ConversationItem>> DetailEvents { get; } = new();
     public Dictionary<string, List<LogEntryModel>> DetailLogEntries { get; } = new();
 
-    public string? OwnerUserName { get; set; }
+    public string? OwnerUserId { get; set; }
     public string? OwnerCircuitId { get; set; }
 
     public Dictionary<string, AgentUsage> UsageByAgent { get; } = new(StringComparer.OrdinalIgnoreCase);

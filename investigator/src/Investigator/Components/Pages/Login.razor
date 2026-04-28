@@ -87,7 +87,7 @@
             }
         }
 
-        @if (AuthSettings.Mode == AuthMode.None)
+        @if (!AuthSettings.IsEnabled)
         {
             <p class="login-hint">🚪 The door to 221B stands open. No letter of introduction required.</p>
         }
@@ -114,7 +114,8 @@
         if (!string.IsNullOrEmpty(expected) && _token == expected)
         {
             CircuitAuth.IsAuthenticated = true;
-            CircuitAuth.UserName = "token-user";
+            CircuitAuth.UserId = "token-user";
+            CircuitAuth.DisplayName = "Token User";
             CircuitAuth.AuthMethod = AuthMode.Token;
 
             _error = false;

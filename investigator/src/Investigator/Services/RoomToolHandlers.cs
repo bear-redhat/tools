@@ -164,6 +164,9 @@ internal sealed class RoomToolHandlers
             $"Word has been sent to {name}. They will return to Banyan Row presently.");
     }
 
+    internal bool HasActiveScouts() =>
+        _agents.Any(kv => kv.Value.Id != "little-bear" && !kv.Value.Concluded);
+
     internal string BuildCheckAgentsResponse()
     {
         var scouts = _agents.Where(kv => kv.Value.Id != "little-bear").ToList();
