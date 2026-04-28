@@ -485,7 +485,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode)
             {
-                var body = await response.Content.ReadAsStringAsync(ct);
+                var body = await ReadContentAsStringAsync(response.Content, ct);
                 return new ToolResult(
                     $"Failed to download build log ({response.StatusCode}). URL: {url}\n{Truncate(body, 300)}",
                     ExitCode: 1);
@@ -861,7 +861,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             var response = await _httpClient.GetAsync(url, ct);
             if (!response.IsSuccessStatusCode)
                 return null;
-            return await response.Content.ReadAsStringAsync(ct);
+            return await ReadContentAsStringAsync(response.Content, ct);
         }
         catch (HttpRequestException)
         {
@@ -876,7 +876,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         try
         {
             var response = await _httpClient.GetAsync(url, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
+            var body = await ReadContentAsStringAsync(response.Content, ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -906,6 +906,21 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
                 links.Add(href.EndsWith('/') ? $"{name}/" : name);
         }
         return links;
+    }
+
+    // ------------------------------------------------------------------ helpers: resilient content read
+
+    private static async Task<string> ReadContentAsStringAsync(HttpContent content, CancellationToken ct)
+    {
+        try
+        {
+            return await content.ReadAsStringAsync(ct);
+        }
+        catch (InvalidOperationException)
+        {
+            var bytes = await content.ReadAsByteArrayAsync(ct);
+            return Encoding.UTF8.GetString(bytes);
+        }
     }
 
     // ------------------------------------------------------------------ helpers: formatting

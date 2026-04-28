@@ -118,7 +118,8 @@ internal sealed class ScoutCoordinator
             UserId: UserId,
             ConversationId: ConversationId,
             SummarizerClient: _llmFactory.GetClient(summarizerProfile),
-            SummarizerModelOptions: summarizerOptions);
+            SummarizerModelOptions: summarizerOptions,
+            IsConcluded: () => scoutSlot.Concluded);
 
         await scoutSlot.Inbox.Writer.WriteAsync(new RoomMessage("Little Bear", task), ct);
         scoutSlot.RunTask = Task.Run(() => _runAgent(scoutSlot, scoutConfig, ct), ct);

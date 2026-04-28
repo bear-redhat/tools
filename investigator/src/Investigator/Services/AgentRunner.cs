@@ -28,7 +28,8 @@ public sealed class AgentRunner
         decimal CacheReadPricePerMToken = 0,
         decimal CacheCreationPricePerMToken = 0,
         ILlmClient? SummarizerClient = null,
-        ModelOptions? SummarizerModelOptions = null);
+        ModelOptions? SummarizerModelOptions = null,
+        Func<bool>? IsConcluded = null);
 
     public record ToolExecutionResult(
         string Output,
@@ -66,6 +67,9 @@ public sealed class AgentRunner
             {
                 while (inbox.TryRead(out var msg))
                     messages.Add(FormatInboxMessage(msg));
+
+                if (config.IsConcluded?.Invoke() == true)
+                    continue;
 
                 toolCallCount = 0;
 

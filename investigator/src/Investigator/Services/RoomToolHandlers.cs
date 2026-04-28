@@ -60,6 +60,7 @@ internal sealed class RoomToolHandlers
                 });
             }
 
+            callerSlot.Concluded = true;
             await _emitToUi(new AgentEvent.StatusChanged("conclude-lb-status", false));
             return new AgentRunner.ToolExecutionResult(Output: "The matter is concluded.", Concluded: true);
         }

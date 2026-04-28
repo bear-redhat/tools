@@ -187,7 +187,8 @@ public sealed class InvestigationRoom
             UserId: userId,
             ConversationId: conversationId,
             SummarizerClient: _llmFactory.GetClient(summarizerProfile),
-            SummarizerModelOptions: summarizerOptions);
+            SummarizerModelOptions: summarizerOptions,
+            IsConcluded: () => littleBearSlot.Concluded);
 
         littleBearSlot.RunTask = RunAgentWithRouting(littleBearSlot, runnerConfig, ct);
 
@@ -236,7 +237,10 @@ public sealed class InvestigationRoom
     public ValueTask PostUserMessageAsync(string text, CancellationToken ct)
     {
         if (_agents.TryGetValue("Little Bear", out var slot))
+        {
+            slot.Concluded = false;
             return slot.Inbox.Writer.WriteAsync(new RoomMessage("user", text), ct);
+        }
         return ValueTask.CompletedTask;
     }
 
@@ -288,7 +292,9 @@ public sealed class InvestigationRoom
                 if (removed)
                 {
                     var remainingScouts = _agents.Where(kv => kv.Value.Id != "little-bear").ToList();
-                    if (remainingScouts.Count == 0 && _agents.TryGetValue("Little Bear", out var lb))
+                    if (remainingScouts.Count == 0
+                        && _agents.TryGetValue("Little Bear", out var lb)
+                        && !lb.Concluded)
                     {
                         _logger.LogInformation("Last scout {Name} finished, nudging Little Bear to conclude", config.Name);
                         await lb.Inbox.Writer.WriteAsync(
