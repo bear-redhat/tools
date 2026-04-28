@@ -6,7 +6,7 @@
         <span class="cost-panel-total">@FormatCost(TotalCost)</span>
         @if (!_expanded)
         {
-            <span class="cost-panel-hint">@FormatTokens(TotalInputTokens) in @FormatTokens(TotalOutputTokens) out</span>
+            <span class="cost-panel-hint">@FormatTokens(TotalInputTokens) in @FormatTokens(TotalOutputTokens) out@(TotalCacheReadTokens > 0 ? $" {FormatTokens(TotalCacheReadTokens)} cached" : "")@(TotalCacheCreateTokens > 0 ? $" {FormatTokens(TotalCacheCreateTokens)} cache-write" : "")</span>
         }
     </div>
     @if (_expanded)
@@ -17,7 +17,7 @@
                 <div class="cost-row">
                     <span class="cost-row-name">@name</span>
                     <span class="cost-row-amount">@FormatCost(usage.Cost)</span>
-                    <span class="cost-row-tokens">@FormatTokens(usage.InputTokens) in @FormatTokens(usage.OutputTokens) out@(usage.CacheReadTokens > 0 ? $" {FormatTokens(usage.CacheReadTokens)} cache" : "")</span>
+                    <span class="cost-row-tokens">@FormatTokens(usage.InputTokens) in @FormatTokens(usage.OutputTokens) out@(usage.CacheReadTokens > 0 ? $" {FormatTokens(usage.CacheReadTokens)} cached" : "")@(usage.CacheCreateTokens > 0 ? $" {FormatTokens(usage.CacheCreateTokens)} cache-write" : "")</span>
                 </div>
             }
             @if (PanelSummarizationUsage.Cost > 0)
@@ -25,13 +25,13 @@
                 <div class="cost-row">
                     <span class="cost-row-name">Panel Summaries</span>
                     <span class="cost-row-amount">@FormatCost(PanelSummarizationUsage.Cost)</span>
-                    <span class="cost-row-tokens">@FormatTokens(PanelSummarizationUsage.InputTokens) in @FormatTokens(PanelSummarizationUsage.OutputTokens) out</span>
+                    <span class="cost-row-tokens">@FormatTokens(PanelSummarizationUsage.InputTokens) in @FormatTokens(PanelSummarizationUsage.OutputTokens) out@(PanelSummarizationUsage.CacheReadTokens > 0 ? $" {FormatTokens(PanelSummarizationUsage.CacheReadTokens)} cached" : "")@(PanelSummarizationUsage.CacheCreateTokens > 0 ? $" {FormatTokens(PanelSummarizationUsage.CacheCreateTokens)} cache-write" : "")</span>
                 </div>
             }
             <div class="cost-row cost-row-total">
                 <span class="cost-row-name">Total</span>
                 <span class="cost-row-amount">@FormatCost(TotalCost)</span>
-                <span class="cost-row-tokens">@FormatTokens(TotalInputTokens) in @FormatTokens(TotalOutputTokens) out</span>
+                <span class="cost-row-tokens">@FormatTokens(TotalInputTokens) in @FormatTokens(TotalOutputTokens) out@(TotalCacheReadTokens > 0 ? $" {FormatTokens(TotalCacheReadTokens)} cached" : "")@(TotalCacheCreateTokens > 0 ? $" {FormatTokens(TotalCacheCreateTokens)} cache-write" : "")</span>
             </div>
         </div>
     }
@@ -49,6 +49,10 @@
         UsageByAgent.Values.Sum(u => u.InputTokens) + PanelSummarizationUsage.InputTokens;
     private int TotalOutputTokens =>
         UsageByAgent.Values.Sum(u => u.OutputTokens) + PanelSummarizationUsage.OutputTokens;
+    private int TotalCacheReadTokens =>
+        UsageByAgent.Values.Sum(u => u.CacheReadTokens) + PanelSummarizationUsage.CacheReadTokens;
+    private int TotalCacheCreateTokens =>
+        UsageByAgent.Values.Sum(u => u.CacheCreateTokens) + PanelSummarizationUsage.CacheCreateTokens;
 
     private static string FormatCost(decimal cost) =>
         cost < 0.01m ? $"${cost:F4}" : $"${cost:F2}";

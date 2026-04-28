@@ -171,7 +171,7 @@
     <div class="message-footer">
         @if (ShowUsage && Item.Usage is not null)
         {
-            <span class="turn-usage">@FormatCost(Item.Usage.Cost) | @FormatTokens(Item.Usage.InputTokens) in @FormatTokens(Item.Usage.OutputTokens) out@(Item.Usage.CacheReadTokens > 0 ? $" {FormatTokens(Item.Usage.CacheReadTokens)} cache" : "")</span>
+            <span class="turn-usage">@FormatCost(Item.Usage.Cost) | @FormatTokens(Item.Usage.InputTokens) in @FormatTokens(Item.Usage.OutputTokens) out@(Item.Usage.CacheReadTokens > 0 ? $" {FormatTokens(Item.Usage.CacheReadTokens)} cached" : "")@(Item.Usage.CacheCreateTokens > 0 ? $" {FormatTokens(Item.Usage.CacheCreateTokens)} cache-write" : "")</span>
         }
         <span class="message-time">@Item.Timestamp.ToString("HH:mm:ss")</span>
     </div>

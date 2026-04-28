@@ -1,8 +1,11 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Investigator.Contracts;
+using Investigator.Models;
 using Investigator.Services;
+using Microsoft.Extensions.Options;
 
 namespace Investigator.Tools;
 
@@ -14,8 +17,8 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["pr_status", "pr_files", "pr_comments", "workflow_runs", "workflow_logs", "search"],
-                "description": "pr_status: PR metadata + check runs + commit statuses. pr_files: changed files. pr_comments: review and issue comments. workflow_runs: list recent Actions runs. workflow_logs: download full logs for a run. search: search issues/PRs."
+                "enum": ["pr_status", "pr_files", "pr_comments", "workflow_runs", "workflow_logs", "search", "get_file", "list_directory", "get_tree", "clone_repo"],
+                "description": "pr_status: PR metadata + check runs + commit statuses. pr_files: changed files. pr_comments: review and issue comments. workflow_runs: list recent Actions runs. workflow_logs: download full logs for a run. search: search issues/PRs. get_file: download a file to workspace. list_directory: list entries in a directory. get_tree: recursively list the repo tree. clone_repo: shallow-clone a repo to workspace."
             },
             "owner": { "type": "string", "description": "Repository owner (org or user)." },
             "repo": { "type": "string", "description": "Repository name." },
@@ -25,7 +28,10 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             "workflow": { "type": "string", "description": "Workflow filename (e.g. ci.yaml) or ID. For workflow_runs only." },
             "branch": { "type": "string", "description": "Filter workflow runs by branch. For workflow_runs only." },
             "status": { "type": "string", "description": "Filter workflow runs by status (queued, in_progress, completed). For workflow_runs only." },
-            "count": { "type": "integer", "description": "Number of results to return (default 10, max 50). For workflow_runs only." }
+            "count": { "type": "integer", "description": "Number of results to return (default 10, max 50). For workflow_runs only." },
+            "path": { "type": "string", "description": "File or directory path within the repo. Required for get_file, list_directory. Optional for get_tree (defaults to root)." },
+            "ref": { "type": "string", "description": "Branch, tag, or commit SHA. Optional for get_file, list_directory, get_tree, clone_repo (defaults to repo default branch)." },
+            "depth": { "type": "integer", "description": "Clone depth (default 1 = shallow). Set to 0 for full clone. For clone_repo only." }
         },
         "required": ["action"]
     }
@@ -35,12 +41,15 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
 
     private readonly HttpClient _httpClient;
     private readonly GitHubAppAuth _auth;
+    private readonly GitHubOptions _options;
     private readonly ILogger<GitHubTool> _logger;
 
-    public GitHubTool(IHttpClientFactory httpClientFactory, GitHubAppAuth auth, ILogger<GitHubTool> logger)
+    public GitHubTool(IHttpClientFactory httpClientFactory, GitHubAppAuth auth,
+        IOptions<GitHubOptions> options, ILogger<GitHubTool> logger)
     {
         _httpClient = httpClientFactory.CreateClient("GitHub");
         _auth = auth;
+        _options = options.Value;
         _logger = logger;
 
         if (_auth.IsConfigured)
@@ -51,10 +60,10 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
 
     public ToolDefinition Definition => new(
         Name: "github",
-        Description: "Query the GitHub API -- pull request details, check/test statuses, "
-            + "changed files, comments, workflow runs, workflow logs, and issue/PR search.",
+        Description: "Query the GitHub API -- pull requests, checks, comments, workflow runs/logs, search, "
+            + "file/directory contents, repo tree, and shallow clone.",
         ParameterSchema: s_paramSchema,
-        DefaultTimeout: TimeSpan.FromSeconds(60));
+        DefaultTimeout: TimeSpan.FromSeconds(120));
 
     public string? GetSystemPromptSection()
     {
@@ -62,11 +71,16 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         return $"""
             ## GitHub tool
             The `github` tool queries the GitHub REST API ({mode}).
-            Actions: pr_status, pr_files, pr_comments, workflow_runs, workflow_logs, search.
+            Actions: pr_status, pr_files, pr_comments, workflow_runs, workflow_logs, search, get_file, list_directory, get_tree, clone_repo.
             For PR actions, provide owner, repo, and number.
             For workflow_runs, provide owner and repo; optionally workflow, branch, status, count, or number (to filter by PR branch).
             For workflow_logs, provide owner, repo, and run_id. Logs are downloaded to the workspace — use run_shell to search them.
             For search, provide a query using GitHub search qualifiers.
+            For get_file, provide owner, repo, path, and optionally ref. The file is saved to disk — use run_shell to read it.
+            For list_directory, provide owner, repo, path (or omit path for repo root), and optionally ref.
+            For get_tree, provide owner, repo, and optionally ref. Returns a recursive listing of all files.
+            For clone_repo, provide owner and repo, optionally ref and depth. Clones the repo to the workspace for local browsing (repos over {_options.MaxCloneSizeKb / 1024} MB are refused — use get_file instead).
+            Do NOT use run_shell with curl to access github.com or api.github.com — use this tool instead.
             """;
     }
 
@@ -82,7 +96,11 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             "workflow_runs" => await WorkflowRuns(parameters, context, ct),
             "workflow_logs" => await WorkflowLogs(parameters, context, ct),
             "search" => await Search(parameters, context, ct),
-            _ => new ToolResult($"Unknown action: {action}. Use pr_status, pr_files, pr_comments, workflow_runs, workflow_logs, or search.", ExitCode: 1),
+            "get_file" => await GetFile(parameters, context, ct),
+            "list_directory" => await ListDirectory(parameters, context, ct),
+            "get_tree" => await GetTree(parameters, context, ct),
+            "clone_repo" => await CloneRepo(parameters, context, ct),
+            _ => new ToolResult($"Unknown action: {action}.", ExitCode: 1),
         };
     }
 
@@ -447,6 +465,274 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         return new ToolResult(sb.ToString());
     }
 
+    // ------------------------------------------------------------------ get_file
+    private async Task<ToolResult> GetFile(JsonElement p, ToolContext ctx, CancellationToken ct)
+    {
+        if (!TryGetRepoParams(p, out var owner, out var repo, out var error))
+            return new ToolResult(error, ExitCode: 1);
+
+        var path = p.TryGetProperty("path", out var pathEl) ? pathEl.GetString() ?? "" : "";
+        if (string.IsNullOrEmpty(path))
+            return new ToolResult("get_file requires 'path'.", ExitCode: 1);
+
+        var gitRef = p.TryGetProperty("ref", out var refEl) ? refEl.GetString() : null;
+        ctx.Logger.LogInformation("github: get_file {Owner}/{Repo}/{Path} ref={Ref}", owner, repo, path, gitRef ?? "(default)");
+
+        var url = $"{ApiBase}/repos/{owner}/{repo}/contents/{path.TrimStart('/')}";
+        if (!string.IsNullOrEmpty(gitRef)) url += $"?ref={Uri.EscapeDataString(gitRef)}";
+
+        var json = await GetAsync(url, ct);
+        if (json is null)
+            return new ToolResult($"Failed to fetch {owner}/{repo}/{path}", ExitCode: 1);
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Array)
+            return new ToolResult($"Path '{path}' is a directory, not a file. Use list_directory instead.", ExitCode: 1);
+
+        var type = Str(root, "type");
+        if (type != "file")
+            return new ToolResult($"Path '{path}' is a {type}, not a file.", ExitCode: 1);
+
+        var sha = Str(root, "sha");
+        var size = root.TryGetProperty("size", out var sizeEl) ? sizeEl.GetInt64() : 0;
+        var refLabel = gitRef ?? sha[..Math.Min(sha.Length, 12)];
+
+        byte[] content;
+        var encoding = Str(root, "encoding");
+        if (encoding == "base64")
+        {
+            var base64 = Str(root, "content").Replace("\n", "");
+            content = Convert.FromBase64String(base64);
+        }
+        else
+        {
+            var rawUrl = $"https://raw.githubusercontent.com/{owner}/{repo}/{refLabel}/{path.TrimStart('/')}";
+            ctx.Logger.LogInformation("github: get_file falling back to raw download for {Owner}/{Repo}/{Path}", owner, repo, path);
+            var rawBytes = await GetBytesAsync(rawUrl, ct);
+            if (rawBytes is null)
+                return new ToolResult($"Failed to download raw content for {owner}/{repo}/{path}", ExitCode: 1);
+            content = rawBytes;
+        }
+
+        var outDir = Path.Combine(ctx.WorkspacePath, "tool_outputs", "github_files", owner, repo, refLabel);
+        var outPath = Path.Combine(outDir, path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+        var dir = Path.GetDirectoryName(outPath);
+        if (dir is not null) Directory.CreateDirectory(dir);
+        await File.WriteAllBytesAsync(outPath, content, ct);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"# File saved: {owner}/{repo}/{path}");
+        sb.AppendLine($"Ref:   {refLabel}");
+        sb.AppendLine($"SHA:   {sha}");
+        sb.AppendLine($"Size:  {size:N0} bytes");
+        sb.AppendLine($"Saved: {outPath}");
+        sb.AppendLine();
+        sb.AppendLine("Use run_shell to read or search this file.");
+
+        return new ToolResult(sb.ToString());
+    }
+
+    // ------------------------------------------------------------------ list_directory
+    private async Task<ToolResult> ListDirectory(JsonElement p, ToolContext ctx, CancellationToken ct)
+    {
+        if (!TryGetRepoParams(p, out var owner, out var repo, out var error))
+            return new ToolResult(error, ExitCode: 1);
+
+        var path = p.TryGetProperty("path", out var pathEl) ? pathEl.GetString() ?? "" : "";
+        var gitRef = p.TryGetProperty("ref", out var refEl) ? refEl.GetString() : null;
+        ctx.Logger.LogInformation("github: list_directory {Owner}/{Repo}/{Path} ref={Ref}", owner, repo, path, gitRef ?? "(default)");
+
+        var url = $"{ApiBase}/repos/{owner}/{repo}/contents/{path.TrimStart('/')}";
+        if (!string.IsNullOrEmpty(gitRef)) url += $"?ref={Uri.EscapeDataString(gitRef)}";
+
+        var json = await GetAsync(url, ct);
+        if (json is null)
+            return new ToolResult($"Failed to fetch directory listing for {owner}/{repo}/{path}", ExitCode: 1);
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (root.ValueKind != JsonValueKind.Array)
+            return new ToolResult($"Path '{path}' is a file, not a directory. Use get_file instead.", ExitCode: 1);
+
+        var sb = new StringBuilder();
+        var displayPath = string.IsNullOrEmpty(path) ? "/" : $"/{path.TrimStart('/')}";
+        sb.AppendLine($"# Directory listing: {owner}/{repo}{displayPath}");
+        if (!string.IsNullOrEmpty(gitRef)) sb.AppendLine($"Ref: {gitRef}");
+        sb.AppendLine($"Entries: {root.GetArrayLength()}");
+        sb.AppendLine();
+
+        foreach (var entry in root.EnumerateArray())
+        {
+            var entryType = Str(entry, "type");
+            var entryName = Str(entry, "name");
+            var entrySize = entry.TryGetProperty("size", out var sz) ? sz.GetInt64() : 0;
+            var icon = entryType == "dir" ? "dir " : "file";
+            sb.AppendLine($"  {icon}  {entrySize,8:N0}  {entryName}");
+        }
+
+        return new ToolResult(sb.ToString());
+    }
+
+    // ------------------------------------------------------------------ get_tree
+    private async Task<ToolResult> GetTree(JsonElement p, ToolContext ctx, CancellationToken ct)
+    {
+        if (!TryGetRepoParams(p, out var owner, out var repo, out var error))
+            return new ToolResult(error, ExitCode: 1);
+
+        var gitRef = p.TryGetProperty("ref", out var refEl) ? refEl.GetString() ?? "" : "";
+        if (string.IsNullOrEmpty(gitRef))
+            gitRef = "HEAD";
+
+        ctx.Logger.LogInformation("github: get_tree {Owner}/{Repo} ref={Ref}", owner, repo, gitRef);
+
+        var url = $"{ApiBase}/repos/{owner}/{repo}/git/trees/{Uri.EscapeDataString(gitRef)}?recursive=1";
+        var json = await GetAsync(url, ct);
+        if (json is null)
+            return new ToolResult($"Failed to fetch tree for {owner}/{repo} at {gitRef}", ExitCode: 1);
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var tree = root.GetProperty("tree");
+        var truncated = root.TryGetProperty("truncated", out var trunc) && trunc.GetBoolean();
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"# Tree: {owner}/{repo} @ {gitRef}");
+        sb.AppendLine($"Entries: {tree.GetArrayLength()}{(truncated ? " (TRUNCATED by GitHub -- tree too large)" : "")}");
+        sb.AppendLine();
+
+        foreach (var entry in tree.EnumerateArray())
+        {
+            var entryPath = Str(entry, "path");
+            var entryType = Str(entry, "type");
+            var entrySize = entry.TryGetProperty("size", out var sz) ? sz.GetInt64() : -1;
+
+            if (entryType == "tree")
+                sb.AppendLine($"  dir   {"",8}  {entryPath}/");
+            else
+                sb.AppendLine($"  blob  {entrySize,8:N0}  {entryPath}");
+        }
+
+        return new ToolResult(sb.ToString());
+    }
+
+    // ------------------------------------------------------------------ clone_repo
+    private async Task<ToolResult> CloneRepo(JsonElement p, ToolContext ctx, CancellationToken ct)
+    {
+        if (!TryGetRepoParams(p, out var owner, out var repo, out var error))
+            return new ToolResult(error, ExitCode: 1);
+
+        var gitRef = p.TryGetProperty("ref", out var refEl) ? refEl.GetString() : null;
+        var depth = p.TryGetProperty("depth", out var depthEl) ? depthEl.GetInt32() : 1;
+
+        ctx.Logger.LogInformation("github: clone_repo {Owner}/{Repo} ref={Ref} depth={Depth}", owner, repo, gitRef ?? "(default)", depth);
+
+        var cloneDir = Path.Combine(ctx.WorkspacePath, "tool_outputs", "github_clones", owner, repo);
+        if (Directory.Exists(cloneDir) && Directory.Exists(Path.Combine(cloneDir, ".git")))
+        {
+            ctx.Logger.LogInformation("github: clone_repo reusing existing clone at {Path}", cloneDir);
+            return new ToolResult(
+                $"# Clone already exists: {owner}/{repo}\nPath: {cloneDir}\n\nUse run_shell to browse, grep, or read files.");
+        }
+
+        var repoJson = await GetAsync($"{ApiBase}/repos/{owner}/{repo}", ct);
+        if (repoJson is null)
+            return new ToolResult($"Failed to query repo metadata for {owner}/{repo}", ExitCode: 1);
+
+        using var repoDoc = JsonDocument.Parse(repoJson);
+        var repoRoot = repoDoc.RootElement;
+        var sizeKb = repoRoot.TryGetProperty("size", out var sizeEl) ? sizeEl.GetInt64() : 0;
+        var maxKb = _options.MaxCloneSizeKb;
+
+        if (sizeKb > maxKb)
+        {
+            return new ToolResult(
+                $"Repository {owner}/{repo} is too large to clone ({sizeKb / 1024} MB reported, limit is {maxKb / 1024} MB). "
+                + "Use get_file, list_directory, or get_tree to inspect specific paths instead.",
+                ExitCode: 1);
+        }
+
+        Directory.CreateDirectory(cloneDir);
+
+        var cloneUrl = $"https://github.com/{owner}/{repo}.git";
+        var token = await _auth.GetTokenAsync(ct);
+        if (token is not null)
+            cloneUrl = $"https://x-access-token:{token}@github.com/{owner}/{repo}.git";
+
+        var args = new List<string> { "clone" };
+        if (depth > 0)
+        {
+            args.Add($"--depth={depth}");
+            args.Add("--single-branch");
+        }
+        if (!string.IsNullOrEmpty(gitRef))
+            args.Add($"--branch={gitRef}");
+        args.Add(cloneUrl);
+        args.Add(cloneDir);
+
+        var psi = new ProcessStartInfo("git")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            WorkingDirectory = ctx.WorkspacePath,
+        };
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+
+        var output = new StringBuilder();
+        Process? proc = null;
+        try
+        {
+            proc = Process.Start(psi);
+            if (proc is null)
+                return new ToolResult("Failed to start git process.", ExitCode: -1);
+
+            var readOut = proc.StandardOutput.ReadToEndAsync(ct);
+            var readErr = proc.StandardError.ReadToEndAsync(ct);
+            await proc.WaitForExitAsync(ct);
+
+            output.Append(await readOut);
+            output.Append(await readErr);
+
+            if (proc.ExitCode != 0)
+            {
+                TryCleanupDir(cloneDir);
+                return new ToolResult($"git clone failed (exit {proc.ExitCode}):\n{output}", ExitCode: proc.ExitCode);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (proc is not null && !proc.HasExited)
+                try { proc.Kill(entireProcessTree: true); } catch { }
+            TryCleanupDir(cloneDir);
+            return new ToolResult("git clone timed out.", ExitCode: -1, TimedOut: true);
+        }
+        finally
+        {
+            proc?.Dispose();
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"# Cloned: {owner}/{repo}");
+        sb.AppendLine($"Repo size (reported): {sizeKb:N0} KB");
+        sb.AppendLine($"Depth: {(depth > 0 ? depth.ToString() : "full")}");
+        if (!string.IsNullOrEmpty(gitRef)) sb.AppendLine($"Ref: {gitRef}");
+        sb.AppendLine($"Path: {cloneDir}");
+        sb.AppendLine();
+        sb.AppendLine("Use run_shell to browse, grep, or read files in the clone.");
+
+        return new ToolResult(sb.ToString());
+    }
+
+    private static void TryCleanupDir(string path)
+    {
+        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); } catch { }
+    }
+
     // ------------------------------------------------------------------ HTTP helpers
 
     private async Task<string?> GetAsync(string url, CancellationToken ct)
@@ -471,6 +757,29 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "github: GET {Url} failed", url);
+            return null;
+        }
+    }
+
+    private async Task<byte[]?> GetBytesAsync(string url, CancellationToken ct)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            await ApplyAuth(request, ct);
+
+            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("github: GET {Url} returned {Status}", url, response.StatusCode);
+                return null;
+            }
+
+            return await response.Content.ReadAsByteArrayAsync(ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "github: GET bytes {Url} failed", url);
             return null;
         }
     }

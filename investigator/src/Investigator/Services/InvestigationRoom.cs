@@ -205,11 +205,14 @@ public sealed class InvestigationRoom
     {
         if (!_agents.TryGetValue(scoutName, out var slot) || slot.Id == "little-bear") return;
 
+        const string message = "Return to Banyan Row at once. Report back immediately with whatever "
+            + "you have uncovered thus far. Call conclude now.";
+
         await slot.Inbox.Writer.WriteAsync(
-            new RoomMessage("Little Bear",
-                "Return to Banyan Row at once. Report back immediately with whatever "
-                + "you have uncovered thus far. Call conclude now."),
+            new RoomMessage("Little Bear", message),
             CancellationToken.None);
+
+        await EmitToUi(new AgentEvent.Message($"recall-{slot.Id}", message, Recipient: scoutName));
     }
 
     public async Task StandDownScoutAsync(string scoutName)
@@ -219,12 +222,15 @@ public sealed class InvestigationRoom
         slot.StoodDown = true;
         slot.CurrentToolCts?.Cancel();
 
+        const string message = "Stand down at once. Your current inquiries are abandoned. "
+            + "Report back immediately with whatever evidence you have gathered. "
+            + "Call conclude now -- no further tool calls are permitted.";
+
         await slot.Inbox.Writer.WriteAsync(
-            new RoomMessage("Little Bear",
-                "Stand down at once. Your current inquiries are abandoned. "
-                + "Report back immediately with whatever evidence you have gathered. "
-                + "Call conclude now -- no further tool calls are permitted."),
+            new RoomMessage("Little Bear", message),
             CancellationToken.None);
+
+        await EmitToUi(new AgentEvent.Message($"standdown-{slot.Id}", message, Recipient: scoutName));
     }
 
     public ValueTask PostUserMessageAsync(string text, CancellationToken ct)

@@ -10,7 +10,7 @@ public abstract record AgentEvent(string StepId)
 
     public record ToolResult(string StepId, string Tool, string Output, string? OutputFile, int ExitCode, bool TimedOut, string? ParentStepId = null) : AgentEvent(StepId);
 
-    public record Message(string StepId, string Text, bool IsIntermediate = false) : AgentEvent(StepId);
+    public record Message(string StepId, string Text, bool IsIntermediate = false, string? Recipient = null) : AgentEvent(StepId);
 
     public record Conclusion(string StepId, string Summary, EvidenceChain? Evidence, FixSuggestion? Fix) : AgentEvent(StepId);
 

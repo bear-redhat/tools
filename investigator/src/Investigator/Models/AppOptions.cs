@@ -159,6 +159,7 @@ public sealed class GitHubOptions
     public string? AppId { get; set; }
     public string? PrivateKeyFile { get; set; }
     public string? InstallationId { get; set; }
+    public int MaxCloneSizeKb { get; set; } = 51_200;
 }
 
 public sealed class ProwOptions

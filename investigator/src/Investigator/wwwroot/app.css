@@ -1110,18 +1110,11 @@ pre.ascii-art {
 }
 
 .step-source-text {
+    direction: rtl;
+    text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.step-source:hover {
-    max-width: none;
-}
-
-.step-source:hover .step-source-text {
-    white-space: normal;
-    word-break: break-all;
 }
 
 .step-command {

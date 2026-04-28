@@ -112,7 +112,7 @@ internal sealed class RoomToolHandlers
             targetSlot.Concluded = false;
             await targetSlot.Inbox.Writer.WriteAsync(new RoomMessage("Little Bear", replyMsg), ct);
             if (!string.IsNullOrWhiteSpace(replyMsg))
-                await _emitToUi(new AgentEvent.Message($"reply-{callerSlot.Id}", replyMsg));
+                await _emitToUi(new AgentEvent.Message($"reply-{callerSlot.Id}", replyMsg, Recipient: targetName));
             return new AgentRunner.ToolExecutionResult(Output: $"Reply conveyed to {targetName}.");
         }
 
@@ -149,11 +149,14 @@ internal sealed class RoomToolHandlers
             return new AgentRunner.ToolExecutionResult(
                 $"{name} has already reported back. Use dismiss_scout to send them on their way.");
 
+        const string message = "Return to Banyan Row at once. Report back immediately with whatever "
+            + "you have uncovered thus far. Call conclude now.";
+
         await slot.Inbox.Writer.WriteAsync(
-            new RoomMessage("Little Bear",
-                "Return to Banyan Row at once. Report back immediately with whatever "
-                + "you have uncovered thus far. Call conclude now."),
+            new RoomMessage("Little Bear", message),
             CancellationToken.None);
+
+        await _emitToUi(new AgentEvent.Message($"recall-{slot.Id}", message, Recipient: name));
 
         _logger.LogInformation("Scout {Name} recalled by Little Bear", name);
         return new AgentRunner.ToolExecutionResult(

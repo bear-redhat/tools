@@ -1,9 +1,9 @@
 ---
-title: Working with GitHub PRs and Workflows
-tags: [github, pull-request, pr, checks, review, workflow, actions, ci, merge, status, tide, approved, lgtm, owners]
+title: Working with GitHub PRs, Workflows, and Repository Contents
+tags: [github, pull-request, pr, checks, review, workflow, actions, ci, merge, status, tide, approved, lgtm, owners, file, directory, tree, clone]
 ---
 
-# Working with GitHub PRs and Workflows
+# Working with GitHub PRs, Workflows, and Repository Contents
 
 ## Scope and Trust Boundaries
 
@@ -13,6 +13,8 @@ Almost all work happens in the **`openshift`** organisation. Occasionally there 
 
 The `github` tool queries the GitHub REST API. It operates in authenticated (GitHub App, 5000 req/hr) or unauthenticated (public repos only, 60 req/hr) mode depending on configuration.
 
+**IMPORTANT:** Do NOT use `run_shell` with `curl` against `api.github.com` or `raw.githubusercontent.com`. Use the `github` tool for all GitHub API access.
+
 | Action | Required params | Purpose |
 |--------|----------------|---------|
 | `pr_status` | owner, repo, number | PR metadata + check runs + commit statuses |
@@ -21,6 +23,10 @@ The `github` tool queries the GitHub REST API. It operates in authenticated (Git
 | `workflow_runs` | owner, repo | List Actions runs (optional: workflow, branch, status, count, number) |
 | `workflow_logs` | owner, repo, run_id | Download full run logs to workspace |
 | `search` | query | Search issues/PRs with GitHub qualifiers |
+| `get_file` | owner, repo, path | Download a file to workspace (optional: ref) |
+| `list_directory` | owner, repo | List directory entries (optional: path, ref) |
+| `get_tree` | owner, repo | Recursively list all files in the repo tree (optional: ref) |
+| `clone_repo` | owner, repo | Shallow-clone a repo to workspace (optional: ref, depth) |
 
 ## Diagnosing a PR That Will Not Merge
 
@@ -124,3 +130,55 @@ github(action: "search", query: "is:pr author:username repo:openshift/ci-tools s
 ```
 
 Useful qualifiers: `is:pr`, `is:issue`, `is:open`, `is:closed`, `is:merged`, `repo:owner/name`, `author:user`, `label:name`, `created:>YYYY-MM-DD`, `review:approved`, `review:changes_requested`.
+
+## Browsing Repository Contents
+
+When you need to inspect files in a GitHub repo (Dockerfiles, config files, OWNERS, etc.), use the content actions -- do NOT shell out with `curl`.
+
+### Reading a single file
+
+```
+github(action: "get_file", owner: "openshift", repo: "ovn-kubernetes", path: "Dockerfile", ref: "master")
+```
+
+The file is saved to the workspace at `tool_outputs/github_files/{owner}/{repo}/{ref}/{path}`. Use `run_shell` to read or search it:
+```
+cat tool_outputs/github_files/openshift/ovn-kubernetes/master/Dockerfile
+```
+
+### Listing a directory
+
+```
+github(action: "list_directory", owner: "openshift", repo: "ovn-kubernetes", path: "images")
+```
+
+Returns an inline listing of entries with type, size, and name. Omit `path` to list the repo root.
+
+### Surveying the full tree
+
+```
+github(action: "get_tree", owner: "openshift", repo: "release", ref: "master")
+```
+
+Returns a recursive listing of every file and directory. Useful for understanding repo structure before diving into specific files.
+
+### Cloning a repo locally
+
+When you need to browse many files or grep across a repo, clone it:
+```
+github(action: "clone_repo", owner: "openshift", repo: "ci-tools")
+```
+
+The repo is shallow-cloned (`--depth=1`) to `tool_outputs/github_clones/{owner}/{repo}`. Use `run_shell` to explore:
+```
+grep -r "iproute" tool_outputs/github_clones/openshift/ci-tools/
+```
+
+Repos exceeding the size limit (default 50 MB) are refused -- use `get_file` or `list_directory` for those. For a full (non-shallow) clone, pass `depth: 0`. To clone a specific branch or tag, pass `ref`.
+
+### Choosing the right action
+
+- **One or two specific files** -- use `get_file` (targeted, low overhead).
+- **Check what files exist in a directory** -- use `list_directory`.
+- **Understand the overall repo layout** -- use `get_tree`.
+- **Grep across many files or explore broadly** -- use `clone_repo`.

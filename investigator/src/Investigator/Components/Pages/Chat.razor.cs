@@ -365,6 +365,7 @@ public partial class Chat : IAsyncDisposable
                     {
                         Type = ConversationItemType.AssistantMessage,
                         Sender = "little-bear",
+                        Recipient = m.Recipient?.ToLowerInvariant().Replace(" ", "-"),
                         StepId = m.StepId,
                         Content = m.Text,
                         Timestamp = DateTimeOffset.UtcNow,
