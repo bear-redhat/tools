@@ -20,6 +20,13 @@
                         {
                             <span class="step-cluster">@step.Cluster</span>
                         }
+                        @if (!string.IsNullOrWhiteSpace(step.Source))
+                        {
+                            <span class="step-source" title="@step.Source">
+                                <span class="step-source-text">@step.Source</span>
+                                <CopyButton Text="@step.Source" />
+                            </span>
+                        }
                         @if (!string.IsNullOrWhiteSpace(step.Command))
                         {
                             <div class="step-command">

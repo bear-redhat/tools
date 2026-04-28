@@ -16,6 +16,14 @@
             }
         }
         <span class="log-entry-status">@GetStatusIcon()</span>
+        @if (Entry.Usage is { Cost: > 0 })
+        {
+            <span class="log-entry-cost" title="@FormatTokens(Entry.Usage.InputTokens) in / @FormatTokens(Entry.Usage.OutputTokens) out">@FormatCost(Entry.Usage.Cost)</span>
+        }
+        @if (Entry.Usage is { CompactionBefore: not null, CompactionAfter: not null })
+        {
+            <span class="log-entry-compaction" title="Context window compaction">~@Entry.Usage.CompactionBefore → ~@Entry.Usage.CompactionAfter</span>
+        }
         <span class="log-entry-time">@Entry.Timestamp.ToString("HH:mm:ss")</span>
     </div>
     <div class="log-entry-command">
@@ -72,4 +80,10 @@
     };
 
     private string GetEntryNumber() => Entry.StepId.Replace("step-", "").Replace("sa-", "");
+
+    private static string FormatCost(decimal cost) =>
+        cost < 0.01m ? $"${cost:F4}" : $"${cost:F3}";
+
+    private static string FormatTokens(int tokens) =>
+        tokens >= 1000 ? $"{tokens / 1000.0:F1}k" : tokens.ToString("N0");
 }

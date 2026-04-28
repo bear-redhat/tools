@@ -30,6 +30,8 @@ internal sealed class ScoutCoordinator
     private readonly Random _rng = new();
 
     internal string WorkspacePath { get; set; } = "";
+    internal string? UserId { get; set; }
+    internal string? ConversationId { get; set; }
 
     internal ScoutCoordinator(
         ConcurrentDictionary<string, InvestigationRoom.AgentSlot> agents,
@@ -93,6 +95,8 @@ internal sealed class ScoutCoordinator
         _agents[agentName] = scoutSlot;
 
         var modelOptions = _llmFactory.GetModelOptions(resolvedModel);
+        var summarizerProfile = _llmFactory.DefaultProfileName;
+        var summarizerOptions = _llmFactory.GetModelOptions(summarizerProfile);
         var scoutConfig = new AgentRunner.Config(
             Id: scoutSlot.Id,
             Name: agentName,
@@ -106,7 +110,15 @@ internal sealed class ScoutCoordinator
             WorkspacePath: WorkspacePath,
             CompactionMaxTokens: null,
             ThinkingBudget: modelOptions.ThinkingBudget,
-            ContextWindowTokens: modelOptions.ContextWindowTokens);
+            ContextWindowTokens: modelOptions.ContextWindowTokens,
+            InputPricePerMToken: modelOptions.InputPricePerMToken,
+            OutputPricePerMToken: modelOptions.OutputPricePerMToken,
+            CacheReadPricePerMToken: modelOptions.CacheReadPricePerMToken,
+            CacheCreationPricePerMToken: modelOptions.CacheCreationPricePerMToken,
+            UserId: UserId,
+            ConversationId: ConversationId,
+            SummarizerClient: _llmFactory.GetClient(summarizerProfile),
+            SummarizerModelOptions: summarizerOptions);
 
         await scoutSlot.Inbox.Writer.WriteAsync(new RoomMessage("Little Bear", task), ct);
         scoutSlot.RunTask = Task.Run(() => _runAgent(scoutSlot, scoutConfig, ct), ct);

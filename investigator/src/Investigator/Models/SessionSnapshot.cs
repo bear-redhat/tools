@@ -11,6 +11,8 @@ public sealed class SessionSnapshot
     public List<GroupMember> Members { get; init; } = [];
     public Dictionary<string, List<ConversationItem>> DetailEvents { get; init; } = new();
     public Dictionary<string, List<LogEntryModel>> DetailLogEntries { get; init; } = new();
+    public Dictionary<string, AgentUsage> UsageByAgent { get; init; } = new();
+    public AgentUsage PanelSummarizationUsage { get; init; } = new();
 
     public static SessionSnapshot FromSession(ConversationSession session) => new()
     {
@@ -25,6 +27,24 @@ public sealed class SessionSnapshot
         DetailLogEntries = session.DetailLogEntries.ToDictionary(
             kvp => kvp.Key,
             kvp => kvp.Value.ToList()),
+        UsageByAgent = session.UsageByAgent.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new AgentUsage
+            {
+                InputTokens = kvp.Value.InputTokens,
+                OutputTokens = kvp.Value.OutputTokens,
+                CacheReadTokens = kvp.Value.CacheReadTokens,
+                CacheCreateTokens = kvp.Value.CacheCreateTokens,
+                Cost = kvp.Value.Cost,
+            }),
+        PanelSummarizationUsage = new AgentUsage
+        {
+            InputTokens = session.PanelSummarizationUsage.InputTokens,
+            OutputTokens = session.PanelSummarizationUsage.OutputTokens,
+            CacheReadTokens = session.PanelSummarizationUsage.CacheReadTokens,
+            CacheCreateTokens = session.PanelSummarizationUsage.CacheCreateTokens,
+            Cost = session.PanelSummarizationUsage.Cost,
+        },
     };
 
     public ConversationSession ToSession()
@@ -45,6 +65,16 @@ public sealed class SessionSnapshot
 
         foreach (var (key, value) in DetailLogEntries)
             session.DetailLogEntries[key] = value;
+
+        foreach (var (key, value) in UsageByAgent)
+            session.UsageByAgent[key] = value;
+
+        var ps = session.PanelSummarizationUsage;
+        ps.InputTokens = PanelSummarizationUsage.InputTokens;
+        ps.OutputTokens = PanelSummarizationUsage.OutputTokens;
+        ps.CacheReadTokens = PanelSummarizationUsage.CacheReadTokens;
+        ps.CacheCreateTokens = PanelSummarizationUsage.CacheCreateTokens;
+        ps.Cost = PanelSummarizationUsage.Cost;
 
         return session;
     }

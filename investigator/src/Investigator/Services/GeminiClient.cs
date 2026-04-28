@@ -29,7 +29,8 @@ public sealed class GeminiClient : ILlmClient
         IReadOnlyList<ToolDefinition> tools,
         string? systemPrompt,
         [EnumeratorCancellation] CancellationToken ct,
-        int? thinkingBudgetOverride = null)
+        int? thinkingBudgetOverride = null,
+        LlmRequestContext? context = null)
     {
         var region = _profile.Region;
         var project = _profile.ProjectId;
@@ -62,6 +63,11 @@ public sealed class GeminiClient : ILlmClient
 
         var token = await _tokenProvider.GetAccessTokenAsync(ct);
         httpReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        if (!string.IsNullOrEmpty(context?.UserId))
+            httpReq.Headers.TryAddWithoutValidation("X-Investigator-User", context.UserId);
+        if (!string.IsNullOrEmpty(context?.ConversationId))
+            httpReq.Headers.TryAddWithoutValidation("X-Investigator-Conversation", context.ConversationId);
 
         using var response = await _http.SendAsync(httpReq, HttpCompletionOption.ResponseHeadersRead, ct);
 
@@ -203,6 +209,7 @@ public sealed class GeminiClient : ILlmClient
     {
         using var reader = new StreamReader(stream);
         var toolCallCounter = 0;
+        UsageInfo? lastUsage = null;
 
         while (await reader.ReadLineAsync(ct) is { } line)
         {
@@ -220,6 +227,15 @@ public sealed class GeminiClient : ILlmClient
             {
                 _logger.LogWarning(ex, "Failed to parse Gemini SSE event: {Data}", data);
                 continue;
+            }
+
+            if (root.TryGetProperty("usageMetadata", out var usageMeta))
+            {
+                lastUsage = new UsageInfo
+                {
+                    InputTokens = usageMeta.TryGetProperty("promptTokenCount", out var ptc) ? ptc.GetInt32() : 0,
+                    OutputTokens = usageMeta.TryGetProperty("candidatesTokenCount", out var ctc) ? ctc.GetInt32() : 0,
+                };
             }
 
             if (!root.TryGetProperty("candidates", out var candidates)) continue;
@@ -271,5 +287,8 @@ public sealed class GeminiClient : ILlmClient
                 }
             }
         }
+
+        if (lastUsage is not null)
+            yield return new ContentBlock { Type = "usage", Usage = lastUsage };
     }
 }

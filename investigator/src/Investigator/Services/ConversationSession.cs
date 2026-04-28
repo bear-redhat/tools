@@ -1,6 +1,16 @@
+using System.Text.Json.Serialization;
 using Investigator.Models;
 
 namespace Investigator.Services;
+
+public sealed class AgentUsage
+{
+    public int InputTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public int CacheReadTokens { get; set; }
+    public int CacheCreateTokens { get; set; }
+    public decimal Cost { get; set; }
+}
 
 public sealed class ConversationSession
 {
@@ -10,7 +20,6 @@ public sealed class ConversationSession
         Members =
         [
             new("221B Banyan Row", "all", MemberStatus.Static),
-            new("Client", "user", MemberStatus.Static),
             new("Little Bear", "little-bear", MemberStatus.Idle),
         ];
 
@@ -59,4 +68,10 @@ public sealed class ConversationSession
 
     public string? OwnerUserName { get; set; }
     public string? OwnerCircuitId { get; set; }
+
+    public Dictionary<string, AgentUsage> UsageByAgent { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public AgentUsage PanelSummarizationUsage { get; } = new();
+
+    public decimal TotalCost =>
+        UsageByAgent.Values.Sum(u => u.Cost) + PanelSummarizationUsage.Cost;
 }

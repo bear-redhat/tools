@@ -12,6 +12,8 @@ public class ConversationItem
     public DateTimeOffset Timestamp { get; set; }
     public EvidenceChain? Evidence { get; set; }
     public FixSuggestion? Fix { get; set; }
+    public bool SummarizedByAi { get; set; }
+    public TurnUsage? Usage { get; set; }
 }
 
 public enum ConversationItemType
@@ -35,6 +37,18 @@ public class LogEntryModel
     public int ExitCode { get; set; }
     public Dictionary<string, string>? Context { get; set; }
     public List<LogEntryModel>? Children { get; set; }
+    public TurnUsage? Usage { get; set; }
+}
+
+public class TurnUsage
+{
+    public int InputTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public int CacheReadTokens { get; set; }
+    public int CacheCreateTokens { get; set; }
+    public decimal Cost { get; set; }
+    public int? CompactionBefore { get; set; }
+    public int? CompactionAfter { get; set; }
 }
 
 public enum LogEntryStatus { Running, Completed, TimedOut }

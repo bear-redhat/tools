@@ -20,7 +20,15 @@ public sealed class AgentRunner
         string WorkspacePath,
         int? CompactionMaxTokens,
         int ThinkingBudget = 10000,
-        int ContextWindowTokens = 1_000_000);
+        int ContextWindowTokens = 1_000_000,
+        string? UserId = null,
+        string? ConversationId = null,
+        decimal InputPricePerMToken = 0,
+        decimal OutputPricePerMToken = 0,
+        decimal CacheReadPricePerMToken = 0,
+        decimal CacheCreationPricePerMToken = 0,
+        ILlmClient? SummarizerClient = null,
+        ModelOptions? SummarizerModelOptions = null);
 
     public record ToolExecutionResult(
         string Output,
@@ -78,14 +86,19 @@ public sealed class AgentRunner
 
                     var compactionBudget = config.CompactionMaxTokens
                         ?? (int)(config.ContextWindowTokens * 0.7);
-                    CompactMessagesIfNeeded(messages, compactionBudget, config.WorkspacePath);
+                    await CompactMessagesIfNeededAsync(messages, compactionBudget, config, currentStepId, emit, ct);
 
                     List<ContentBlock>? contentBlocks = null;
+                    UsageInfo? usageInfo = null;
                     string? llmError = null;
                     try
                     {
-                        contentBlocks = await CallLlmWithRetry(config, messages, ct, thinkingBudgetOverride);
+                        var llmContext = (config.UserId is not null || config.ConversationId is not null)
+                            ? new LlmRequestContext(config.UserId, config.ConversationId)
+                            : null;
+                        contentBlocks = await CallLlmWithRetry(config, messages, ct, thinkingBudgetOverride, llmContext);
                         promptTooLongRetried = false;
+                        usageInfo = ExtractUsage(contentBlocks);
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
                     {
@@ -95,7 +108,7 @@ public sealed class AgentRunner
                             var emergencyBudget = (int)(config.ContextWindowTokens * 0.5);
                             _logger.LogWarning("Agent {Name} prompt too long at step {Step}, emergency compaction to {Budget} tokens",
                                 config.Name, currentStepId, emergencyBudget);
-                            CompactMessagesIfNeeded(messages, emergencyBudget, config.WorkspacePath);
+                            await CompactMessagesIfNeededAsync(messages, emergencyBudget, config, currentStepId, emit, ct);
                             continue;
                         }
 
@@ -143,6 +156,15 @@ public sealed class AgentRunner
 
                     if (thinkingParts.Count > 0)
                         await emit(new AgentEvent.Thinking(currentStepId, string.Join("\n", thinkingParts)));
+
+                    if (usageInfo is not null)
+                    {
+                        var cost = ComputeCost(usageInfo, config.InputPricePerMToken, config.OutputPricePerMToken,
+                            config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken);
+                        await emit(new AgentEvent.Usage(currentStepId, config.Name,
+                            usageInfo.InputTokens, usageInfo.OutputTokens,
+                            usageInfo.CacheReadInputTokens, usageInfo.CacheCreationInputTokens, cost));
+                    }
 
                     // Case 0: output was truncated -- some tool_use blocks lost their JSON input.
                     // Strategy: execute the successful tools, save them properly, and provide
@@ -271,7 +293,7 @@ public sealed class AgentRunner
                                 "Agent {Name} hit {Count} consecutive truncation fallthroughs, forcing compaction",
                                 config.Name, consecutiveTruncationFallthroughs);
 
-                            CompactMessagesIfNeeded(messages, 0, config.WorkspacePath);
+                            await CompactMessagesIfNeededAsync(messages, 0, config, currentStepId, emit, ct);
                             truncationRetries = 0;
                             consecutiveTruncationFallthroughs = 0;
                             thinkingBudgetOverride = null;
@@ -459,7 +481,7 @@ public sealed class AgentRunner
 
     private async Task<List<ContentBlock>> CallLlmWithRetry(
         Config config, List<LlmMessage> messages, CancellationToken ct,
-        int? thinkingBudgetOverride = null)
+        int? thinkingBudgetOverride = null, LlmRequestContext? context = null)
     {
         Exception? lastEx = null;
 
@@ -469,7 +491,7 @@ public sealed class AgentRunner
             {
                 var blocks = new List<ContentBlock>();
                 await foreach (var block in config.LlmClient.StreamMessageAsync(
-                    messages, config.Tools, config.SystemPrompt, ct, thinkingBudgetOverride))
+                    messages, config.Tools, config.SystemPrompt, ct, thinkingBudgetOverride, context))
                     blocks.Add(block);
 
                 _logger.LogDebug("Agent {Name} LLM returned {Count} content blocks on attempt {Attempt}",
@@ -499,11 +521,13 @@ public sealed class AgentRunner
         return code == 429 || code >= 500;
     }
 
-    private void CompactMessagesIfNeeded(List<LlmMessage> messages, int maxTokenBudget, string workspacePath)
+    private async Task CompactMessagesIfNeededAsync(
+        List<LlmMessage> messages, int maxTokenBudget, Config config,
+        string stepId, Func<AgentEvent, ValueTask> emit, CancellationToken ct)
     {
-        var estimatedTokens = EstimateTokenCount(messages);
+        var tokensBefore = EstimateTokenCount(messages);
 
-        if (estimatedTokens < maxTokenBudget * 0.8)
+        if (tokensBefore < maxTokenBudget * 0.8)
             return;
 
         var keepRecent = 6;
@@ -511,38 +535,73 @@ public sealed class AgentRunner
             return;
 
         _logger.LogInformation("Compacting message history: {Count} messages, ~{Tokens} estimated tokens (budget={Budget})",
-            messages.Count, estimatedTokens, maxTokenBudget);
+            messages.Count, tokensBefore, maxTokenBudget);
 
         var compactEnd = messages.Count - keepRecent;
 
-        // Walk the boundary forward so we never split a tool_use/tool_result pair:
-        // if compactEnd lands on a user message whose content is a tool_result array,
-        // or on an assistant message containing tool_use blocks, back up to include
-        // the full pair in the kept portion.
         while (compactEnd > 0 && IsToolBoundary(messages, compactEnd))
             compactEnd--;
 
         if (compactEnd <= 1)
             return;
 
-        var summaryParts = new List<string>();
+        string summary;
+        UsageInfo? compactionUsage = null;
 
-        for (var i = 0; i < compactEnd; i++)
+        if (config.SummarizerClient is not null)
         {
-            var msg = messages[i];
-            var contentStr = msg.Content.ValueKind == JsonValueKind.String
-                ? msg.Content.GetString() ?? ""
-                : msg.Content.GetRawText();
+            var historyParts = new List<string>();
+            for (var i = 0; i < compactEnd; i++)
+            {
+                var msg = messages[i];
+                var contentStr = msg.Content.ValueKind == JsonValueKind.String
+                    ? msg.Content.GetString() ?? ""
+                    : msg.Content.GetRawText();
+                historyParts.Add($"[{msg.Role}]: {contentStr}");
+            }
+            var historyText = string.Join("\n", historyParts);
 
-            if (contentStr.Length > 200)
-                contentStr = contentStr[..200] + "...";
+            var summarizerMessages = new List<LlmMessage>
+            {
+                new()
+                {
+                    Role = "user",
+                    Content = JsonSerializer.SerializeToElement(historyText),
+                }
+            };
 
-            summaryParts.Add($"[{msg.Role}]: {contentStr}");
+            var sb = new System.Text.StringBuilder();
+            IReadOnlyList<ToolDefinition> noTools = [];
+            await foreach (var block in config.SummarizerClient.StreamMessageAsync(
+                summarizerMessages, noTools,
+                "Summarise the following conversation history, preserving key findings, tool results, decisions, and any resource identifiers. Be concise but thorough.",
+                ct))
+            {
+                if (block.Type == "text" && block.Text is not null)
+                    sb.Append(block.Text);
+                else if (block.Type == "usage" && block.Usage is not null)
+                    compactionUsage = block.Usage;
+            }
+
+            summary = $"[Compacted: {compactEnd} earlier messages summarised by AI. Summary:\n{sb}\nFull conversation is preserved in transcript.jsonl in the workspace.]";
         }
-
-        var summary = $"[Compacted: {compactEnd} earlier messages summarised. Key exchanges:\n"
-            + string.Join("\n", summaryParts)
-            + "\nFull conversation is preserved in transcript.jsonl in the workspace.]";
+        else
+        {
+            var summaryParts = new List<string>();
+            for (var i = 0; i < compactEnd; i++)
+            {
+                var msg = messages[i];
+                var contentStr = msg.Content.ValueKind == JsonValueKind.String
+                    ? msg.Content.GetString() ?? ""
+                    : msg.Content.GetRawText();
+                if (contentStr.Length > 200)
+                    contentStr = contentStr[..200] + "...";
+                summaryParts.Add($"[{msg.Role}]: {contentStr}");
+            }
+            summary = $"[Compacted: {compactEnd} earlier messages summarised. Key exchanges:\n"
+                + string.Join("\n", summaryParts)
+                + "\nFull conversation is preserved in transcript.jsonl in the workspace.]";
+        }
 
         messages.RemoveRange(0, compactEnd);
         messages.Insert(0, new LlmMessage
@@ -551,8 +610,22 @@ public sealed class AgentRunner
             Content = JsonSerializer.SerializeToElement(summary),
         });
 
-        _logger.LogInformation("Compacted {Removed} messages into summary, {Remaining} messages remain",
-            compactEnd, messages.Count);
+        var tokensAfter = EstimateTokenCount(messages);
+
+        _logger.LogInformation("Compacted {Removed} messages: ~{Before} -> ~{After} tokens, {Remaining} messages remain",
+            compactEnd, tokensBefore, tokensAfter, messages.Count);
+
+        decimal costDelta = 0;
+        if (compactionUsage is not null && config.SummarizerModelOptions is { } smo)
+        {
+            costDelta = ComputeCost(compactionUsage, smo.InputPricePerMToken, smo.OutputPricePerMToken,
+                smo.CacheReadPricePerMToken, smo.CacheCreationPricePerMToken);
+        }
+
+        await emit(new AgentEvent.Compaction(stepId, config.Name, tokensBefore, tokensAfter,
+            compactionUsage?.InputTokens ?? 0, compactionUsage?.OutputTokens ?? 0,
+            compactionUsage?.CacheReadInputTokens ?? 0, compactionUsage?.CacheCreationInputTokens ?? 0,
+            costDelta));
     }
 
     private static bool IsToolBoundary(List<LlmMessage> messages, int index)
@@ -612,6 +685,25 @@ public sealed class AgentRunner
             sb.AppendLine($"  [{i}] {msg.Role}: [{types}]");
         }
         _logger.LogError("{Structure}", sb.ToString());
+    }
+
+    internal static decimal ComputeCost(UsageInfo usage, decimal inputPrice, decimal outputPrice,
+        decimal cacheReadPrice, decimal cacheCreationPrice)
+    {
+        return (usage.InputTokens * inputPrice
+            + usage.OutputTokens * outputPrice
+            + usage.CacheReadInputTokens * cacheReadPrice
+            + usage.CacheCreationInputTokens * cacheCreationPrice) / 1_000_000m;
+    }
+
+    private static UsageInfo? ExtractUsage(List<ContentBlock> blocks)
+    {
+        for (var i = blocks.Count - 1; i >= 0; i--)
+        {
+            if (blocks[i].Type == "usage" && blocks[i].Usage is { } u)
+                return u;
+        }
+        return null;
     }
 
     private static int EstimateTokenCount(List<LlmMessage> messages)

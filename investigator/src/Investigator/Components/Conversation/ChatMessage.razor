@@ -168,12 +168,19 @@
         <div class="message-content error-message">@Item.Content</div>
     }
 
-    <div class="message-time">@Item.Timestamp.ToString("HH:mm:ss")</div>
+    <div class="message-footer">
+        @if (ShowUsage && Item.Usage is not null)
+        {
+            <span class="turn-usage">@FormatCost(Item.Usage.Cost) | @FormatTokens(Item.Usage.InputTokens) in @FormatTokens(Item.Usage.OutputTokens) out@(Item.Usage.CacheReadTokens > 0 ? $" {FormatTokens(Item.Usage.CacheReadTokens)} cache" : "")</span>
+        }
+        <span class="message-time">@Item.Timestamp.ToString("HH:mm:ss")</span>
+    </div>
 </div>
 
 @code {
     [Parameter, EditorRequired] public ConversationItem Item { get; set; } = default!;
     [Parameter] public EventCallback<string> OnStepClick { get; set; }
+    [Parameter] public bool ShowUsage { get; set; }
 
     private bool _reportExpanded;
     private void ToggleReport() => _reportExpanded = !_reportExpanded;
@@ -228,6 +235,12 @@
         }
         return new MarkupString(sb.ToString());
     }
+
+    private static string FormatCost(decimal cost) =>
+        cost < 0.01m ? $"${cost:F4}" : $"${cost:F3}";
+
+    private static string FormatTokens(int tokens) =>
+        tokens >= 1000 ? $"{tokens / 1000.0:F1}k" : tokens.ToString("N0");
 
     private static bool IsEmoji(System.Text.Rune rune)
     {

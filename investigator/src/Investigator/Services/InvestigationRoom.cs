@@ -82,7 +82,8 @@ public sealed class InvestigationRoom
                         "reasoning": { "type": "string" },
                         "finding": { "type": "string" },
                         "cluster": { "type": "string" },
-                        "command": { "type": "string", "description": "The command run (if any) and the raw log line(s) or output that support this step, copied verbatim. Command on the first line, raw output below it." }
+                        "command": { "type": "string", "description": "The command run (if any) and the raw log line(s) or output that support this step, copied verbatim. Command on the first line, raw output below it." },
+                        "source": { "type": "string", "description": "Log file path or URL with optional :line suffix, e.g. 'build.log:142' or 'https://prow.ci/build-log.txt:307'" }
                     }
                 },
                 "description": "Ordered chain of proof. Each step must logically connect to the next -- forward (observation to cause) or reverse (symptom to origin). Do NOT submit unrelated findings as a flat list."
@@ -110,6 +111,8 @@ public sealed class InvestigationRoom
     private readonly ScoutCoordinator _scoutCoordinator;
 
     private string _workspacePath = "";
+    private string? _userId;
+    private string? _conversationId;
     private CancellationToken _ct;
     private int _outputCounter;
 
@@ -138,11 +141,16 @@ public sealed class InvestigationRoom
             EmitToUi, RunAgentWithRouting, s_concludeSchema);
     }
 
-    public async Task StartAsync(string workspacePath, IReadOnlyList<ChatMessage> history, CancellationToken ct)
+    public async Task StartAsync(string workspacePath, IReadOnlyList<ChatMessage> history, CancellationToken ct,
+        string? userId = null, string? conversationId = null)
     {
         _workspacePath = workspacePath;
         _ct = ct;
+        _userId = userId;
+        _conversationId = conversationId;
         _scoutCoordinator.WorkspacePath = workspacePath;
+        _scoutCoordinator.UserId = userId;
+        _scoutCoordinator.ConversationId = conversationId;
 
         var littleBearSlot = new AgentSlot
         {
@@ -154,6 +162,8 @@ public sealed class InvestigationRoom
         _scoutCoordinator.RegisterAgentName("Little Bear");
 
         var primaryOptions = _llmFactory.GetModelOptions(_llmFactory.PrimaryProfileName);
+        var summarizerProfile = _llmFactory.DefaultProfileName;
+        var summarizerOptions = _llmFactory.GetModelOptions(summarizerProfile);
         var runnerConfig = new AgentRunner.Config(
             Id: "little-bear",
             Name: "Little Bear",
@@ -169,7 +179,15 @@ public sealed class InvestigationRoom
             WorkspacePath: workspacePath,
             CompactionMaxTokens: primaryOptions.MaxTokens * 4,
             ThinkingBudget: primaryOptions.ThinkingBudget,
-            ContextWindowTokens: primaryOptions.ContextWindowTokens);
+            ContextWindowTokens: primaryOptions.ContextWindowTokens,
+            InputPricePerMToken: primaryOptions.InputPricePerMToken,
+            OutputPricePerMToken: primaryOptions.OutputPricePerMToken,
+            CacheReadPricePerMToken: primaryOptions.CacheReadPricePerMToken,
+            CacheCreationPricePerMToken: primaryOptions.CacheCreationPricePerMToken,
+            UserId: userId,
+            ConversationId: conversationId,
+            SummarizerClient: _llmFactory.GetClient(summarizerProfile),
+            SummarizerModelOptions: summarizerOptions);
 
         littleBearSlot.RunTask = RunAgentWithRouting(littleBearSlot, runnerConfig, ct);
 
@@ -242,7 +260,7 @@ public sealed class InvestigationRoom
         {
             await runner.RunAsync(config, slot.Inbox.Reader, Emit, ExecuteTool, ct);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { _logger.LogDebug("Agent {Name} cancelled", config.Name); }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Agent {Name} failed unexpectedly", config.Name);
@@ -392,6 +410,8 @@ public sealed class InvestigationRoom
             AgentEvent.Message m => HandleScoutMessage(m, agentName),
             AgentEvent.StatusChanged sc => HandleScoutStatusChanged(sc, agentName),
             AgentEvent.Error e => new AgentEvent.Error(e.StepId, $"[{agentName}] {e.ErrorMessage}"),
+            AgentEvent.Usage u => u,
+            AgentEvent.Compaction c => c,
             _ => evt,
         };
 

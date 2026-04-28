@@ -9,6 +9,7 @@ internal sealed class StreamEventProcessor
     private readonly Dictionary<int, ContentBlock> _blocks = new();
     private readonly Dictionary<int, StringBuilder> _jsonAccumulators = new();
     private readonly ILogger _logger;
+    private UsageInfo? _accumulatedUsage;
 
     public StreamEventProcessor(ILogger logger)
     {
@@ -82,17 +83,37 @@ internal sealed class StreamEventProcessor
 
             case "message_start":
                 _logger.LogDebug("message_start: id={Id}", evt.Message?.Id);
+                if (evt.Message?.Usage is { } startUsage)
+                {
+                    _accumulatedUsage ??= new UsageInfo();
+                    _accumulatedUsage.InputTokens += startUsage.InputTokens;
+                    _accumulatedUsage.CacheCreationInputTokens += startUsage.CacheCreationInputTokens;
+                    _accumulatedUsage.CacheReadInputTokens += startUsage.CacheReadInputTokens;
+                }
                 break;
 
             case "message_delta":
                 var stopReason = evt.Delta?.StopReason;
-                var usage = evt.Message?.Usage;
+                var deltaUsage = evt.Usage ?? evt.Message?.Usage;
                 if (stopReason == "max_tokens")
                     _logger.LogWarning("message_delta: stop_reason={StopReason} (output truncated), output_tokens={OutputTokens}",
-                        stopReason, usage?.OutputTokens);
+                        stopReason, deltaUsage?.OutputTokens);
                 else
                     _logger.LogDebug("message_delta: stop_reason={StopReason}, output_tokens={OutputTokens}",
-                        stopReason, usage?.OutputTokens);
+                        stopReason, deltaUsage?.OutputTokens);
+
+                if (deltaUsage is not null)
+                {
+                    _accumulatedUsage ??= new UsageInfo();
+                    _accumulatedUsage.OutputTokens += deltaUsage.OutputTokens;
+                    _accumulatedUsage.CacheCreationInputTokens += deltaUsage.CacheCreationInputTokens;
+                    _accumulatedUsage.CacheReadInputTokens += deltaUsage.CacheReadInputTokens;
+                }
+
+                if (_accumulatedUsage is not null)
+                {
+                    yield return new ContentBlock { Type = "usage", Usage = _accumulatedUsage };
+                }
                 break;
 
             case "message_stop":

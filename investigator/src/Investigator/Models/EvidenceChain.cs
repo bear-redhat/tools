@@ -7,4 +7,5 @@ public record EvidenceStep(
     string Reasoning,
     string Finding,
     string? Cluster,
-    string Command);
+    string Command,
+    string? Source = null);

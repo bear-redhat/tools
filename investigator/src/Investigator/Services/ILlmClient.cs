@@ -10,5 +10,6 @@ public interface ILlmClient
         IReadOnlyList<ToolDefinition> tools,
         string? systemPrompt,
         CancellationToken ct,
-        int? thinkingBudgetOverride = null);
+        int? thinkingBudgetOverride = null,
+        LlmRequestContext? context = null);
 }

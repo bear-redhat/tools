@@ -22,6 +22,7 @@ public static class ServiceCollectionExtensions
         services.Configure<WebBrowserOptions>(config.GetSection("Tools:web_browse"));
         services.Configure<GitHubOptions>(config.GetSection("Tools:github"));
         services.Configure<ProwOptions>(config.GetSection("Tools:prow"));
+        services.Configure<PrometheusOptions>(config.GetSection("Tools:prometheus"));
         services.Configure<ToolOutputOptions>(config.GetSection(ToolOutputOptions.Section));
         services.Configure<PluginOptions>(config.GetSection(PluginOptions.Section));
         services.Configure<WorkspaceOptions>(config.GetSection(WorkspaceOptions.Section));
@@ -38,6 +39,7 @@ public static class ServiceCollectionExtensions
         {
             client.DefaultRequestHeaders.Add("User-Agent", "Investigator");
         });
+        services.AddHttpClient("Prometheus");
         services.AddSingleton<GitHubAppAuth>();
 
         services.AddSingleton(sp =>
@@ -92,6 +94,7 @@ public static class ServiceCollectionExtensions
                 typeof(WebBrowserTool),
                 typeof(GitHubTool),
                 typeof(ProwTool),
+                typeof(PrometheusTool),
             };
 
             var pluginOpts = sp.GetRequiredService<IOptions<PluginOptions>>().Value;

@@ -90,6 +90,9 @@ RUN mkdir -p /data/investigator/workspaces /data/release-repo /data/ci-tools-rep
 
 COPY --from=build /app .
 
+# Playwright Node driver needs execute permission for arbitrary UIDs (OpenShift restricted SCC)
+RUN chmod -R o+rx /app/.playwright/
+
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 

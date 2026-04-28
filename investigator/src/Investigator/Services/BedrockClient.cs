@@ -35,7 +35,8 @@ public sealed class BedrockClient : ILlmClient
         IReadOnlyList<ToolDefinition> tools,
         string? systemPrompt,
         [EnumeratorCancellation] CancellationToken ct,
-        int? thinkingBudgetOverride = null)
+        int? thinkingBudgetOverride = null,
+        LlmRequestContext? context = null)
     {
         var region = _profile.Region;
         var model = _profile.Model;
@@ -50,7 +51,8 @@ public sealed class BedrockClient : ILlmClient
         var json = AnthropicRequestBuilder.BuildRequestJson(
             _profile, messages, tools, systemPrompt,
             anthropicVersion: "bedrock-2023-05-31", stream: false,
-            thinkingBudgetOverride: thinkingBudgetOverride);
+            thinkingBudgetOverride: thinkingBudgetOverride,
+            context: context);
 
         _logger.LogDebug("Calling Bedrock: region={Region}, model={Model}, profile={Profile}, messages={Count}, auth={AuthType}",
             region, model, _profileName, messages.Count, !string.IsNullOrEmpty(bearerToken) ? "bearer" : "sigv4");
@@ -182,7 +184,7 @@ public sealed class BedrockClient : ILlmClient
             var payloadJson = Encoding.UTF8.GetString(frameData, headersLength, payloadLength);
             _logger.LogTrace("Bedrock event stream raw payload: {Payload}", payloadJson);
 
-            var actualJson = UnwrapBedrockPayload(payloadJson);
+            var actualJson = UnwrapBedrockPayload(payloadJson, _logger);
             if (actualJson is null)
             {
                 _logger.LogDebug("Bedrock event stream payload had no extractable content: {Payload}",
@@ -208,7 +210,7 @@ public sealed class BedrockClient : ILlmClient
         }
     }
 
-    private static string? UnwrapBedrockPayload(string payloadJson)
+    private static string? UnwrapBedrockPayload(string payloadJson, ILogger? logger = null)
     {
         try
         {
@@ -235,8 +237,9 @@ public sealed class BedrockClient : ILlmClient
                 }
             }
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            logger?.LogDebug(ex, "Failed to parse Bedrock payload JSON");
         }
 
         return null;

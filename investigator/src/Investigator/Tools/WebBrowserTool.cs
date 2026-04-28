@@ -382,7 +382,7 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
         if (_sessions.TryRemove(sessionKey, out var session))
         {
             _logger.LogInformation("web_browse: evicting session {Key}", sessionKey);
-            _ = DisposeSessionAsync(session);
+            _ = DisposeSessionAsync(session, _logger);
         }
     }
 
@@ -400,10 +400,12 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
         }
     }
 
-    private static async Task DisposeSessionAsync(BrowseSession session)
+    private static async Task DisposeSessionAsync(BrowseSession session, ILogger? logger = null)
     {
-        try { await session.Page.CloseAsync(); } catch { /* best effort */ }
-        try { await session.Context.CloseAsync(); } catch { /* best effort */ }
+        try { await session.Page.CloseAsync(); }
+        catch (Exception ex) { logger?.LogDebug(ex, "web_browse: error closing page"); }
+        try { await session.Context.CloseAsync(); }
+        catch (Exception ex) { logger?.LogDebug(ex, "web_browse: error closing browser context"); }
         session.Lock.Dispose();
     }
 
@@ -414,7 +416,7 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
         foreach (var (key, session) in _sessions)
         {
             _sessions.TryRemove(key, out _);
-            await DisposeSessionAsync(session);
+            await DisposeSessionAsync(session, _logger);
         }
 
         await _browser.CloseAsync();

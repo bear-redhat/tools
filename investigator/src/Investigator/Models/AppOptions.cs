@@ -31,6 +31,10 @@ public sealed class ModelOptions
     public int ThinkingBudget { get; set; } = 10000;
     public int ContextWindowTokens { get; set; } = 1_000_000;
     public string Strengths { get; set; } = "";
+    public decimal InputPricePerMToken { get; set; }
+    public decimal OutputPricePerMToken { get; set; }
+    public decimal CacheReadPricePerMToken { get; set; }
+    public decimal CacheCreationPricePerMToken { get; set; }
 }
 
 public sealed class AgentOptions
@@ -162,4 +166,12 @@ public sealed class ProwOptions
     public string DeckUrl { get; set; } = "https://prow.ci.openshift.org";
     public string GcsWebUrl { get; set; } = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com";
     public string DefaultBucket { get; set; } = "test-platform-results";
+}
+
+public sealed class PrometheusOptions
+{
+    public string ThanosUrl { get; set; } = "http://thanos-query-frontend-ci-query.ci-monitoring.svc:9090";
+    public int MaxSeries { get; set; } = 500;
+    public int MaxDataPoints { get; set; } = 10_000;
+    public int TimeoutSeconds { get; set; } = 30;
 }

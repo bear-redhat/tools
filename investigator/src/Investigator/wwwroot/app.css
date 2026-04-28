@@ -629,7 +629,8 @@ pre.ascii-art {
 .message-time {
     font-size: 0.7rem;
     color: #6b7280;
-    margin-top: 0.25rem;
+    white-space: nowrap;
+    margin-left: auto;
 }
 
 .step-badge {
@@ -754,8 +755,20 @@ pre.ascii-art {
     color: white;
 }
 
-.btn-cancel:hover {
+.btn-cancel:hover:not(:disabled) {
     background: #f87171;
+}
+
+.btn-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.scout-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    padding: 0.25rem 0;
 }
 
 /* Agents working indicator */
@@ -1081,6 +1094,36 @@ pre.ascii-art {
     margin-right: 0.5rem;
 }
 
+.step-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #1a2a3a;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    color: #7eb8da;
+    max-width: 280px;
+    vertical-align: middle;
+    margin-top: 0.25rem;
+}
+
+.step-source-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.step-source:hover {
+    max-width: none;
+}
+
+.step-source:hover .step-source-text {
+    white-space: normal;
+    word-break: break-all;
+}
+
 .step-command {
     display: flex;
     align-items: center;
@@ -1265,4 +1308,129 @@ pre.ascii-art {
     color: #e0e0e0;
     text-align: left;
     white-space: pre-wrap;
+}
+
+/* Cost panel (bottom of log panel) */
+.cost-panel {
+    border-top: 1px solid #2a2a4a;
+    background: #0d0d1a;
+    flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.cost-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+}
+
+.cost-panel-header:hover { background: #1a1a2e; }
+
+.cost-panel-total {
+    font-weight: 700;
+    color: #d97706;
+}
+
+.cost-panel-hint {
+    color: #6b7280;
+    font-size: 0.7rem;
+    margin-left: 0.3rem;
+}
+
+.cost-panel-body {
+    padding: 0.15rem 0.6rem 0.4rem;
+    cursor: default;
+}
+
+.cost-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.1rem 0;
+    font-size: 0.75rem;
+    color: #c0c0d0;
+}
+
+.cost-row-name {
+    min-width: 8rem;
+    color: #a0aec0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cost-row-amount {
+    font-weight: 600;
+    color: #d97706;
+    font-variant-numeric: tabular-nums;
+    min-width: 3.5rem;
+    text-align: right;
+}
+
+.cost-row-tokens {
+    color: #6b7280;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.cost-row-total {
+    border-top: 1px solid #2a2a4a;
+    margin-top: 0.15rem;
+    padding-top: 0.2rem;
+}
+
+.cost-row-total .cost-row-name,
+.cost-row-total .cost-row-amount { font-weight: 700; color: #e0e0e0; }
+.cost-row-total .cost-row-amount { color: #d97706; }
+
+/* Per-turn usage in conversation bubbles */
+.message-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-top: 0.15rem;
+}
+
+.turn-usage {
+    font-size: 0.7rem;
+    color: #6b7280;
+    white-space: nowrap;
+}
+
+/* Per-turn cost badge on log entries */
+.log-entry-cost {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #d97706;
+    background: rgba(217, 119, 6, 0.12);
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+/* Compaction badge */
+.log-entry-compaction {
+    font-size: 0.65rem;
+    color: #8b5cf6;
+    background: rgba(139, 92, 246, 0.12);
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+/* AI summary badge */
+.ai-summary-badge {
+    font-size: 0.55rem;
+    font-weight: 700;
+    color: #06b6d4;
+    background: rgba(6, 182, 212, 0.12);
+    padding: 0.05rem 0.25rem;
+    border-radius: 2px;
+    margin-left: 0.3rem;
+    vertical-align: middle;
+    letter-spacing: 0.5px;
 }

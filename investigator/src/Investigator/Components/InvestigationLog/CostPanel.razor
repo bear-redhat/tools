@@ -1,0 +1,58 @@
+@using Investigator.Services
+
+<div class="cost-panel" @onclick="Toggle">
+    <div class="cost-panel-header">
+        <span class="toggle-arrow">@(_expanded ? "▼" : "▶")</span>
+        <span class="cost-panel-total">@FormatCost(TotalCost)</span>
+        @if (!_expanded)
+        {
+            <span class="cost-panel-hint">@FormatTokens(TotalInputTokens) in @FormatTokens(TotalOutputTokens) out</span>
+        }
+    </div>
+    @if (_expanded)
+    {
+        <div class="cost-panel-body" @onclick:stopPropagation="true">
+            @foreach (var (name, usage) in UsageByAgent.OrderByDescending(kv => kv.Value.Cost))
+            {
+                <div class="cost-row">
+                    <span class="cost-row-name">@name</span>
+                    <span class="cost-row-amount">@FormatCost(usage.Cost)</span>
+                    <span class="cost-row-tokens">@FormatTokens(usage.InputTokens) in @FormatTokens(usage.OutputTokens) out@(usage.CacheReadTokens > 0 ? $" {FormatTokens(usage.CacheReadTokens)} cache" : "")</span>
+                </div>
+            }
+            @if (PanelSummarizationUsage.Cost > 0)
+            {
+                <div class="cost-row">
+                    <span class="cost-row-name">Panel Summaries</span>
+                    <span class="cost-row-amount">@FormatCost(PanelSummarizationUsage.Cost)</span>
+                    <span class="cost-row-tokens">@FormatTokens(PanelSummarizationUsage.InputTokens) in @FormatTokens(PanelSummarizationUsage.OutputTokens) out</span>
+                </div>
+            }
+            <div class="cost-row cost-row-total">
+                <span class="cost-row-name">Total</span>
+                <span class="cost-row-amount">@FormatCost(TotalCost)</span>
+                <span class="cost-row-tokens">@FormatTokens(TotalInputTokens) in @FormatTokens(TotalOutputTokens) out</span>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Dictionary<string, AgentUsage> UsageByAgent { get; set; } = default!;
+    [Parameter, EditorRequired] public AgentUsage PanelSummarizationUsage { get; set; } = default!;
+    [Parameter, EditorRequired] public decimal TotalCost { get; set; }
+
+    private bool _expanded;
+    private void Toggle() => _expanded = !_expanded;
+
+    private int TotalInputTokens =>
+        UsageByAgent.Values.Sum(u => u.InputTokens) + PanelSummarizationUsage.InputTokens;
+    private int TotalOutputTokens =>
+        UsageByAgent.Values.Sum(u => u.OutputTokens) + PanelSummarizationUsage.OutputTokens;
+
+    private static string FormatCost(decimal cost) =>
+        cost < 0.01m ? $"${cost:F4}" : $"${cost:F2}";
+
+    private static string FormatTokens(int tokens) =>
+        tokens >= 1000 ? $"{tokens / 1000.0:F1}k" : tokens.ToString("N0");
+}

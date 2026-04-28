@@ -35,4 +35,11 @@ public abstract record AgentEvent(string StepId)
     public record SubAgentDone(string StepId, string AgentName, string Report, EvidenceChain? Evidence = null, FixSuggestion? Fix = null) : AgentEvent(StepId);
 
     public record SubAgentFailed(string StepId, string AgentName, string Reason) : AgentEvent(StepId);
+
+    public record Usage(string StepId, string AgentName, int InputTokens, int OutputTokens,
+        int CacheReadTokens, int CacheCreateTokens, decimal CostDelta) : AgentEvent(StepId);
+
+    public record Compaction(string StepId, string AgentName, int TokensBefore, int TokensAfter,
+        int InputTokens, int OutputTokens, int CacheReadTokens, int CacheCreateTokens,
+        decimal CostDelta) : AgentEvent(StepId);
 }

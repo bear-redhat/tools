@@ -19,7 +19,8 @@ public static class AnthropicRequestBuilder
         string? systemPrompt,
         string anthropicVersion,
         bool stream,
-        int? thinkingBudgetOverride = null)
+        int? thinkingBudgetOverride = null,
+        LlmRequestContext? context = null)
     {
         var thinkingBudget = thinkingBudgetOverride ?? profile.ThinkingBudget;
 
@@ -38,6 +39,13 @@ public static class AnthropicRequestBuilder
                 InputSchema = t.ParameterSchema,
             }).ToList(),
         };
+
+        if (context is { UserId: not null } or { ConversationId: not null })
+        {
+            var parts = new[] { context!.UserId, context.ConversationId }
+                .Where(s => !string.IsNullOrEmpty(s));
+            request.Metadata = new LlmRequestMetadata { UserId = string.Join(":", parts) };
+        }
 
         return JsonSerializer.Serialize(request, SerializerOptions);
     }

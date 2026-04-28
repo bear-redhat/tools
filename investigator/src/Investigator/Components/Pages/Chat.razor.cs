@@ -25,6 +25,7 @@ public partial class Chat : IAsyncDisposable
     [Parameter] public string ConversationId { get; set; } = "";
 
     private readonly string _circuitId = Guid.NewGuid().ToString("N");
+    private readonly Dictionary<string, TurnUsage> _pendingUsage = new();
     private ConversationSession? _session;
     private bool _isOwner;
     private bool _forcedReadonly;
@@ -51,6 +52,14 @@ public partial class Chat : IAsyncDisposable
     private bool _isInvestigating => _session?.IsInvestigating ?? false;
     private bool _hasWorkingAgents => _session?.HasWorkingAgents ?? false;
 
+    private GroupMember? _selectedScout =>
+        _selectedMemberId is "all" or "little-bear"
+            ? null
+            : _members.FirstOrDefault(m => m.Id == _selectedMemberId);
+    private bool _isScoutSelected => _selectedScout is not null;
+    private bool _selectedScoutIsWorking => _selectedScout?.Status == MemberStatus.Working;
+    private bool _isAgentSelected => _selectedMemberId is not "all";
+
     private static readonly HashSet<ConversationItemType> s_roomTypes =
     [
         ConversationItemType.UserMessage,
@@ -63,7 +72,7 @@ public partial class Chat : IAsyncDisposable
         ConversationItemType.Welcome,
     ];
 
-    private bool _showFindings => _selectedMemberId is "all" or "user";
+    private bool _showFindings => _selectedMemberId is "all";
 
     private IEnumerable<ConversationItem> FilteredConversation
     {
@@ -71,10 +80,6 @@ public partial class Chat : IAsyncDisposable
         {
             if (_selectedMemberId == "all")
                 return _conversationItems.Where(i => s_roomTypes.Contains(i.Type));
-
-            if (_selectedMemberId == "user")
-                return _conversationItems.Where(i =>
-                    i.Sender == "user" || (i.Sender == "little-bear" && s_roomTypes.Contains(i.Type)));
 
             var id = _selectedMemberId;
             var items = _conversationItems.Where(i =>
@@ -208,7 +213,7 @@ public partial class Chat : IAsyncDisposable
     {
         if (_session is null) return;
         _session.HasWorkingAgents = _members.Any(m =>
-            m.Status == MemberStatus.Working && m.Id != "all" && m.Id != "user" && m.Id != "little-bear");
+            m.Status == MemberStatus.Working && m.Id != "all" && m.Id != "little-bear");
     }
 
     private async Task OnSendAsync(string message)
@@ -233,7 +238,8 @@ public partial class Chat : IAsyncDisposable
             _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
             _cts = new CancellationTokenSource();
             _eventLoopTask = RunEventLoopAsync(_cts.Token);
-            _ = Room.StartAsync(_session.WorkspacePath, _history, _cts.Token);
+            _ = Room.StartAsync(_session.WorkspacePath, _history, _cts.Token,
+                userId: _session.OwnerUserName, conversationId: _session.Id);
             _started = true;
         }
 
@@ -253,7 +259,7 @@ public partial class Chat : IAsyncDisposable
                 await InvokeAsync(StateHasChanged);
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { Logger.LogDebug("Event loop cancelled"); }
         catch (Exception ex)
         {
             _conversationItems.Add(new ConversationItem
@@ -277,7 +283,7 @@ public partial class Chat : IAsyncDisposable
             {
                 _wasWorking = false;
                 try { await JS.InvokeVoidAsync("playCaseClosedSound"); }
-                catch (JSDisconnectedException) { }
+                catch (JSDisconnectedException) { Logger.LogDebug("JS disconnected during case-closed sound (finally)"); }
             }
             _scrollAfterRender = true;
             await InvokeAsync(StateHasChanged);
@@ -295,14 +301,16 @@ public partial class Chat : IAsyncDisposable
                 break;
 
             case AgentEvent.Thinking t:
-                _conversationItems.Add(new ConversationItem
+                var thinkItem = new ConversationItem
                 {
                     Type = ConversationItemType.Thinking,
                     Sender = "little-bear",
                     StepId = t.StepId,
                     Content = t.Text,
                     Timestamp = DateTimeOffset.UtcNow,
-                });
+                };
+                _conversationItems.Add(thinkItem);
+                TryAttachPendingUsage("little-bear", thinkItem);
                 break;
 
             case AgentEvent.ToolCall tc:
@@ -353,14 +361,16 @@ public partial class Chat : IAsyncDisposable
             case AgentEvent.Message m:
                 if (!string.IsNullOrWhiteSpace(m.Text))
                 {
-                    _conversationItems.Add(new ConversationItem
+                    var msgItem = new ConversationItem
                     {
                         Type = ConversationItemType.AssistantMessage,
                         Sender = "little-bear",
                         StepId = m.StepId,
                         Content = m.Text,
                         Timestamp = DateTimeOffset.UtcNow,
-                    });
+                    };
+                    _conversationItems.Add(msgItem);
+                    TryAttachPendingUsage("little-bear", msgItem);
                     _history.Add(new ChatMessage(ChatRole.Assistant, m.Text, DateTimeOffset.UtcNow));
                 }
                 break;
@@ -377,6 +387,7 @@ public partial class Chat : IAsyncDisposable
                     Timestamp = DateTimeOffset.UtcNow,
                 };
                 _conversationItems.Add(conclusionItem);
+                TryAttachPendingUsage("little-bear", conclusionItem);
                 _history.Add(new ChatMessage(ChatRole.Assistant, c.Summary, DateTimeOffset.UtcNow, c.Evidence, c.Fix));
                 RequestHeadline(conclusionItem);
                 break;
@@ -451,7 +462,7 @@ public partial class Chat : IAsyncDisposable
             {
                 var saId = sat.AgentName.ToLowerInvariant().Replace(" ", "-");
                 EnsureDetailCollections(saId);
-                _session!.DetailEvents[saId].Add(new ConversationItem
+                var satItem = new ConversationItem
                 {
                     Type = ConversationItemType.SubAgentThinking,
                     Sender = saId,
@@ -459,7 +470,9 @@ public partial class Chat : IAsyncDisposable
                     StepId = sat.StepId,
                     Content = sat.Text,
                     Timestamp = DateTimeOffset.UtcNow,
-                });
+                };
+                _session!.DetailEvents[saId].Add(satItem);
+                TryAttachPendingUsage(saId, satItem);
                 break;
             }
 
@@ -501,7 +514,6 @@ public partial class Chat : IAsyncDisposable
                 var saId = sad.AgentName.ToLowerInvariant().Replace(" ", "-");
                 SetMemberStatus(saId, MemberStatus.Idle);
                 UpdateHasWorkingAgents();
-                await TryPlayCaseClosedSoundAsync();
 
                 if (!string.IsNullOrWhiteSpace(sad.Report))
                 {
@@ -518,6 +530,7 @@ public partial class Chat : IAsyncDisposable
                         Timestamp = DateTimeOffset.UtcNow,
                     };
                     _conversationItems.Add(reportItem);
+                    TryAttachPendingUsage(saId, reportItem);
                     RequestSummary(reportItem, oneLine: true);
                 }
                 break;
@@ -528,7 +541,75 @@ public partial class Chat : IAsyncDisposable
                 var saId = saf.AgentName.ToLowerInvariant().Replace(" ", "-");
                 SetMemberStatus(saId, MemberStatus.Idle);
                 UpdateHasWorkingAgents();
-                await TryPlayCaseClosedSoundAsync();
+                break;
+            }
+
+            case AgentEvent.Usage usage:
+            {
+                if (_session is not null)
+                {
+                    if (!_session.UsageByAgent.TryGetValue(usage.AgentName, out var agentUsage))
+                    {
+                        agentUsage = new AgentUsage();
+                        _session.UsageByAgent[usage.AgentName] = agentUsage;
+                    }
+                    agentUsage.InputTokens += usage.InputTokens;
+                    agentUsage.OutputTokens += usage.OutputTokens;
+                    agentUsage.CacheReadTokens += usage.CacheReadTokens;
+                    agentUsage.CacheCreateTokens += usage.CacheCreateTokens;
+                    agentUsage.Cost += usage.CostDelta;
+
+                    var senderId = usage.AgentName.ToLowerInvariant().Replace(" ", "-");
+                    _pendingUsage[senderId] = new TurnUsage
+                    {
+                        InputTokens = usage.InputTokens,
+                        OutputTokens = usage.OutputTokens,
+                        CacheReadTokens = usage.CacheReadTokens,
+                        CacheCreateTokens = usage.CacheCreateTokens,
+                        Cost = usage.CostDelta,
+                    };
+                }
+                break;
+            }
+
+            case AgentEvent.Compaction compaction:
+            {
+                if (_session is not null)
+                {
+                    if (!_session.UsageByAgent.TryGetValue(compaction.AgentName, out var agentUsage))
+                    {
+                        agentUsage = new AgentUsage();
+                        _session.UsageByAgent[compaction.AgentName] = agentUsage;
+                    }
+                    agentUsage.InputTokens += compaction.InputTokens;
+                    agentUsage.OutputTokens += compaction.OutputTokens;
+                    agentUsage.CacheReadTokens += compaction.CacheReadTokens;
+                    agentUsage.CacheCreateTokens += compaction.CacheCreateTokens;
+                    agentUsage.Cost += compaction.CostDelta;
+
+                    var compactUsage = new TurnUsage
+                    {
+                        InputTokens = compaction.InputTokens,
+                        OutputTokens = compaction.OutputTokens,
+                        CacheReadTokens = compaction.CacheReadTokens,
+                        CacheCreateTokens = compaction.CacheCreateTokens,
+                        Cost = compaction.CostDelta,
+                        CompactionBefore = compaction.TokensBefore,
+                        CompactionAfter = compaction.TokensAfter,
+                    };
+
+                    _logEntries.Add(new LogEntryModel
+                    {
+                        Sender = compaction.AgentName.ToLowerInvariant().Replace(" ", "-"),
+                        SenderDisplayName = compaction.AgentName,
+                        StepId = compaction.StepId,
+                        Tool = "compaction",
+                        DisplayCommand = $"Context compacted: ~{compaction.TokensBefore} \u2192 ~{compaction.TokensAfter} tokens",
+                        Timestamp = DateTimeOffset.UtcNow,
+                        Status = LogEntryStatus.Completed,
+                        Usage = compactUsage,
+                    });
+                }
                 break;
             }
         }
@@ -539,7 +620,13 @@ public partial class Chat : IAsyncDisposable
         if (_isInvestigating || _hasWorkingAgents || !_wasWorking) return;
         _wasWorking = false;
         try { await JS.InvokeVoidAsync("playCaseClosedSound"); }
-        catch (JSDisconnectedException) { }
+        catch (JSDisconnectedException) { Logger.LogDebug("JS disconnected during case-closed sound"); }
+    }
+
+    private void TryAttachPendingUsage(string senderId, ConversationItem item)
+    {
+        if (_pendingUsage.Remove(senderId, out var usage))
+            item.Usage = usage;
     }
 
     private void OnCancel() => _cts?.Cancel();
@@ -584,7 +671,7 @@ public partial class Chat : IAsyncDisposable
                 _jsInitialized = await JS.InvokeAsync<bool>("initDividerResize", _dividerRef, "col");
                 await JS.InvokeAsync<bool>("initDividerResize", _inputDividerRef, "row");
             }
-            catch (JSDisconnectedException) { }
+            catch (JSDisconnectedException) { Logger.LogDebug("JS disconnected during interop initialization"); }
             catch (Exception ex)
             {
                 Logger.LogWarning(ex, "JS interop initialization failed (firstRender={FirstRender})", firstRender);
@@ -606,7 +693,7 @@ public partial class Chat : IAsyncDisposable
                 await JS.InvokeVoidAsync("scrollToBottom", _logRef);
             }
         }
-        catch (JSDisconnectedException) { }
+        catch (JSDisconnectedException) { Logger.LogDebug("JS disconnected during scroll"); }
         catch (Exception ex)
         {
             Logger.LogDebug(ex, "JS scroll interop failed");
@@ -629,7 +716,10 @@ public partial class Chat : IAsyncDisposable
         {
             try
             {
-                item.Summary = await Summarizer.SummarizeToHeadlineAsync(item.Content, CancellationToken.None);
+                var (text, usage) = await Summarizer.SummarizeToHeadlineWithUsageAsync(item.Content, CancellationToken.None);
+                item.Summary = text;
+                item.SummarizedByAi = true;
+                TrackPanelSummarizationCost(usage);
                 await InvokeAsync(StateHasChanged);
             }
             catch (Exception ex)
@@ -645,9 +735,12 @@ public partial class Chat : IAsyncDisposable
         {
             try
             {
-                item.Summary = oneLine
-                    ? await Summarizer.SummarizeToOneLineAsync(item.Content, CancellationToken.None)
-                    : await Summarizer.SummarizeToFewLinesAsync(item.Content, CancellationToken.None);
+                var (text, usage) = oneLine
+                    ? await Summarizer.SummarizeToOneLineWithUsageAsync(item.Content, CancellationToken.None)
+                    : await Summarizer.SummarizeToFewLinesWithUsageAsync(item.Content, CancellationToken.None);
+                item.Summary = text;
+                item.SummarizedByAi = true;
+                TrackPanelSummarizationCost(usage);
                 await InvokeAsync(StateHasChanged);
             }
             catch (Exception ex)
@@ -655,6 +748,20 @@ public partial class Chat : IAsyncDisposable
                 Logger.LogWarning(ex, "Failed to summarize {Type} item", item.Type);
             }
         });
+    }
+
+    private void TrackPanelSummarizationCost(UsageInfo? usage)
+    {
+        if (usage is null || _session is null) return;
+        var opts = Summarizer.SummarizerModelOptions;
+        var cost = AgentRunner.ComputeCost(usage, opts.InputPricePerMToken, opts.OutputPricePerMToken,
+            opts.CacheReadPricePerMToken, opts.CacheCreationPricePerMToken);
+        var ps = _session.PanelSummarizationUsage;
+        ps.InputTokens += usage.InputTokens;
+        ps.OutputTokens += usage.OutputTokens;
+        ps.CacheReadTokens += usage.CacheReadInputTokens;
+        ps.CacheCreateTokens += usage.CacheCreationInputTokens;
+        ps.Cost += cost;
     }
 
     private static string Truncate(string text, int maxLength = 100)
@@ -666,6 +773,11 @@ public partial class Chat : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _cts?.Cancel();
+        if (_eventLoopTask is not null)
+        {
+            try { await _eventLoopTask; }
+            catch (Exception ex) { Logger.LogDebug(ex, "Event loop task completed with error during dispose"); }
+        }
         _cts?.Dispose();
         if (_isOwner && _session is not null)
         {

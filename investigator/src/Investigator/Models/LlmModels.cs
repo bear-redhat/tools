@@ -27,6 +27,16 @@ public class LlmRequest
 
     [JsonPropertyName("tools")]
     public List<LlmTool>? Tools { get; set; }
+
+    [JsonPropertyName("metadata")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LlmRequestMetadata? Metadata { get; set; }
+}
+
+public class LlmRequestMetadata
+{
+    [JsonPropertyName("user_id")]
+    public string? UserId { get; set; }
 }
 
 public class ThinkingConfig
@@ -78,6 +88,9 @@ public class ContentBlock
 
     [JsonIgnore]
     public bool Truncated { get; set; }
+
+    [JsonIgnore]
+    public UsageInfo? Usage { get; set; }
 }
 
 public class StreamEvent
@@ -96,6 +109,9 @@ public class StreamEvent
 
     [JsonPropertyName("message")]
     public StreamMessage? Message { get; set; }
+
+    [JsonPropertyName("usage")]
+    public UsageInfo? Usage { get; set; }
 }
 
 public class StreamDelta
@@ -132,4 +148,12 @@ public class UsageInfo
 
     [JsonPropertyName("output_tokens")]
     public int OutputTokens { get; set; }
+
+    [JsonPropertyName("cache_creation_input_tokens")]
+    public int CacheCreationInputTokens { get; set; }
+
+    [JsonPropertyName("cache_read_input_tokens")]
+    public int CacheReadInputTokens { get; set; }
 }
+
+public record LlmRequestContext(string? UserId, string? ConversationId);
