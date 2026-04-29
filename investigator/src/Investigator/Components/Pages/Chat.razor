@@ -43,10 +43,10 @@
             <div class="chat-input">
                 <div class="chat-input-row scout-actions">
                     <button class="btn-send" @onclick="() => OnRecallScout(_selectedScout!.Name)"
-                            disabled="@(!_selectedScoutIsWorking)"
+                            disabled="@(!_selectedScoutIsWorking || _scoutActionInFlight)"
                             title="Little Bear recalls this Scout to report back.">Recall</button>
                     <button class="btn-cancel" @onclick="() => OnStandDownScout(_selectedScout!.Name)"
-                            disabled="@(!_selectedScoutIsWorking)"
+                            disabled="@(!_selectedScoutIsWorking || _scoutActionInFlight)"
                             title="Little Bear stands this Scout down immediately.">Stand Down</button>
                 </div>
             </div>

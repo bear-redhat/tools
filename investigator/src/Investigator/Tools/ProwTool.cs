@@ -443,9 +443,17 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         ctx.OnOutputLine?.Invoke("Downloading build log...");
 
         var safeName = SanitizePath(storagePath!);
+        safeName = Regex.Replace(safeName, @"/build-log\.txt$", "", RegexOptions.IgnoreCase);
+
         var outDir = Path.Combine(ctx.WorkspacePath, "tool_outputs", "prow_logs", safeName);
+
+        if (File.Exists(outDir))
+            File.Delete(outDir);
         Directory.CreateDirectory(outDir);
+
         var outFile = Path.Combine(outDir, "build-log.txt");
+        if (Directory.Exists(outFile))
+            Directory.Delete(outFile, recursive: true);
 
         long bytesWritten = 0;
 

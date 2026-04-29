@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Investigator.Models;
 
 public record EvidenceChain(IReadOnlyList<EvidenceStep> Steps);
@@ -7,5 +9,5 @@ public record EvidenceStep(
     string Reasoning,
     string Finding,
     string? Cluster,
-    string Command,
+    [property: JsonPropertyName("command")] string Proof,
     string? Source = null);

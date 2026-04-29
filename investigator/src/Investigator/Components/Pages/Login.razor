@@ -1,12 +1,15 @@
 @page "/login"
+@using Microsoft.AspNetCore.Authorization
 @using Investigator.Models
 @using Investigator.Services
 @using Microsoft.Extensions.Options
+@attribute [AllowAnonymous]
 @inject CircuitAuthState CircuitAuth
 @inject AuthSettings AuthSettings
 @inject NavigationManager Nav
 @inject IOptions<AuthOptions> AuthOpts
 @inject ConversationStore Store
+@inject InvestigatorAuthStateProvider AuthStateProvider
 
 <PageTitle>The Game Is Afoot - Investigator</PageTitle>
 
@@ -65,7 +68,7 @@
 
         @if (AuthSettings.HasOidc && !_showTokenInput)
         {
-            <button class="login-button" @onclick="RedirectToOidc">📜 I Bear a Letter from Abroad</button>
+            <button class="login-button" @onclick="RedirectToOidc" disabled="@_oidcRedirecting">📜 I Bear a Letter from Abroad</button>
         }
 
         @if (AuthSettings.HasToken)
@@ -117,6 +120,7 @@
             CircuitAuth.UserId = "token-user";
             CircuitAuth.DisplayName = "Token User";
             CircuitAuth.AuthMethod = AuthMode.Token;
+            AuthStateProvider.NotifyStateChanged();
 
             _error = false;
             _success = true;

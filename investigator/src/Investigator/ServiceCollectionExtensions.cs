@@ -159,14 +159,23 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(new AuthSettings { HasOidc = oidcEnabled, HasToken = tokenEnabled });
         services.AddScoped<CircuitAuthState>();
 
+        var authEnabled = oidcEnabled || tokenEnabled;
+
         if (oidcEnabled)
         {
             services.AddAuthentication(options =>
             {
                 options.DefaultScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectDefaults.AuthenticationScheme;
             })
-            .AddCookie()
+            .AddCookie(options =>
+            {
+                options.LoginPath = "/login";
+                options.Events.OnSigningIn = ctx =>
+                {
+                    ctx.Properties.IsPersistent = false;
+                    return Task.CompletedTask;
+                };
+            })
             .AddOpenIdConnect(options =>
             {
                 options.Authority = authSection["Authority"];
@@ -184,7 +193,7 @@ public static class ServiceCollectionExtensions
                     options.Scope.Add(scope);
             });
         }
-        else
+        else if (!authEnabled)
         {
             services.AddAuthentication("anonymous")
                 .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, AnonymousAuthHandler>(
@@ -193,13 +202,18 @@ public static class ServiceCollectionExtensions
 
         services.AddAuthorization(options =>
         {
-            if (!oidcEnabled)
+            if (!authEnabled)
             {
                 options.DefaultPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
                     .RequireAssertion(_ => true)
                     .Build();
             }
         });
+
+        services.AddHttpContextAccessor();
+        services.AddScoped<InvestigatorAuthStateProvider>();
+        services.AddScoped<Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider>(
+            sp => sp.GetRequiredService<InvestigatorAuthStateProvider>());
         services.AddCascadingAuthenticationState();
 
         return services;

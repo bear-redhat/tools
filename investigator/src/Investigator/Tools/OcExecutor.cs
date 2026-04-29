@@ -126,7 +126,11 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         var list = available.Count > 0
             ? string.Join(", ", available)
             : "(no clusters configured)";
-        return $"Available clusters: {list}";
+        return $"""
+            ## run_oc tool
+            Available clusters: {list}
+            Always fetch complete, unfiltered output -- do NOT add grep, awk, or pipes to filter within run_oc. Output is saved to disk and you receive a truncated summary. If you need to dig deeper into saved output, use run_shell with targeted reads.
+            """;
     }
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)

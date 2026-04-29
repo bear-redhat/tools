@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Investigator.Tools;
 
-public sealed class CiRepoTool : IInvestigatorTool
+public sealed class CiRepoTool : IInvestigatorTool, ISystemPromptContributor
 {
     private static readonly JsonElement s_paramSchema = JsonDocument.Parse("""
     {
@@ -54,6 +54,15 @@ public sealed class CiRepoTool : IInvestigatorTool
             + "After getting the path, use run_shell to read files (cat, grep, find, etc.).",
         ParameterSchema: s_paramSchema,
         DefaultTimeout: TimeSpan.FromSeconds(120));
+
+    public string? GetSystemPromptSection()
+    {
+        var repos = string.Join(", ", _repos.Select(kv => $"\"{kv.Key}\" ({kv.Value.Url})"));
+        return $"""
+            ## ci_repo tool
+            To inspect CI job definitions, step registry configs, or cluster manifests, use ci_repo to obtain a local clone path, then read files with run_shell. Available repos: {repos}. Specify which repo you need via the repo parameter. The tool reports how recently each clone was synced and auto-pulls if the data is stale, so you can trust the path it returns. Use the pull action explicitly only if you require a guaranteed up-to-the-minute snapshot mid-investigation.
+            """;
+    }
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {

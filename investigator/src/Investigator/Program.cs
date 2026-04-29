@@ -22,7 +22,7 @@ builder.Services.AddInvestigatorTools(builder.Configuration);
 builder.Services.AddInvestigatorAuth(builder.Configuration, builder.Environment);
 
 builder.Services.AddSingleton<ConversationStore>();
-builder.Services.AddScoped<InvestigationRoom>();
+builder.Services.AddSingleton<InvestigationOrchestrator>();
 
 var app = builder.Build();
 
@@ -64,12 +64,6 @@ if (authSettings.HasOidc)
 app.UseAntiforgery();
 
 app.MapHealthChecks("/health");
-
-app.MapGet("/", (ConversationStore store) =>
-{
-    var session = store.CreateSession();
-    return Results.Redirect($"/c/{session.Id}");
-});
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

@@ -4,7 +4,6 @@ using System.Threading.Channels;
 using Investigator.Contracts;
 using Investigator.Models;
 using Investigator.Tools;
-using Microsoft.Extensions.Options;
 
 namespace Investigator.Services;
 
@@ -78,13 +77,14 @@ public sealed class InvestigationRoom
                 "items": {
                     "type": "object",
                     "properties": {
-                        "step": { "type": "integer", "description": "Position in the logical chain (1 = starting point of the reasoning)" },
-                        "reasoning": { "type": "string" },
-                        "finding": { "type": "string" },
-                        "cluster": { "type": "string" },
-                        "command": { "type": "string", "description": "The command run (if any) and the raw log line(s) or output that support this step, copied verbatim. Command on the first line, raw output below it." },
+                        "step": { "type": "integer", "description": "Position in the logical chain (1 = starting point)" },
+                        "reasoning": { "type": "string", "description": "Why this step matters -- the inference or causal link to the next step" },
+                        "finding": { "type": "string", "description": "What was discovered -- a one or two sentence factual statement" },
+                        "cluster": { "type": "string", "description": "The cluster this evidence relates to, if applicable" },
+                        "proof": { "type": "string", "description": "The raw evidence that supports this step: paste verbatim log lines, error messages, status fields, or command output. If a command was run, put it on the first line with raw output below." },
                         "source": { "type": "string", "description": "Log file path or URL with optional :line suffix, e.g. 'build.log:142' or 'https://prow.ci/build-log.txt:307'" }
-                    }
+                    },
+                    "required": ["step", "reasoning", "finding", "proof"]
                 },
                 "description": "Ordered chain of proof. Each step must logically connect to the next -- forward (observation to cause) or reverse (symptom to origin). Do NOT submit unrelated findings as a flat list."
             },
@@ -122,14 +122,14 @@ public sealed class InvestigationRoom
         ILlmClientFactory llmFactory,
         ToolRegistry toolRegistry,
         WorkspaceManager workspaceManager,
-        IOptions<AgentOptions> agentOptions,
+        AgentOptions agentOptions,
         ILogger<InvestigationRoom> logger)
     {
         _llmFactory = llmFactory;
         _toolRegistry = toolRegistry;
         _toolSections = toolRegistry.GetSystemPromptContributions();
         _workspaceManager = workspaceManager;
-        _agentOptions = agentOptions.Value;
+        _agentOptions = agentOptions;
         _logger = logger;
 
         _delegateSchema = BuildDelegateSchema();

@@ -1,0 +1,55 @@
+@page "/"
+@using Microsoft.AspNetCore.Authorization
+@using Investigator.Services
+@attribute [Authorize]
+
+<PageTitle>Little Bear, the Detective</PageTitle>
+
+<div class="home-page">
+    <div class="home-header">
+        <h1>221B Banyan Row</h1>
+        <button class="btn-new" @onclick="StartNewInvestigation">New Investigation</button>
+    </div>
+
+    @if (_investigations.Count > 0)
+    {
+        <div class="home-section">
+            <h2>Active Investigations</h2>
+            <div class="investigation-list">
+                @foreach (var inv in _investigations)
+                {
+                    <a class="investigation-card" href="/c/@inv.ConversationId">
+                        <div class="investigation-card-header">
+                            <span class="investigation-status-dot"></span>
+                            <span class="investigation-time">@FormatRelativeTime(inv.StartedAt)</span>
+                            @if (inv.OwnerUserId is not null)
+                            {
+                                <span class="investigation-user">@inv.OwnerUserId</span>
+                            }
+                        </div>
+                        <div class="investigation-summary">
+                            @(string.IsNullOrWhiteSpace(inv.CaseSummary) ? "(no case statement yet)" : inv.CaseSummary)
+                        </div>
+                        <div class="investigation-card-footer">
+                            @if (inv.AgentCount > 0)
+                            {
+                                <span class="investigation-agents">@inv.AgentCount scout@(inv.AgentCount != 1 ? "s" : "") dispatched</span>
+                            }
+                            @if (inv.HasWorkingAgents)
+                            {
+                                <span class="investigation-working">agents working</span>
+                            }
+                        </div>
+                    </a>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="home-empty">
+            <pre class="ascii-art home-ascii">@FormatAsciiArt(s_homeArt)</pre>
+            <p>No active investigations. Start a new one to begin.</p>
+        </div>
+    }
+</div>

@@ -21,11 +21,11 @@
                   @onkeydown="OnKeyDown"
                   placeholder="Describe your case..."></textarea>
         <div class="chat-input-buttons">
-            <button class="btn-send" @onclick="Send" disabled="@string.IsNullOrWhiteSpace(_message)">Send</button>
             @if (IsInvestigating)
             {
-                <button class="btn-cancel" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+                <button class="btn-cancel" @onclick="CancelInvestigation" disabled="@_cancelling">Cancel</button>
             }
+            <button class="btn-send" @onclick="Send" disabled="@string.IsNullOrWhiteSpace(_message)">Send</button>
         </div>
     </div>
 </div>
@@ -38,6 +38,7 @@
 
     private ElementReference _textareaRef;
     private string _message = "";
+    private bool _cancelling;
     private bool _initialized;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -47,6 +48,13 @@
             _initialized = true;
             await JS.InvokeVoidAsync("initPasteHandler", _textareaRef);
         }
+    }
+
+    private async Task CancelInvestigation()
+    {
+        _cancelling = true;
+        try { await OnCancel.InvokeAsync(); }
+        finally { _cancelling = false; }
     }
 
     private async Task Send()

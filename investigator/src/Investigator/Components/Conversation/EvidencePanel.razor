@@ -27,12 +27,16 @@
                                 <CopyButton Text="@step.Source" />
                             </span>
                         }
-                        @if (!string.IsNullOrWhiteSpace(step.Command))
+                        @if (!string.IsNullOrWhiteSpace(step.Proof))
                         {
-                            <div class="step-command">
-                                <code>@step.Command</code>
-                                <CopyButton Text="@step.Command" />
+                            <div class="step-proof">
+                                <code>@step.Proof</code>
+                                <CopyButton Text="@step.Proof" />
                             </div>
+                        }
+                        else
+                        {
+                            <div class="step-proof-missing">no raw evidence</div>
                         }
                     </div>
                 </div>

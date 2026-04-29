@@ -61,6 +61,7 @@ public sealed class ConversationSession
     public object Lock { get; } = new();
 
     public string? WorkspacePath { get; set; }
+    public DateTimeOffset StartedAt { get; set; }
     public List<ConversationItem> Items { get; } = [];
     public List<LogEntryModel> LogEntries { get; } = [];
     public List<ChatMessage> History { get; } = [];

@@ -211,7 +211,8 @@ internal sealed class RoomToolHandlers
                     Reasoning: item.TryGetProperty("reasoning", out var r) ? r.GetString() ?? "" : "",
                     Finding: item.TryGetProperty("finding", out var f) ? f.GetString() ?? "" : "",
                     Cluster: item.TryGetProperty("cluster", out var c) ? c.GetString() : null,
-                    Command: item.TryGetProperty("command", out var cmd) ? cmd.GetString() ?? "" : "",
+                    Proof: item.TryGetProperty("proof", out var prf) ? prf.GetString() ?? ""
+                        : item.TryGetProperty("command", out var cmd) ? cmd.GetString() ?? "" : "",
                     Source: item.TryGetProperty("source", out var src) ? src.GetString() : null));
             }
             evidence = new EvidenceChain(steps.OrderBy(s => s.Step).ToList());

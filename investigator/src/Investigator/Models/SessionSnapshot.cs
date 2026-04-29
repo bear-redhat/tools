@@ -8,6 +8,7 @@ public sealed class SessionSnapshot
     public required string Id { get; init; }
     [JsonPropertyName("OwnerUserName")]
     public string? OwnerUserId { get; init; }
+    public DateTimeOffset StartedAt { get; init; }
     public List<ConversationItem> Items { get; init; } = [];
     public List<LogEntryModel> LogEntries { get; init; } = [];
     public List<GroupMember> Members { get; init; } = [];
@@ -20,6 +21,7 @@ public sealed class SessionSnapshot
     {
         Id = session.Id,
         OwnerUserId = session.OwnerUserId,
+        StartedAt = session.StartedAt,
         Items = session.Items.ToList(),
         LogEntries = session.LogEntries.ToList(),
         Members = session.Members.ToList(),
@@ -58,6 +60,7 @@ public sealed class SessionSnapshot
     {
         var session = new ConversationSession(Id);
         session.OwnerUserId = OwnerUserId;
+        session.StartedAt = StartedAt;
 
         session.Items.Clear();
         session.Items.AddRange(Items);

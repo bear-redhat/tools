@@ -1,0 +1,136 @@
+.home-page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem;
+}
+
+.home-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+}
+
+.home-header h1 {
+    margin: 0;
+    font-size: 1.4rem;
+    color: #e0e0e0;
+}
+
+.btn-new {
+    padding: 0.5rem 1.2rem;
+    border: 0;
+    border-radius: 4px;
+    background: #4a7dff;
+    color: white;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-new:hover {
+    background: #3b6ae0;
+}
+
+.home-section h2 {
+    font-size: 1rem;
+    color: #9ca3af;
+    margin: 0 0 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.investigation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.investigation-card {
+    display: block;
+    background: #1a1a2e;
+    border: 1px solid #2a2a4a;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.investigation-card:hover {
+    border-color: #4a7dff;
+    background: #1e1e36;
+}
+
+.investigation-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+
+.investigation-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #34d399;
+    flex-shrink: 0;
+    animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.investigation-time {
+    color: #9ca3af;
+}
+
+.investigation-user {
+    margin-left: auto;
+    color: #7eb8da;
+}
+
+.investigation-summary {
+    color: #e0e0e0;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.investigation-card-footer {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+    color: #6b7280;
+}
+
+.investigation-working {
+    color: #fbbf24;
+}
+
+.home-empty {
+    text-align: center;
+    padding: 3rem 0;
+    color: #6b7280;
+}
+
+.home-ascii {
+    color: #4a7dff;
+    margin-bottom: 1rem;
+}
+
+.home-empty p {
+    margin: 0;
+    font-size: 0.9rem;
+}

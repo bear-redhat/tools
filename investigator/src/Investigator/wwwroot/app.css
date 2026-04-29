@@ -1117,19 +1117,26 @@ pre.ascii-art {
     white-space: nowrap;
 }
 
-.step-command {
+.step-proof {
     display: flex;
     align-items: center;
     gap: 0.35rem;
     margin-top: 0.35rem;
 }
 
-.step-command code {
+.step-proof code {
     font-size: 0.8rem;
     color: #93c5fd;
     background: #12122a;
     padding: 0.2rem 0.5rem;
     border-radius: 3px;
+}
+
+.step-proof-missing {
+    font-size: 0.75rem;
+    color: #6b7280;
+    font-style: italic;
+    margin-top: 0.25rem;
 }
 
 /* Fix panel */

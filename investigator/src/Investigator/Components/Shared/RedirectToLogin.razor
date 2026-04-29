@@ -1,0 +1,13 @@
+@using Investigator.Services
+@inject NavigationManager Nav
+@inject AuthSettings AuthSettings
+
+@code {
+    protected override void OnInitialized()
+    {
+        if (!AuthSettings.IsEnabled) return;
+
+        var returnUrl = Uri.EscapeDataString(Nav.ToBaseRelativePath(Nav.Uri));
+        Nav.NavigateTo($"/login?returnUrl=/{returnUrl}", forceLoad: true);
+    }
+}
