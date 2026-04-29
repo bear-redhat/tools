@@ -49,7 +49,8 @@ public sealed class InvestigationOrchestrator
     public ChannelReader<AgentEvent> StartAsync(
         string conversationId,
         ConversationSession session,
-        string subscriberId)
+        string subscriberId,
+        TimeZoneInfo? clientTimeZone = null)
     {
         var inv = _running.GetOrAdd(conversationId, _ =>
         {
@@ -66,6 +67,7 @@ public sealed class InvestigationOrchestrator
                 Session = session,
                 Cts = cts,
                 StartedAt = session.StartedAt,
+                ClientTimeZone = clientTimeZone,
             };
 
             created.RunTask = RunInvestigationAsync(created, cts.Token);
@@ -159,7 +161,8 @@ public sealed class InvestigationOrchestrator
                 inv.Session.History,
                 ct,
                 userId: inv.Session.OwnerUserId,
-                conversationId: inv.Session.Id);
+                conversationId: inv.Session.Id,
+                clientTimeZone: inv.ClientTimeZone);
         }
         catch (OperationCanceledException)
         {
@@ -678,6 +681,7 @@ public sealed class InvestigationOrchestrator
         public required ConversationSession Session { get; init; }
         public required CancellationTokenSource Cts { get; init; }
         public required DateTimeOffset StartedAt { get; init; }
+        public TimeZoneInfo? ClientTimeZone { get; init; }
         public Task RunTask { get; set; } = Task.CompletedTask;
         public ConcurrentDictionary<string, Channel<AgentEvent>> Subscribers { get; } = new();
         public Dictionary<string, TurnUsage> PendingUsage { get; } = new();

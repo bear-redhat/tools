@@ -4,6 +4,8 @@
 @inject NavigationManager Nav
 @inject CircuitAuthState CircuitAuth
 @inject AuthSettings AuthSettings
+@inject IJSRuntime JS
+@inject BrowserTimeZone BrowserTz
 
 <div class="main-layout">
     <header class="top-bar">
@@ -50,6 +52,15 @@
 
 @code {
     private bool _showNewSessionModal;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var ianaId = await JS.InvokeAsync<string?>("getBrowserTimezone");
+            BrowserTz.Initialize(ianaId);
+        }
+    }
 
     private void StartNewSession()
     {

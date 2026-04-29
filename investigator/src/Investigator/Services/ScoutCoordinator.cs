@@ -32,6 +32,7 @@ internal sealed class ScoutCoordinator
     internal string WorkspacePath { get; set; } = "";
     internal string? UserId { get; set; }
     internal string? ConversationId { get; set; }
+    internal TimeZoneInfo? ClientTimeZone { get; set; }
 
     internal ScoutCoordinator(
         ConcurrentDictionary<string, InvestigationRoom.AgentSlot> agents,
@@ -101,7 +102,7 @@ internal sealed class ScoutCoordinator
             Id: scoutSlot.Id,
             Name: agentName,
             Role: role,
-            SystemPrompt: InvestigationPrompts.BuildScoutSystemPrompt(agentName, role, task, WorkspacePath, _toolSections),
+            SystemPrompt: InvestigationPrompts.BuildScoutSystemPrompt(agentName, role, task, WorkspacePath, _toolSections, ClientTimeZone),
             LlmClient: subClient,
             Tools: BuildScoutTools(),
             InitialMessages: [new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(task) }],

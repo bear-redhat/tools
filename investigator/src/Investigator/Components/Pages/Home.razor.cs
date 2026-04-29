@@ -25,6 +25,7 @@ public partial class Home
     [Inject] private NavigationManager Nav { get; set; } = default!;
     [Inject] private AuthSettings AuthSettings { get; set; } = default!;
     [Inject] private CircuitAuthState CircuitAuth { get; set; } = default!;
+    [Inject] private BrowserTimeZone BrowserTz { get; set; } = default!;
 
     private IReadOnlyList<ActiveInvestigationInfo> _investigations = [];
 
@@ -47,13 +48,13 @@ public partial class Home
         Nav.NavigateTo($"/c/{session.Id}");
     }
 
-    private static string FormatRelativeTime(DateTimeOffset started)
+    private string FormatRelativeTime(DateTimeOffset started)
     {
         var elapsed = DateTimeOffset.UtcNow - started;
         if (elapsed.TotalSeconds < 60) return "just now";
         if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes}m ago";
         if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h ago";
-        return started.ToString("yyyy-MM-dd HH:mm");
+        return BrowserTz.ToLocal(started).ToString("yyyy-MM-dd HH:mm");
     }
 
     private static MarkupString FormatAsciiArt(string content)

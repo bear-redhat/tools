@@ -113,6 +113,7 @@ public sealed class InvestigationRoom
     private string _workspacePath = "";
     private string? _userId;
     private string? _conversationId;
+    private TimeZoneInfo? _clientTimeZone;
     private CancellationToken _ct;
     private int _outputCounter;
 
@@ -142,15 +143,17 @@ public sealed class InvestigationRoom
     }
 
     public async Task StartAsync(string workspacePath, IReadOnlyList<ChatMessage> history, CancellationToken ct,
-        string? userId = null, string? conversationId = null)
+        string? userId = null, string? conversationId = null, TimeZoneInfo? clientTimeZone = null)
     {
         _workspacePath = workspacePath;
         _ct = ct;
         _userId = userId;
         _conversationId = conversationId;
+        _clientTimeZone = clientTimeZone;
         _scoutCoordinator.WorkspacePath = workspacePath;
         _scoutCoordinator.UserId = userId;
         _scoutCoordinator.ConversationId = conversationId;
+        _scoutCoordinator.ClientTimeZone = clientTimeZone;
 
         var littleBearSlot = new AgentSlot
         {
@@ -170,7 +173,8 @@ public sealed class InvestigationRoom
             Role: "lead detective",
             SystemPrompt: InvestigationPrompts.BuildSystemPrompt(
                 _toolSections, workspacePath,
-                _llmFactory.Models, _llmFactory.DefaultProfileName),
+                _llmFactory.Models, _llmFactory.DefaultProfileName,
+                clientTimeZone),
             LlmClient: _llmFactory.GetClient(_llmFactory.PrimaryProfileName),
             Tools: BuildLittleBearTools(),
             InitialMessages: BuildInitialMessages(history),

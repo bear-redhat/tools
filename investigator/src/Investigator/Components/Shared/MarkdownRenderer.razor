@@ -25,7 +25,15 @@ else
 
     protected override void OnParametersSet()
     {
-        _html = Markdown.ToHtml(Content ?? "", s_pipeline);
+        try
+        {
+            _html = Markdown.ToHtml(Content ?? "", s_pipeline);
+        }
+        catch (ArgumentException)
+        {
+            _html = System.Net.WebUtility.HtmlEncode(Content ?? "");
+        }
+
         if (Inline)
         {
             _html = s_blockWrapperRegex.Replace(_html, "$1").Trim();

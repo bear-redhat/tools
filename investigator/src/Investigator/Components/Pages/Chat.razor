@@ -87,7 +87,7 @@
                                 <MarkdownRenderer Content="@item.Content" />
                             </div>
                         }
-                        <div class="finding-time">@item.Timestamp.ToString("HH:mm:ss")</div>
+                        <div class="finding-time">@BrowserTz.ToLocal(item.Timestamp).ToString("HH:mm:ss")</div>
                     </div>
                 }
                 @if (!FilteredFindings.Any())

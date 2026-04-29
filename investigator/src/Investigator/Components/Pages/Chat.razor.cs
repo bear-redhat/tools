@@ -17,6 +17,7 @@ public partial class Chat : IAsyncDisposable
     [Inject] private ILogger<Chat> Logger { get; set; } = default!;
     [Inject] private AuthSettings AuthSettings { get; set; } = default!;
     [Inject] private CircuitAuthState CircuitAuth { get; set; } = default!;
+    [Inject] private BrowserTimeZone BrowserTz { get; set; } = default!;
 
     [Parameter] public string ConversationId { get; set; } = "";
 
@@ -228,7 +229,7 @@ public partial class Chat : IAsyncDisposable
         if (!_started)
         {
             _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
-            var reader = Orchestrator.StartAsync(ConversationId, _session, _circuitId);
+            var reader = Orchestrator.StartAsync(ConversationId, _session, _circuitId, BrowserTz.TimeZone);
             _eventLoopTask = RunEventLoopAsync(reader);
             _started = true;
         }

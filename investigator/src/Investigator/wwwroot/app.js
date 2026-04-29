@@ -1,3 +1,8 @@
+window.getBrowserTimezone = () => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone; }
+  catch { return null; }
+};
+
 const scrollState = new WeakMap();
 
 window.initAutoScroll = (element) => {
