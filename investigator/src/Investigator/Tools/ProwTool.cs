@@ -46,8 +46,8 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
     private static readonly Regex s_deckJobUrlRegex = new(
         @"prow\.ci\.openshift\.org/?\?.*job=([^&]+)", RegexOptions.Compiled);
 
-    private static readonly Regex s_htmlLinkRegex = new(
-        @"href=""([^""]+)""", RegexOptions.Compiled);
+    private static readonly Regex s_anchorHrefRegex = new(
+        @"<a\s[^>]*href=""([^""]+)""", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly HttpClient _httpClient;
     private readonly ProwOptions _options;
@@ -604,14 +604,18 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         var url = $"{_options.GcsWebUrl}/gcs/{bucket}/{prefix}/";
         var html = await GetStringAsync(url, ct);
         if (html is null)
-            return new ToolResult($"Failed to list artifacts. URL: {url}", ExitCode: 1);
+            return new ToolResult(
+                $"Could not reach artifact listing (network error). URL: {url}\n" +
+                "Do not retry this URL with curl or other HTTP tools.",
+                ExitCode: 1);
 
         var sb = new StringBuilder();
         sb.AppendLine($"# Artifacts: {prefix}");
         sb.AppendLine($"Source: {url}");
         sb.AppendLine();
 
-        var links = ParseHtmlLinks(html);
+        var basePath = $"/gcs/{bucket}/{prefix}/";
+        var links = ParseGcsWebLinks(html, basePath);
         if (links.Count == 0)
         {
             sb.AppendLine("  (no artifacts found at this path)");
@@ -619,10 +623,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         else
         {
             foreach (var link in links)
-            {
-                if (link == "../") continue;
                 sb.AppendLine($"  {link}");
-            }
         }
 
         return new ToolResult(sb.ToString());
@@ -928,16 +929,18 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         }
     }
 
-    private static List<string> ParseHtmlLinks(string html)
+    private static List<string> ParseGcsWebLinks(string html, string basePath)
     {
         var links = new List<string>();
-        foreach (Match match in s_htmlLinkRegex.Matches(html))
+        foreach (Match match in s_anchorHrefRegex.Matches(html))
         {
             var href = match.Groups[1].Value;
-            if (href.StartsWith("http")) continue;
-            var name = href.TrimEnd('/').Split('/')[^1];
-            if (!string.IsNullOrEmpty(name))
-                links.Add(href.EndsWith('/') ? $"{name}/" : name);
+            if (!href.StartsWith(basePath) || href.Length <= basePath.Length)
+                continue;
+            var child = href[basePath.Length..];
+            var name = child.TrimEnd('/');
+            if (string.IsNullOrEmpty(name)) continue;
+            links.Add(child.EndsWith('/') ? $"{name}/" : name);
         }
         return links;
     }
