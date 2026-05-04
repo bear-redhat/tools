@@ -39,13 +39,18 @@
                             {
                                 <span class="investigation-working">agents working</span>
                             }
+                            @if (inv.HasRemediation)
+                            {
+                                <span class="investigation-remediation">remediation active</span>
+                            }
                         </div>
                     </a>
                 }
             </div>
         </div>
     }
-    else
+
+    @if (_investigations.Count == 0)
     {
         <div class="home-empty">
             <pre class="ascii-art home-ascii">@FormatAsciiArt(s_homeArt)</pre>

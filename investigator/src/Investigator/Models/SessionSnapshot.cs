@@ -1,4 +1,3 @@
-using System.Text.Json.Serialization;
 using Investigator.Services;
 
 namespace Investigator.Models;
@@ -6,55 +5,24 @@ namespace Investigator.Models;
 public sealed class SessionSnapshot
 {
     public required string Id { get; init; }
-    [JsonPropertyName("OwnerUserName")]
     public string? OwnerUserId { get; init; }
     public DateTimeOffset StartedAt { get; init; }
-    public List<ConversationItem> Items { get; init; } = [];
-    public List<LogEntryModel> LogEntries { get; init; } = [];
-    public List<GroupMember> Members { get; init; } = [];
-    public Dictionary<string, List<ConversationItem>> DetailEvents { get; init; } = new();
-    public Dictionary<string, List<LogEntryModel>> DetailLogEntries { get; init; } = new();
-    public Dictionary<string, AgentUsage> UsageByAgent { get; init; } = new();
-    public AgentUsage PanelSummarizationUsage { get; init; } = new();
+    public List<RoomEvent> Events { get; init; } = [];
+    public List<RoomEvent> RemediationEvents { get; init; } = [];
+    public CaseFile? CaseFile { get; init; }
 
-    public static SessionSnapshot FromSession(ConversationSession session) => new()
+    public static SessionSnapshot FromSession(ConversationSession session)
     {
-        Id = session.Id,
-        OwnerUserId = session.OwnerUserId,
-        StartedAt = session.StartedAt,
-        Items = session.Items.ToList(),
-        LogEntries = session.LogEntries.ToList(),
-        Members = session.Members.ToList(),
-        DetailEvents = session.DetailEvents.ToDictionary(
-            kvp => kvp.Key,
-            kvp => kvp.Value.ToList()),
-        DetailLogEntries = session.DetailLogEntries.ToDictionary(
-            kvp => kvp.Key,
-            kvp => kvp.Value.ToList()),
-        UsageByAgent = session.UsageByAgent.ToDictionary(
-            kvp => kvp.Key,
-            kvp => new AgentUsage
-            {
-                InputTokens = kvp.Value.InputTokens,
-                OutputTokens = kvp.Value.OutputTokens,
-                CacheReadTokens = kvp.Value.CacheReadTokens,
-                CacheCreateTokens = kvp.Value.CacheCreateTokens,
-                Cost = kvp.Value.Cost,
-                ModelProfile = kvp.Value.ModelProfile,
-                InputPricePerMToken = kvp.Value.InputPricePerMToken,
-                OutputPricePerMToken = kvp.Value.OutputPricePerMToken,
-                CacheReadPricePerMToken = kvp.Value.CacheReadPricePerMToken,
-                CacheCreationPricePerMToken = kvp.Value.CacheCreationPricePerMToken,
-            }),
-        PanelSummarizationUsage = new AgentUsage
+        return new()
         {
-            InputTokens = session.PanelSummarizationUsage.InputTokens,
-            OutputTokens = session.PanelSummarizationUsage.OutputTokens,
-            CacheReadTokens = session.PanelSummarizationUsage.CacheReadTokens,
-            CacheCreateTokens = session.PanelSummarizationUsage.CacheCreateTokens,
-            Cost = session.PanelSummarizationUsage.Cost,
-        },
-    };
+            Id = session.Id,
+            OwnerUserId = session.OwnerUserId,
+            StartedAt = session.StartedAt,
+            Events = session.InvestigationTranscriptStore?.Events.ToList() ?? [],
+            RemediationEvents = session.RemediationTranscriptStore?.Events.ToList() ?? [],
+            CaseFile = session.Remediation?.CaseFile,
+        };
+    }
 
     public ConversationSession ToSession()
     {
@@ -62,30 +30,38 @@ public sealed class SessionSnapshot
         session.OwnerUserId = OwnerUserId;
         session.StartedAt = StartedAt;
 
-        session.Items.Clear();
-        session.Items.AddRange(Items);
+        ReplayIntoRoom(Events, "little-bear", session.Investigation);
 
-        session.LogEntries.AddRange(LogEntries);
+        if (CaseFile is not null)
+        {
+            session.AddRemediationRoom(CaseFile);
+            ReplayIntoRoom(RemediationEvents, "langur", session.Remediation!);
+        }
 
-        session.Members.Clear();
-        session.Members.AddRange(Members);
-
-        foreach (var (key, value) in DetailEvents)
-            session.DetailEvents[key] = value;
-
-        foreach (var (key, value) in DetailLogEntries)
-            session.DetailLogEntries[key] = value;
-
-        foreach (var (key, value) in UsageByAgent)
-            session.UsageByAgent[key] = value;
-
-        var ps = session.PanelSummarizationUsage;
-        ps.InputTokens = PanelSummarizationUsage.InputTokens;
-        ps.OutputTokens = PanelSummarizationUsage.OutputTokens;
-        ps.CacheReadTokens = PanelSummarizationUsage.CacheReadTokens;
-        ps.CacheCreateTokens = PanelSummarizationUsage.CacheCreateTokens;
-        ps.Cost = PanelSummarizationUsage.Cost;
-
+        session.LoadedInvestigationEvents = Events;
+        session.LoadedRemediationEvents = RemediationEvents;
         return session;
+    }
+
+    private static void ReplayIntoRoom(IEnumerable<RoomEvent> events, string leadId, RoomState room)
+    {
+        var bus = new RoomEventBus();
+        var pipeline = new RoomEventPipeline(bus, [new ToolEffectEnricher(leadId)]);
+        var uxProjector = new UxProjector(leadId);
+        var mutator = new RoomState.Mutator(room);
+
+        var applier = bus.Subscribe("replay-applier");
+        var projector = new TranscriptProjector(leadId, evt => pipeline.EmitAsync(evt));
+
+        var projectionTask = projector.ReplayAsync(events);
+        projectionTask.GetAwaiter().GetResult();
+
+        while (applier.TryRead(out var evt))
+        {
+            foreach (var ux in uxProjector.Project(evt))
+                mutator.Apply(ux);
+        }
+
+        mutator.PublishView();
     }
 }

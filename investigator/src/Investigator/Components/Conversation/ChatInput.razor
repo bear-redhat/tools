@@ -7,7 +7,7 @@
             <span class="thinking-dot"></span>
             <span class="thinking-dot"></span>
             <span class="thinking-dot"></span>
-            <span class="thinking-text">Little Bear is on the case...</span>
+            <span class="thinking-text">@(IsRemediation ? "Intendant Langur is attending to the matter..." : "Little Bear is on the case...")</span>
         </div>
     }
     else if (HasWorkingAgents)
@@ -35,6 +35,7 @@
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public bool IsInvestigating { get; set; }
     [Parameter] public bool HasWorkingAgents { get; set; }
+    [Parameter] public bool IsRemediation { get; set; }
 
     private ElementReference _textareaRef;
     private string _message = "";

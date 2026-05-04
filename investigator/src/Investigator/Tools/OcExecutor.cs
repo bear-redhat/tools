@@ -29,8 +29,9 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
 
     private static readonly TimeSpan s_expiryBuffer = TimeSpan.FromSeconds(60);
 
-    private readonly string _ocPath = "oc";
+    private string _ocPath = "oc";
     private readonly string _kubeconfigDir = Path.Combine(Path.GetTempPath(), "investigator-kc");
+    private readonly OcOptions _opts;
     private readonly List<ClusterEntry> _clusters = [];
     private readonly HashSet<string> _unavailableClusters = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, CachedLogin> _loggedInContexts = new(StringComparer.OrdinalIgnoreCase);
@@ -42,30 +43,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
     public OcExecutor(IOptions<OcOptions> options, ILogger<OcExecutor> logger)
     {
         _logger = logger;
-        var opts = options.Value;
-        if (!string.IsNullOrEmpty(opts.Path))
-            _ocPath = opts.Path;
-
-        Directory.CreateDirectory(_kubeconfigDir);
-
-        foreach (var c in opts.Clusters)
-        {
-            if (string.IsNullOrEmpty(c.Name) || string.IsNullOrEmpty(c.Type))
-                continue;
-
-            _clusters.Add(new ClusterEntry
-            {
-                Name = c.Name,
-                Type = c.Type,
-                Kubeconfig = c.Kubeconfig,
-                Context = c.Context,
-                Server = c.Server,
-                TokenFile = c.TokenFile,
-                CaFile = c.CaFile,
-            });
-        }
-
-        ValidateClusterCredentials();
+        _opts = options.Value;
     }
 
     private void ValidateClusterCredentials()
@@ -105,6 +83,34 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
 
         var available = _clusters.Where(c => !_unavailableClusters.Contains(c.Name)).Select(c => c.Name);
         _logger.LogInformation("Available clusters: {Clusters}", string.Join(", ", available));
+    }
+
+    public Task RegisterAsync(CancellationToken ct = default)
+    {
+        if (!string.IsNullOrEmpty(_opts.Path))
+            _ocPath = _opts.Path;
+
+        Directory.CreateDirectory(_kubeconfigDir);
+
+        foreach (var c in _opts.Clusters)
+        {
+            if (string.IsNullOrEmpty(c.Name) || string.IsNullOrEmpty(c.Type))
+                continue;
+
+            _clusters.Add(new ClusterEntry
+            {
+                Name = c.Name,
+                Type = c.Type,
+                Kubeconfig = c.Kubeconfig,
+                Context = c.Context,
+                Server = c.Server,
+                TokenFile = c.TokenFile,
+                CaFile = c.CaFile,
+            });
+        }
+
+        ValidateClusterCredentials();
+        return Task.CompletedTask;
     }
 
     public ToolDefinition Definition => new(
@@ -256,11 +262,6 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             context.Logger.LogWarning("run_oc: '{Command}' on {Cluster} was cancelled (timeout)", command, cluster);
             return new ToolResult(output + "\n[timed out]", ExitCode: -1, TimedOut: true, ReproCommand: reproCommand);
         }
-        catch (Exception ex)
-        {
-            context.Logger.LogError(ex, "run_oc: unexpected error executing '{Command}' on {Cluster}", command, cluster);
-            throw;
-        }
         finally
         {
             proc?.Dispose();
@@ -275,7 +276,11 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             proc.Kill(entireProcessTree: true);
             logger.LogDebug("run_oc: killed process tree for '{Command}' on {Cluster}", command, cluster);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "run_oc: failed to kill process for '{Command}' on {Cluster}", command, cluster);
+        }
+        catch (System.ComponentModel.Win32Exception ex)
         {
             logger.LogWarning(ex, "run_oc: failed to kill process for '{Command}' on {Cluster}", command, cluster);
         }

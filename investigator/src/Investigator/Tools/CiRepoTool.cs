@@ -47,6 +47,8 @@ public sealed class CiRepoTool : IInvestigatorTool, ISystemPromptContributor
         }
     }
 
+    public Task RegisterAsync(CancellationToken ct = default) => Task.CompletedTask;
+
     public ToolDefinition Definition => new(
         Name: "ci_repo",
         Description: "Access local clones of CI repositories (openshift/release or openshift/ci-tools). "

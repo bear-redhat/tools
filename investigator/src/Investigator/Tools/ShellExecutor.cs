@@ -9,10 +9,11 @@ namespace Investigator.Tools;
 
 public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
 {
-    private readonly string _shellPath;
-    private readonly bool _isPowerShell;
-    private readonly bool _useRunUser;
-    private readonly ToolDefinition _definition;
+    private string _shellPath = null!;
+    private bool _isPowerShell;
+    private bool _useRunUser;
+    private ToolDefinition _definition = null!;
+    private readonly ShellOptions _options;
 
     public bool IsPowerShell => _isPowerShell;
 
@@ -37,7 +38,12 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
 
     public ShellExecutor(IOptions<ShellOptions> options)
     {
-        var configuredPath = options.Value.Path;
+        _options = options.Value;
+    }
+
+    public Task RegisterAsync(CancellationToken ct = default)
+    {
+        var configuredPath = _options.Path;
 
         if (!string.IsNullOrEmpty(configuredPath))
         {
@@ -49,7 +55,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
         {
             _shellPath = "bash";
             _isPowerShell = false;
-            _useRunUser = options.Value.UseRunUser ?? Environment.IsPrivilegedProcess;
+            _useRunUser = _options.UseRunUser ?? Environment.IsPrivilegedProcess;
         }
         else if (OperatingSystem.IsWindows())
         {
@@ -65,6 +71,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
         }
 
         _definition = BuildDefinition();
+        return Task.CompletedTask;
     }
 
     public ToolDefinition Definition => _definition;
@@ -222,11 +229,6 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             context.Logger.LogWarning("run_shell: command '{Command}' was cancelled (timeout)", command);
             return new ToolResult(output + "\n[timed out]", ExitCode: -1, TimedOut: true, ReproCommand: command);
         }
-        catch (Exception ex)
-        {
-            context.Logger.LogError(ex, "run_shell: unexpected error executing command '{Command}'", command);
-            throw;
-        }
         finally
         {
             proc?.Dispose();
@@ -241,7 +243,11 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             proc.Kill(entireProcessTree: true);
             logger.LogDebug("run_shell: killed process tree for command '{Command}'", command);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "run_shell: failed to kill process for command '{Command}'", command);
+        }
+        catch (System.ComponentModel.Win32Exception ex)
         {
             logger.LogWarning(ex, "run_shell: failed to kill process for command '{Command}'", command);
         }

@@ -9,10 +9,24 @@
             <span class="member-name">@member.Name</span>
         </button>
     }
+    @if (RemediationMembers?.Count > 0)
+    {
+        <div class="member-panel-divider"></div>
+        @foreach (var member in RemediationMembers)
+        {
+            var prefixedId = $"rem:{member.Id}";
+            <button class="member-chip @GetStatusClass(member) @(prefixedId == SelectedId ? "selected" : "")"
+                    @onclick="() => OnSelect.InvokeAsync(prefixedId)">
+                <span class="member-dot"></span>
+                <span class="member-name">@member.Name</span>
+            </button>
+        }
+    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<GroupMember> Members { get; set; } = [];
+    [Parameter] public IReadOnlyList<GroupMember>? RemediationMembers { get; set; }
     [Parameter] public string SelectedId { get; set; } = "all";
     [Parameter] public EventCallback<string> OnSelect { get; set; }
 

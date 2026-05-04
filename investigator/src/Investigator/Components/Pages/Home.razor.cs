@@ -31,15 +31,21 @@ public partial class Home
 
     protected override void OnInitialized()
     {
-        var all = Orchestrator.GetActiveInvestigations();
+        var allInv = Orchestrator.GetActiveInvestigations();
 
         if (AuthSettings.IsEnabled && CircuitAuth.IsAuthenticated)
-            _investigations = all.Where(i =>
+        {
+            _investigations = allInv.Where(i =>
                 string.Equals(i.OwnerUserId, CircuitAuth.UserId, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
         else if (AuthSettings.IsEnabled)
+        {
             _investigations = [];
+        }
         else
-            _investigations = all;
+        {
+            _investigations = allInv;
+        }
     }
 
     private void StartNewInvestigation()

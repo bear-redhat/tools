@@ -14,11 +14,11 @@ public sealed class AgentRunner
         string SystemPrompt,
         ILlmClient LlmClient,
         IReadOnlyList<ToolDefinition> Tools,
-        List<LlmMessage>? InitialMessages,
         int MaxToolCalls,
         int MaxRetries,
         string WorkspacePath,
         int? CompactionMaxTokens,
+        Func<string, JsonElement, bool>? IsConditionallyTerminal = null,
         int ThinkingBudget = 10000,
         int ContextWindowTokens = 1_000_000,
         string? UserId = null,
@@ -30,14 +30,15 @@ public sealed class AgentRunner
         decimal CacheCreationPricePerMToken = 0,
         ILlmClient? SummarizerClient = null,
         ModelOptions? SummarizerModelOptions = null,
-        Func<bool>? IsConcluded = null);
+        IReadOnlySet<string>? TerminalToolNames = null,
+        string? TextOnlyNudge = null);
 
     public record ToolExecutionResult(
         string Output,
         string? OutputFile = null,
         int ExitCode = 0,
         bool TimedOut = false,
-        bool Concluded = false);
+        string? Summary = null);
 
     private const int MaxTruncationRetries = 2;
     private const int MaxTruncationFallthroughs = 3;
@@ -51,14 +52,24 @@ public sealed class AgentRunner
 
     public async Task RunAsync(
         Config config,
-        ChannelReader<RoomMessage> inbox,
-        Func<AgentEvent, ValueTask> emit,
+        ChannelReader<RoomEvent> inbox,
+        Func<RoomEvent.LlmContext, ValueTask> store,
         Func<string, JsonElement, string, CancellationToken, Task<ToolExecutionResult>> executeTool,
-        CancellationToken ct)
+        CancellationToken ct,
+        List<LlmMessage>? initialMessages = null)
     {
-        var stepId = 0;
         var toolCallCount = 0;
-        var messages = config.InitialMessages ?? [];
+        var messages = initialMessages ?? [];
+        var terminalTools = config.TerminalToolNames ?? new HashSet<string> { "conclude" };
+
+        RoomEvent.LlmContext MakeCtx(IReadOnlyList<LlmMessage> msgs, int removed = 0,
+            UsageInfo? usage = null, string? thinkingText = null,
+            bool isInboxBatch = false) =>
+            new(0, config.Id, DateTimeOffset.UtcNow, msgs, removed, usage, thinkingText,
+                config.ModelProfile,
+                config.InputPricePerMToken, config.OutputPricePerMToken,
+                config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken,
+                isInboxBatch);
 
         _logger.LogInformation("Agent {Name} ({Role}) starting, maxToolCalls={Max}", config.Name, config.Role, config.MaxToolCalls);
 
@@ -66,32 +77,33 @@ public sealed class AgentRunner
         {
             while (await inbox.WaitToReadAsync(ct))
             {
-                while (inbox.TryRead(out var msg))
-                    messages.Add(FormatInboxMessage(msg));
+                var inboxBatch = new List<LlmMessage>();
+                while (inbox.TryRead(out var evt))
+                {
+                    var msg = FormatEventAsLlmMessage(evt);
+                    if (msg is not null) { messages.Add(msg); inboxBatch.Add(msg); }
+                }
 
-                if (config.IsConcluded?.Invoke() == true)
-                    continue;
+                if (inboxBatch.Count > 0)
+                    await store(MakeCtx(inboxBatch, isInboxBatch: true));
 
                 toolCallCount = 0;
 
-                var currentStepId = $"step-{++stepId}";
-                await emit(new AgentEvent.StatusChanged(currentStepId, true));
-
                 var concluded = false;
+                var textOnlyRetries = 0;
+                var hasBeenNudged = false;
                 var truncationRetries = 0;
                 var consecutiveTruncationFallthroughs = 0;
                 int? thinkingBudgetOverride = null;
                 var promptTooLongRetried = false;
                 while (!concluded && !ct.IsCancellationRequested)
                 {
-                    currentStepId = $"step-{++stepId}";
-
-                    _logger.LogDebug("Agent {Name} loop iteration {Step}, toolCallCount={Count}/{Max}",
-                        config.Name, stepId, toolCallCount, config.MaxToolCalls);
+                    _logger.LogDebug("Agent {Name} loop iteration, toolCallCount={Count}/{Max}",
+                        config.Name, toolCallCount, config.MaxToolCalls);
 
                     var compactionBudget = config.CompactionMaxTokens
                         ?? (int)(config.ContextWindowTokens * 0.7);
-                    await CompactMessagesIfNeededAsync(messages, compactionBudget, config, currentStepId, emit, ct);
+                    await CompactMessagesIfNeededAsync(messages, compactionBudget, config, store, ct);
 
                     List<ContentBlock>? contentBlocks = null;
                     UsageInfo? usageInfo = null;
@@ -111,35 +123,39 @@ public sealed class AgentRunner
                         {
                             promptTooLongRetried = true;
                             var emergencyBudget = (int)(config.ContextWindowTokens * 0.5);
-                            _logger.LogWarning("Agent {Name} prompt too long at step {Step}, emergency compaction to {Budget} tokens",
-                                config.Name, currentStepId, emergencyBudget);
-                            await CompactMessagesIfNeededAsync(messages, emergencyBudget, config, currentStepId, emit, ct);
+                            _logger.LogWarning("Agent {Name} prompt too long, emergency compaction to {Budget} tokens",
+                                config.Name, emergencyBudget);
+                            await CompactMessagesIfNeededAsync(messages, emergencyBudget, config, store, ct);
                             continue;
                         }
 
                         LogMessageStructure(config.Name, messages);
-                        _logger.LogError(ex, "Agent {Name} LLM call rejected (HTTP 400) at step {Step}",
-                            config.Name, currentStepId);
+                        _logger.LogError(ex, "Agent {Name} LLM call rejected (HTTP 400)", config.Name);
                         llmError = $"LLM call rejected: {ex.Message}";
                     }
-                    catch (Exception ex)
+                    catch (OperationCanceledException) { throw; }
+                    catch (HttpRequestException ex)
                     {
-                        _logger.LogError(ex, "Agent {Name} LLM call failed after {Retries} retries at step {Step}",
-                            config.Name, config.MaxRetries, currentStepId);
+                        _logger.LogError(ex, "Agent {Name} LLM call failed (HTTP {Status})", config.Name, ex.StatusCode);
                         llmError = $"LLM call failed: {ex.Message}";
+                    }
+                    catch (IOException ex)
+                    {
+                        _logger.LogError(ex, "Agent {Name} LLM stream failed (IO error)", config.Name);
+                        llmError = $"LLM stream error: {ex.Message}";
                     }
 
                     if (llmError is not null)
                     {
-                        await emit(new AgentEvent.Error(currentStepId, llmError));
-                        await emit(new AgentEvent.StatusChanged(currentStepId, false));
-                        return;
+                        var errorMsg = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement($"[system error] {llmError}") };
+                        messages.Add(errorMsg);
+                        await store(MakeCtx([errorMsg]));
+                        break;
                     }
 
                     var textParts = new List<string>();
                     var toolUses = new List<ContentBlock>();
-                    ContentBlock? concludeCall = null;
-
+                    ContentBlock? terminalCall = null;
                     var thinkingParts = new List<string>();
 
                     foreach (var block in contentBlocks!)
@@ -148,68 +164,37 @@ public sealed class AgentRunner
                             thinkingParts.Add(block.Text);
                         else if (block.Type == "text" && !string.IsNullOrEmpty(block.Text))
                             textParts.Add(block.Text);
-                        else if (block.Type == "tool_use" && block.Name == "conclude")
-                            concludeCall = block;
+                        else if (block.Type == "tool_use" && terminalTools.Contains(block.Name ?? ""))
+                            terminalCall = block;
                         else if (block.Type == "tool_use")
                             toolUses.Add(block);
                     }
 
                     var truncatedTools = contentBlocks!.Where(b => b.Type == "tool_use" && b.Truncated).ToList();
+                    var thinkingText = thinkingParts.Count > 0 ? string.Join("\n", thinkingParts) : null;
 
-                    _logger.LogDebug("Agent {Name} LLM returned {TextParts} text, {ToolUses} tools, conclude={HasConclude}, truncated={TruncatedCount} at step {Step}",
-                        config.Name, textParts.Count, toolUses.Count, concludeCall is not null, truncatedTools.Count, currentStepId);
+                    _logger.LogDebug("Agent {Name} LLM returned {TextParts} text, {ToolUses} tools, terminal={TerminalTool}, truncated={TruncatedCount}",
+                        config.Name, textParts.Count, toolUses.Count, terminalCall?.Name, truncatedTools.Count);
 
-                    if (thinkingParts.Count > 0)
-                        await emit(new AgentEvent.Thinking(currentStepId, string.Join("\n", thinkingParts)));
-
-                    if (usageInfo is not null)
-                    {
-                        var cost = ComputeCost(usageInfo, config.InputPricePerMToken, config.OutputPricePerMToken,
-                            config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken);
-                        await emit(new AgentEvent.Usage(currentStepId, config.Name,
-                            usageInfo.InputTokens, usageInfo.OutputTokens,
-                            usageInfo.CacheReadInputTokens, usageInfo.CacheCreationInputTokens, cost,
-                            config.ModelProfile,
-                            config.InputPricePerMToken, config.OutputPricePerMToken,
-                            config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken));
-                    }
-
-                    // Case 0: output was truncated -- some tool_use blocks lost their JSON input.
-                    // Strategy: execute the successful tools, save them properly, and provide
-                    // a synthetic error result for truncated ones so the model re-emits them.
+                    // Case 0: output was truncated
                     if (truncatedTools.Count > 0)
                     {
                         var truncatedNames = string.Join(", ", truncatedTools.Select(t => t.Name ?? "unknown"));
-                        _logger.LogWarning("Agent {Name} response truncated, lost tool calls: {Tools}",
-                            config.Name, truncatedNames);
+                        _logger.LogWarning("Agent {Name} response truncated, lost tool calls: {Tools}", config.Name, truncatedNames);
 
                         var successfulTools = toolUses.Where(t => !t.Truncated).ToList();
 
                         if (successfulTools.Count > 0)
                         {
-                            // Execute the successful tools and ask the model to re-emit the truncated ones.
-                            if (textParts.Count > 0)
-                                await emit(new AgentEvent.Message(currentStepId, string.Join("\n", textParts), IsIntermediate: true));
-
                             var assistantContent = new List<object>();
-                            foreach (var tp in textParts)
-                                assistantContent.Add(new { type = "text", text = tp });
-
+                            foreach (var tp in textParts) assistantContent.Add(new { type = "text", text = tp });
                             var placeholderInput = JsonDocument.Parse("{}").RootElement.Clone();
                             foreach (var tu in toolUses)
-                                assistantContent.Add(new
-                                {
-                                    type = "tool_use",
-                                    id = tu.Id,
-                                    name = tu.Name,
-                                    input = tu.Truncated ? (object)placeholderInput : (object)(tu.Input ?? placeholderInput),
-                                });
+                                assistantContent.Add(new { type = "tool_use", id = tu.Id, name = tu.Name, input = tu.Truncated ? (object)placeholderInput : (object)(tu.Input ?? placeholderInput) });
 
-                            messages.Add(new LlmMessage
-                            {
-                                Role = "assistant",
-                                Content = JsonSerializer.SerializeToElement(assistantContent),
-                            });
+                            var assistantMsg = new LlmMessage { Role = "assistant", Content = JsonSerializer.SerializeToElement(assistantContent) };
+                            messages.Add(assistantMsg);
+                            await store(MakeCtx([assistantMsg], thinkingText: thinkingText, usage: usageInfo));
 
                             var toolResults = new List<object>();
                             var bufferedInbox = new List<LlmMessage>();
@@ -218,45 +203,27 @@ public sealed class AgentRunner
                             {
                                 if (tu.Truncated)
                                 {
-                                    toolResults.Add(new
-                                    {
-                                        type = "tool_result",
-                                        tool_use_id = tu.Id,
-                                        content = "[system] Your tool call was cut off before the input was complete. Call this tool again.",
-                                    });
+                                    toolResults.Add(new { type = "tool_result", tool_use_id = tu.Id, content = "[system] Your tool call was cut off before the input was complete. Call this tool again." });
                                     continue;
                                 }
 
                                 toolCallCount++;
-                                var toolStepId = $"step-{++stepId}";
                                 var toolName = tu.Name ?? "unknown";
                                 var toolInput = tu.Input ?? default;
-                                var displayCmd = FormatDisplayCommand(toolName, toolInput);
 
-                                _logger.LogInformation("Agent {Agent} executing tool {Tool} at step {Step}: {Command}",
-                                    config.Name, toolName, toolStepId, displayCmd);
+                                _logger.LogInformation("Agent {Agent} executing tool {Tool}: {Command}", config.Name, toolName, FormatDisplayCommand(toolName, toolInput));
 
-                                await emit(new AgentEvent.ToolCall(toolStepId, toolName, displayCmd, toolInput));
-                                var result = await executeTool(toolName, toolInput, toolStepId, ct);
-                                await emit(new AgentEvent.ToolResult(toolStepId, toolName, result.Output, result.OutputFile, result.ExitCode, result.TimedOut));
-
-                                toolResults.Add(new
-                                {
-                                    type = "tool_result",
-                                    tool_use_id = tu.Id,
-                                    content = result.Output,
-                                });
-
-                                while (inbox.TryRead(out var msg))
-                                    bufferedInbox.Add(FormatInboxMessage(msg));
+                                var result = await executeTool(toolName, toolInput, tu.Id ?? "", ct);
+                                toolResults.Add(new { type = "tool_result", tool_use_id = tu.Id, content = result.Output });
+                                while (inbox.TryRead(out var inboxEvt)) { var m = FormatEventAsLlmMessage(inboxEvt); if (m is not null) bufferedInbox.Add(m); }
                             }
 
-                            messages.Add(new LlmMessage
-                            {
-                                Role = "user",
-                                Content = JsonSerializer.SerializeToElement(toolResults),
-                            });
+                            var toolResultMsg = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(toolResults) };
+                            messages.Add(toolResultMsg);
                             messages.AddRange(bufferedInbox);
+                            var contextBatch = new List<LlmMessage> { toolResultMsg };
+                            contextBatch.AddRange(bufferedInbox);
+                            await store(MakeCtx(contextBatch));
 
                             truncationRetries++;
                             consecutiveTruncationFallthroughs = 0;
@@ -264,44 +231,37 @@ public sealed class AgentRunner
                             continue;
                         }
 
-                        // No successful tools to preserve -- retry with text-only save.
                         truncationRetries++;
                         if (truncationRetries <= MaxTruncationRetries)
                         {
                             if (textParts.Count > 0)
                             {
-                                await emit(new AgentEvent.Message(currentStepId, string.Join("\n", textParts), IsIntermediate: true));
-                                messages.Add(new LlmMessage
-                                {
-                                    Role = "assistant",
-                                    Content = JsonSerializer.SerializeToElement(string.Join("\n", textParts)),
-                                });
+                                var savedMsg = new LlmMessage { Role = "assistant", Content = JsonSerializer.SerializeToElement(string.Join("\n", textParts)) };
+                                messages.Add(savedMsg);
+                                await store(MakeCtx([savedMsg], thinkingText: thinkingText, usage: usageInfo));
                             }
 
-                            messages.Add(new LlmMessage
+                            var retryMsg = new LlmMessage
                             {
                                 Role = "user",
                                 Content = JsonSerializer.SerializeToElement(
                                     $"Your response was cut off before the tool call{(truncatedTools.Count > 1 ? "s" : "")} could complete. " +
                                     $"Your text above is saved. Now continue with ONLY the tool call{(truncatedTools.Count > 1 ? "s" : "")} " +
                                     $"({truncatedNames}) — emit the tool_use block{(truncatedTools.Count > 1 ? "s" : "")} with no additional text."),
-                            });
+                            };
+                            messages.Add(retryMsg);
+                            await store(MakeCtx([retryMsg]));
                             thinkingBudgetOverride = ReducedThinkingBudget(config);
                             continue;
                         }
 
-                        _logger.LogWarning("Agent {Name} exhausted {Max} truncation retries, falling through",
-                            config.Name, MaxTruncationRetries);
-
+                        _logger.LogWarning("Agent {Name} exhausted {Max} truncation retries, falling through", config.Name, MaxTruncationRetries);
                         consecutiveTruncationFallthroughs++;
 
                         if (consecutiveTruncationFallthroughs >= MaxTruncationFallthroughs)
                         {
-                            _logger.LogWarning(
-                                "Agent {Name} hit {Count} consecutive truncation fallthroughs, forcing compaction",
-                                config.Name, consecutiveTruncationFallthroughs);
-
-                            await CompactMessagesIfNeededAsync(messages, 0, config, currentStepId, emit, ct);
+                            _logger.LogWarning("Agent {Name} hit {Count} consecutive truncation fallthroughs, forcing compaction", config.Name, consecutiveTruncationFallthroughs);
+                            await CompactMessagesIfNeededAsync(messages, 0, config, store, ct);
                             truncationRetries = 0;
                             consecutiveTruncationFallthroughs = 0;
                             thinkingBudgetOverride = null;
@@ -309,70 +269,33 @@ public sealed class AgentRunner
                         }
 
                         var emptyInput = JsonDocument.Parse("{}").RootElement.Clone();
-                        foreach (var t in truncatedTools)
-                        {
-                            t.Input = emptyInput;
-                            t.Truncated = false;
-                            _logger.LogInformation("Agent {Name} recovering truncated no-input tool {Tool} with empty input",
-                                config.Name, t.Name);
-                        }
+                        foreach (var t in truncatedTools) { t.Input = emptyInput; t.Truncated = false; }
                     }
 
-                    if (truncatedTools.Count == 0)
+                    if (truncatedTools.Count == 0) { truncationRetries = 0; consecutiveTruncationFallthroughs = 0; thinkingBudgetOverride = null; }
+
+                    // Case 1: terminal tool (conclude, sign_off, etc.)
+                    if (terminalCall is not null)
                     {
-                        truncationRetries = 0;
-                        consecutiveTruncationFallthroughs = 0;
-                        thinkingBudgetOverride = null;
-                    }
+                        textOnlyRetries = 0;
+                        var terminalName = terminalCall.Name!;
 
-                    // Case 1: conclude
-                    if (concludeCall is not null)
-                    {
-                        var result = await executeTool("conclude", concludeCall.Input ?? default, currentStepId, ct);
+                        _logger.LogInformation("Agent {Agent} executing terminal tool {Tool}", config.Name, terminalName);
 
-                        if (!result.Concluded)
-                        {
-                            _logger.LogWarning("Agent {Name} conclude blocked: {Reason}", config.Name, result.Output);
+                        var result = await executeTool(terminalName, terminalCall.Input ?? default, terminalCall.Id ?? "", ct);
 
-                            var assistantContent = new List<object>();
-                            foreach (var tp in textParts)
-                                assistantContent.Add(new { type = "text", text = tp });
-                            assistantContent.Add(new { type = "tool_use", id = concludeCall.Id, name = "conclude", input = concludeCall.Input });
+                        var terminalContent = new List<object>();
+                        foreach (var tp in textParts) terminalContent.Add(new { type = "text", text = tp });
+                        terminalContent.Add(new { type = "tool_use", id = terminalCall.Id, name = terminalName, input = terminalCall.Input });
 
-                            messages.Add(new LlmMessage
-                            {
-                                Role = "assistant",
-                                Content = JsonSerializer.SerializeToElement(assistantContent),
-                            });
-                            messages.Add(new LlmMessage
-                            {
-                                Role = "user",
-                                Content = JsonSerializer.SerializeToElement(new[]
-                                {
-                                    new { type = "tool_result", tool_use_id = concludeCall.Id, content = result.Output }
-                                }),
-                            });
-                            continue;
-                        }
-
-                        var concludeContent = new List<object>();
-                        foreach (var tp in textParts)
-                            concludeContent.Add(new { type = "text", text = tp });
-                        concludeContent.Add(new { type = "tool_use", id = concludeCall.Id, name = "conclude", input = concludeCall.Input });
-
-                        messages.Add(new LlmMessage
-                        {
-                            Role = "assistant",
-                            Content = JsonSerializer.SerializeToElement(concludeContent),
-                        });
-                        messages.Add(new LlmMessage
-                        {
-                            Role = "user",
-                            Content = JsonSerializer.SerializeToElement(new[]
-                            {
-                                new { type = "tool_result", tool_use_id = concludeCall.Id, content = result.Output }
-                            }),
-                        });
+                        var aMsg = new LlmMessage { Role = "assistant", Content = JsonSerializer.SerializeToElement(terminalContent) };
+                        var toolResultContent = JsonSerializer.SerializeToElement(new[] { new { type = "tool_result", tool_use_id = terminalCall.Id, content = result.Output } });
+                        LlmMessage tMsg = result.Summary is not null
+                            ? new LlmToolResultMessage { Role = "user", Content = toolResultContent, ToolMeta = [new ToolCallMeta { ToolUseId = terminalCall.Id ?? "", Summary = result.Summary, ExitCode = result.ExitCode, OutputFile = result.OutputFile, TimedOut = result.TimedOut }] }
+                            : new LlmMessage { Role = "user", Content = toolResultContent };
+                        messages.Add(aMsg);
+                        messages.Add(tMsg);
+                        await store(MakeCtx([aMsg, tMsg], thinkingText: thinkingText, usage: usageInfo));
 
                         concluded = true;
                         break;
@@ -381,100 +304,107 @@ public sealed class AgentRunner
                     // Case 2: tool calls
                     if (toolUses.Count > 0)
                     {
-                        if (textParts.Count > 0)
-                        {
-                            await emit(new AgentEvent.Message(currentStepId, string.Join("\n", textParts), IsIntermediate: true));
-                        }
+                        textOnlyRetries = 0;
 
                         var assistantContent = new List<object>();
-                        foreach (var tp in textParts)
-                            assistantContent.Add(new { type = "text", text = tp });
-                        foreach (var tu in toolUses)
-                            assistantContent.Add(new { type = "tool_use", id = tu.Id, name = tu.Name, input = tu.Input });
+                        foreach (var tp in textParts) assistantContent.Add(new { type = "text", text = tp });
+                        foreach (var tu in toolUses) assistantContent.Add(new { type = "tool_use", id = tu.Id, name = tu.Name, input = tu.Input });
 
-                        messages.Add(new LlmMessage
-                        {
-                            Role = "assistant",
-                            Content = JsonSerializer.SerializeToElement(assistantContent),
-                        });
+                        var assistantMsg = new LlmMessage { Role = "assistant", Content = JsonSerializer.SerializeToElement(assistantContent) };
+                        messages.Add(assistantMsg);
+                        await store(MakeCtx([assistantMsg], thinkingText: thinkingText, usage: usageInfo));
 
                         var toolResults = new List<object>();
                         var bufferedInbox = new List<LlmMessage>();
+                        var anyToolConcluded = false;
 
                         foreach (var tu in toolUses)
                         {
                             toolCallCount++;
-                            var toolStepId = $"step-{++stepId}";
                             var toolName = tu.Name ?? "unknown";
                             var toolInput = tu.Input ?? default;
-                            var displayCmd = FormatDisplayCommand(toolName, toolInput);
 
-                            _logger.LogInformation("Agent {Agent} executing tool {Tool} at step {Step}: {Command}",
-                                config.Name, toolName, toolStepId, displayCmd);
+                            _logger.LogInformation("Agent {Agent} executing tool {Tool}: {Command}", config.Name, toolName, FormatDisplayCommand(toolName, toolInput));
 
-                            await emit(new AgentEvent.ToolCall(toolStepId, toolName, displayCmd, toolInput));
+                            var result = await executeTool(toolName, toolInput, tu.Id ?? "", ct);
 
-                            var result = await executeTool(toolName, toolInput, toolStepId, ct);
-
-                            await emit(new AgentEvent.ToolResult(toolStepId, toolName, result.Output, result.OutputFile, result.ExitCode, result.TimedOut));
-
-                            toolResults.Add(new
-                            {
-                                type = "tool_result",
-                                tool_use_id = tu.Id,
-                                content = result.Output,
-                            });
-
-                            while (inbox.TryRead(out var msg))
-                                bufferedInbox.Add(FormatInboxMessage(msg));
+                            toolResults.Add(new { type = "tool_result", tool_use_id = tu.Id, content = result.Output });
+                            if (config.IsConditionallyTerminal?.Invoke(toolName, toolInput) == true)
+                                anyToolConcluded = true;
+                            while (inbox.TryRead(out var inboxEvt)) { var m = FormatEventAsLlmMessage(inboxEvt); if (m is not null) bufferedInbox.Add(m); }
                         }
 
-                        messages.Add(new LlmMessage
-                        {
-                            Role = "user",
-                            Content = JsonSerializer.SerializeToElement(toolResults),
-                        });
-
+                        var toolResultMsg = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(toolResults) };
+                        messages.Add(toolResultMsg);
                         messages.AddRange(bufferedInbox);
+                        var ctxBatch = new List<LlmMessage> { toolResultMsg };
+                        ctxBatch.AddRange(bufferedInbox);
+                        await store(MakeCtx(ctxBatch));
+
+                        if (anyToolConcluded)
+                        {
+                            concluded = true;
+                            break;
+                        }
 
                         if (toolCallCount >= config.MaxToolCalls)
                         {
-                            _logger.LogWarning("Agent {Name} max tool calls ({Max}) reached, forcing conclusion",
-                                config.Name, config.MaxToolCalls);
-                            messages.Add(new LlmMessage
-                            {
-                                Role = "user",
-                                Content = JsonSerializer.SerializeToElement(
-                                    $"You have used all {config.MaxToolCalls} tool calls. Call the conclude tool now with your best conclusion."),
-                            });
+                            _logger.LogWarning("Agent {Name} max tool calls ({Max}) reached, forcing conclusion", config.Name, config.MaxToolCalls);
+                            var forceMsg = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement($"You have used all {config.MaxToolCalls} tool calls. Call the conclude tool now with your best conclusion.") };
+                            messages.Add(forceMsg);
+                            await store(MakeCtx([forceMsg]));
                         }
 
                         continue;
                     }
 
-                    // Case 3: text only -- agent speaks, then goes idle
-                    var messageText = string.Join("\n", textParts);
+                    // Case 3: text only -- discard, nudge, retry, synthesize
+                    textOnlyRetries++;
+                    _logger.LogWarning("Agent {Name} text-only response ({Count}, nudged={Nudged}), retrying LLM",
+                        config.Name, textOnlyRetries, hasBeenNudged);
 
-                    if (!string.IsNullOrWhiteSpace(messageText))
+                    if (hasBeenNudged)
                     {
-                        await emit(new AgentEvent.Message(currentStepId, messageText));
+                        _logger.LogWarning("Agent {Name} still text-only after nudge, synthesizing message tool call", config.Name);
+                        var fallbackText = string.Join("\n", textParts);
+                        if (string.IsNullOrWhiteSpace(fallbackText)) fallbackText = "(no response)";
 
-                        messages.Add(new LlmMessage
-                        {
-                            Role = "assistant",
-                            Content = JsonSerializer.SerializeToElement(messageText),
-                        });
+                        var syntheticId = $"toolu_synth_{Guid.NewGuid():N}";
+                        var msgInput = JsonSerializer.SerializeToElement(new { to = "user", text = fallbackText });
+
+                        var syntheticAssistant = new LlmMessage { Role = "assistant", Content = JsonSerializer.SerializeToElement(new object[] {
+                            new { type = "tool_use", id = syntheticId, name = "message", input = msgInput }
+                        })};
+
+                        var result = await executeTool("message", msgInput, syntheticId, ct);
+
+                        var syntheticResult = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(new[] {
+                            new { type = "tool_result", tool_use_id = syntheticId, content = result.Output }
+                        })};
+
+                        messages.Add(syntheticAssistant);
+                        messages.Add(syntheticResult);
+                        await store(MakeCtx([syntheticAssistant, syntheticResult], thinkingText: thinkingText, usage: usageInfo));
+
+                        concluded = true;
+                        break;
                     }
 
-                    _logger.LogInformation("Agent {Name} paused at step {Step}, waiting for next message", config.Name, currentStepId);
-                    await emit(new AgentEvent.StatusChanged(currentStepId, false));
-                    break;
+                    if (thinkingText is not null || usageInfo is not null)
+                        await store(MakeCtx([], thinkingText: thinkingText, usage: usageInfo));
+
+                    var nudge = new LlmMessage { Role = "user",
+                        Content = JsonSerializer.SerializeToElement(config.TextOnlyNudge
+                            ?? "You must use a tool call. Do not respond with text alone.") };
+                    messages.Add(nudge);
+                    await store(MakeCtx([nudge]));
+                    hasBeenNudged = true;
+                    continue;
                 }
 
                 if (concluded)
                 {
                     toolCallCount = 0;
-                    await emit(new AgentEvent.StatusChanged($"step-{++stepId}", false));
                     continue;
                 }
             }
@@ -492,7 +422,6 @@ public sealed class AgentRunner
         int? thinkingBudgetOverride = null, LlmRequestContext? context = null)
     {
         Exception? lastEx = null;
-
         for (var attempt = 0; attempt <= config.MaxRetries; attempt++)
         {
             try
@@ -501,57 +430,38 @@ public sealed class AgentRunner
                 await foreach (var block in config.LlmClient.StreamMessageAsync(
                     messages, config.Tools, config.SystemPrompt, ct, thinkingBudgetOverride, context))
                     blocks.Add(block);
-
-                _logger.LogDebug("Agent {Name} LLM returned {Count} content blocks on attempt {Attempt}",
-                    config.Name, blocks.Count, attempt + 1);
                 return blocks;
             }
             catch (HttpRequestException ex) when (attempt < config.MaxRetries && IsTransientHttpError(ex))
             {
                 lastEx = ex;
                 var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt));
-                _logger.LogWarning(ex, "Agent {Name} LLM call failed with transient error (attempt {Attempt}/{Max}), retrying in {Delay}s",
+                _logger.LogWarning(ex, "Agent {Name} LLM call failed (attempt {Attempt}/{Max}), retrying in {Delay}s",
                     config.Name, attempt + 1, config.MaxRetries + 1, delay.TotalSeconds);
                 await Task.Delay(delay, ct);
             }
         }
-
         throw lastEx ?? new InvalidOperationException("LLM call failed with no exception captured");
     }
 
-    private static int ReducedThinkingBudget(Config config) =>
-        Math.Max(1024, config.ThinkingBudget / 4);
-
-    private static bool IsTransientHttpError(HttpRequestException ex)
-    {
-        if (ex.StatusCode is null) return true;
-        var code = (int)ex.StatusCode;
-        return code == 429 || code >= 500;
-    }
+    private static int ReducedThinkingBudget(Config config) => Math.Max(1024, config.ThinkingBudget / 4);
+    private static bool IsTransientHttpError(HttpRequestException ex) { if (ex.StatusCode is null) return true; var code = (int)ex.StatusCode; return code == 429 || code >= 500; }
 
     private async Task CompactMessagesIfNeededAsync(
         List<LlmMessage> messages, int maxTokenBudget, Config config,
-        string stepId, Func<AgentEvent, ValueTask> emit, CancellationToken ct)
+        Func<RoomEvent.LlmContext, ValueTask> store, CancellationToken ct)
     {
         var tokensBefore = EstimateTokenCount(messages);
-
-        if (tokensBefore < maxTokenBudget * 0.8)
-            return;
+        if (tokensBefore < maxTokenBudget * 0.8) return;
 
         var keepRecent = 6;
-        if (messages.Count <= keepRecent + 1)
-            return;
+        if (messages.Count <= keepRecent + 1) return;
 
-        _logger.LogInformation("Compacting message history: {Count} messages, ~{Tokens} estimated tokens (budget={Budget})",
-            messages.Count, tokensBefore, maxTokenBudget);
+        _logger.LogInformation("Compacting: {Count} messages, ~{Tokens} tokens (budget={Budget})", messages.Count, tokensBefore, maxTokenBudget);
 
         var compactEnd = messages.Count - keepRecent;
-
-        while (compactEnd > 0 && IsToolBoundary(messages, compactEnd))
-            compactEnd--;
-
-        if (compactEnd <= 1)
-            return;
+        while (compactEnd > 0 && IsToolBoundary(messages, compactEnd)) compactEnd--;
+        if (compactEnd <= 1) return;
 
         string summary;
         UsageInfo? compactionUsage = null;
@@ -562,36 +472,21 @@ public sealed class AgentRunner
             for (var i = 0; i < compactEnd; i++)
             {
                 var msg = messages[i];
-                var contentStr = msg.Content.ValueKind == JsonValueKind.String
-                    ? msg.Content.GetString() ?? ""
-                    : msg.Content.GetRawText();
+                var contentStr = msg.Content.ValueKind == JsonValueKind.String ? msg.Content.GetString() ?? "" : msg.Content.GetRawText();
                 historyParts.Add($"[{msg.Role}]: {contentStr}");
             }
-            var historyText = string.Join("\n", historyParts);
 
-            var summarizerMessages = new List<LlmMessage>
-            {
-                new()
-                {
-                    Role = "user",
-                    Content = JsonSerializer.SerializeToElement(historyText),
-                }
-            };
-
+            var summarizerMessages = new List<LlmMessage> { new() { Role = "user", Content = JsonSerializer.SerializeToElement(string.Join("\n", historyParts)) } };
             var sb = new System.Text.StringBuilder();
             IReadOnlyList<ToolDefinition> noTools = [];
-            await foreach (var block in config.SummarizerClient.StreamMessageAsync(
-                summarizerMessages, noTools,
-                "Summarise the following conversation history, preserving key findings, tool results, decisions, and any resource identifiers. Be concise but thorough.",
-                ct))
+            await foreach (var block in config.SummarizerClient.StreamMessageAsync(summarizerMessages, noTools,
+                "Summarise the following conversation history, preserving key findings, tool results, decisions, and any resource identifiers. Be concise but thorough.", ct))
             {
-                if (block.Type == "text" && block.Text is not null)
-                    sb.Append(block.Text);
-                else if (block.Type == "usage" && block.Usage is not null)
-                    compactionUsage = block.Usage;
+                if (block.Type == "text" && block.Text is not null) sb.Append(block.Text);
+                else if (block.Type == "usage" && block.Usage is not null) compactionUsage = block.Usage;
             }
 
-            summary = $"[Compacted: {compactEnd} earlier messages summarised by AI. Summary:\n{sb}\nFull conversation is preserved in transcript.jsonl in the workspace.]";
+            summary = $"[Compacted: {compactEnd} earlier messages summarised by AI. Summary:\n{sb}\nFull conversation is preserved in the session transcript.]";
         }
         else
         {
@@ -599,76 +494,41 @@ public sealed class AgentRunner
             for (var i = 0; i < compactEnd; i++)
             {
                 var msg = messages[i];
-                var contentStr = msg.Content.ValueKind == JsonValueKind.String
-                    ? msg.Content.GetString() ?? ""
-                    : msg.Content.GetRawText();
-                if (contentStr.Length > 200)
-                    contentStr = contentStr[..200] + "...";
+                var contentStr = msg.Content.ValueKind == JsonValueKind.String ? msg.Content.GetString() ?? "" : msg.Content.GetRawText();
+                if (contentStr.Length > 200) contentStr = contentStr[..200] + "...";
                 summaryParts.Add($"[{msg.Role}]: {contentStr}");
             }
-            summary = $"[Compacted: {compactEnd} earlier messages summarised. Key exchanges:\n"
-                + string.Join("\n", summaryParts)
-                + "\nFull conversation is preserved in transcript.jsonl in the workspace.]";
+            summary = $"[Compacted: {compactEnd} earlier messages summarised. Key exchanges:\n{string.Join("\n", summaryParts)}\nFull conversation is preserved in the session transcript.]";
         }
 
         messages.RemoveRange(0, compactEnd);
-        messages.Insert(0, new LlmMessage
-        {
-            Role = "user",
-            Content = JsonSerializer.SerializeToElement(summary),
-        });
+        var summaryMsg = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(summary) };
+        messages.Insert(0, summaryMsg);
 
         var tokensAfter = EstimateTokenCount(messages);
+        _logger.LogInformation("Compacted {Removed} messages: ~{Before} -> ~{After} tokens", compactEnd, tokensBefore, tokensAfter);
 
-        _logger.LogInformation("Compacted {Removed} messages: ~{Before} -> ~{After} tokens, {Remaining} messages remain",
-            compactEnd, tokensBefore, tokensAfter, messages.Count);
-
-        decimal costDelta = 0;
-        if (compactionUsage is not null && config.SummarizerModelOptions is { } smo)
-        {
-            costDelta = ComputeCost(compactionUsage, smo.InputPricePerMToken, smo.OutputPricePerMToken,
-                smo.CacheReadPricePerMToken, smo.CacheCreationPricePerMToken);
-        }
-
-        await emit(new AgentEvent.Compaction(stepId, config.Name, tokensBefore, tokensAfter,
-            compactionUsage?.InputTokens ?? 0, compactionUsage?.OutputTokens ?? 0,
-            compactionUsage?.CacheReadInputTokens ?? 0, compactionUsage?.CacheCreationInputTokens ?? 0,
-            costDelta,
-            config.ModelProfile,
-            config.InputPricePerMToken, config.OutputPricePerMToken,
-            config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken));
+        await store(new RoomEvent.LlmContext(0, config.Id, DateTimeOffset.UtcNow,
+            [summaryMsg], Removed: compactEnd, Usage: compactionUsage,
+            ModelProfile: config.ModelProfile,
+            InputPrice: config.InputPricePerMToken, OutputPrice: config.OutputPricePerMToken,
+            CacheReadPrice: config.CacheReadPricePerMToken, CacheCreatePrice: config.CacheCreationPricePerMToken));
     }
 
     private static bool IsToolBoundary(List<LlmMessage> messages, int index)
     {
         if (index >= messages.Count) return false;
-
         var msg = messages[index];
-
-        // Don't start the kept portion with a tool_result message (its tool_use is being compacted)
         if (msg.Role == "user" && msg.Content.ValueKind == JsonValueKind.Array)
-        {
             foreach (var item in msg.Content.EnumerateArray())
-            {
-                if (item.TryGetProperty("type", out var t) && t.GetString() == "tool_result")
-                    return true;
-            }
-        }
-
-        // Don't start the kept portion right after an assistant tool_use (its tool_result would be next)
+                if (item.TryGetProperty("type", out var t) && t.GetString() == "tool_result") return true;
         if (index > 0)
         {
             var prev = messages[index - 1];
             if (prev.Role == "assistant" && prev.Content.ValueKind == JsonValueKind.Array)
-            {
                 foreach (var item in prev.Content.EnumerateArray())
-                {
-                    if (item.TryGetProperty("type", out var t) && t.GetString() == "tool_use")
-                        return true;
-                }
-            }
+                    if (item.TryGetProperty("type", out var t) && t.GetString() == "tool_use") return true;
         }
-
         return false;
     }
 
@@ -710,10 +570,7 @@ public sealed class AgentRunner
     private static UsageInfo? ExtractUsage(List<ContentBlock> blocks)
     {
         for (var i = blocks.Count - 1; i >= 0; i--)
-        {
-            if (blocks[i].Type == "usage" && blocks[i].Usage is { } u)
-                return u;
-        }
+            if (blocks[i].Type == "usage" && blocks[i].Usage is { } u) return u;
         return null;
     }
 
@@ -721,24 +578,26 @@ public sealed class AgentRunner
     {
         var totalChars = 0;
         foreach (var msg in messages)
-        {
-            totalChars += msg.Content.ValueKind == JsonValueKind.String
-                ? msg.Content.GetString()?.Length ?? 0
-                : msg.Content.GetRawText().Length;
-        }
+            totalChars += msg.Content.ValueKind == JsonValueKind.String ? msg.Content.GetString()?.Length ?? 0 : msg.Content.GetRawText().Length;
         return totalChars / 4;
     }
 
-    private static LlmMessage FormatInboxMessage(RoomMessage msg)
+    private static LlmMessage? FormatEventAsLlmMessage(RoomEvent evt)
     {
-        var text = msg.Sender == "user"
-            ? msg.Text
-            : $"[{msg.Sender}]: {msg.Text}";
-
-        return new LlmMessage
+        var (text, from, to) = evt switch
+        {
+            RoomEvent.TextMessage { From: "user" } tm => (tm.Text, "user", tm.To),
+            RoomEvent.TextMessage { From: "system" } tm => (tm.Text, "system", tm.To),
+            RoomEvent.TextMessage tm => ($"[{tm.From}]: {tm.Text}", tm.From, tm.To),
+            _ => ((string?)null, (string?)null, (string?)null),
+        };
+        if (text is null) return null;
+        return new LlmInboxMessage
         {
             Role = "user",
             Content = JsonSerializer.SerializeToElement(text),
+            SourceFrom = from!,
+            SourceTo = to,
         };
     }
 
@@ -756,8 +615,9 @@ public sealed class AgentRunner
             "conclude" => Truncate($"conclude: {Prop(input, "summary")}", 80),
             "present_finding" => $"finding: {Prop(input, "title")}",
             "reply_to" => $"reply_to {Prop(input, "agent_name")}",
-            "dismiss_scout" => $"dismiss_scout {Prop(input, "agent_name")}",
-            "recall_scout" => $"recall_scout {Prop(input, "agent_name")}",
+            "message" => $"message {Prop(input, "to")}",
+            "dismiss" => $"dismiss {Prop(input, "agent_name")}",
+            "recall" => $"recall {Prop(input, "agent_name")}",
             _ => FormatGenericTool(toolName, input),
         };
     }
@@ -766,57 +626,27 @@ public sealed class AgentRunner
     {
         if (input.ValueKind != JsonValueKind.Object) return null;
         Dictionary<string, string>? ctx = null;
-
-        void Add(string key, string? value)
-        {
-            if (string.IsNullOrEmpty(value)) return;
-            ctx ??= new();
-            ctx[key] = value;
-        }
-
+        void Add(string key, string? value) { if (!string.IsNullOrEmpty(value)) { ctx ??= new(); ctx[key] = value; } }
         switch (toolName)
         {
-            case "run_oc":
-                Add("cluster", Prop(input, "cluster"));
-                break;
-            case "run_aws":
-                Add("cluster", Prop(input, "cluster"));
-                Add("account", Prop(input, "account"));
-                break;
-            case "delegate":
-                Add("model", Prop(input, "model"));
-                break;
-            case "skills":
-                Add("action", Prop(input, "action"));
-                break;
+            case "run_oc": Add("cluster", Prop(input, "cluster")); break;
+            case "run_aws": Add("cluster", Prop(input, "cluster")); Add("account", Prop(input, "account")); break;
+            case "delegate": Add("model", Prop(input, "model")); break;
+            case "skills": Add("action", Prop(input, "action")); break;
         }
-
         return ctx;
     }
 
-    private static string Prop(JsonElement input, string name) =>
-        input.TryGetProperty(name, out var v) ? v.GetString() ?? "" : "";
-
-    private static string OptProp(JsonElement input, string name, string prefix) =>
-        input.TryGetProperty(name, out var v) && !string.IsNullOrEmpty(v.GetString())
-            ? prefix + v.GetString()
-            : "";
-
-    private static string Truncate(string value, int maxLength) =>
-        value.Length <= maxLength ? value : value[..(maxLength - 1)] + "\u2026";
+    private static string Prop(JsonElement input, string name) => input.TryGetProperty(name, out var v) ? v.GetString() ?? "" : "";
+    private static string OptProp(JsonElement input, string name, string prefix) => input.TryGetProperty(name, out var v) && !string.IsNullOrEmpty(v.GetString()) ? prefix + v.GetString() : "";
+    private static string Truncate(string value, int maxLength) => value.Length <= maxLength ? value : value[..(maxLength - 1)] + "\u2026";
 
     private static string FormatGenericTool(string toolName, JsonElement input)
     {
         var parts = new List<string> { toolName };
         foreach (var prop in input.EnumerateObject())
         {
-            if (prop.Value.ValueKind == JsonValueKind.String)
-            {
-                var val = prop.Value.GetString() ?? "";
-                if (val.Length > 40) val = val[..39] + "\u2026";
-                parts.Add($"{prop.Name}={val}");
-                if (parts.Count >= 4) break;
-            }
+            if (prop.Value.ValueKind == JsonValueKind.String) { var val = prop.Value.GetString() ?? ""; if (val.Length > 40) val = val[..39] + "\u2026"; parts.Add($"{prop.Name}={val}"); if (parts.Count >= 4) break; }
         }
         return string.Join(" ", parts);
     }

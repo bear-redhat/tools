@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Investigator.Models;
 using Investigator.Tools;
 using Visus.Cuid;
 
@@ -82,7 +83,6 @@ public sealed class ConversationStore
             if (session.OwnerCircuitId != circuitId) return;
 
             session.OwnerCircuitId = null;
-            session.IsInvestigating = false;
         }
     }
 }

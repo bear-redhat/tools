@@ -39,6 +39,8 @@ public sealed class SkillsLibrary : IInvestigatorTool
             _skillsDir = path;
     }
 
+    public Task RegisterAsync(CancellationToken ct = default) => Task.CompletedTask;
+
     public ToolDefinition Definition => new(
         Name: "skills",
         Description: "Consult the index -- Little Bear's personal reference of operational notes, organised by topic. "

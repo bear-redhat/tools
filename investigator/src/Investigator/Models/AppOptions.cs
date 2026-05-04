@@ -41,7 +41,7 @@ public sealed class AgentOptions
 {
     public const string Section = "Agent";
     public int MaxToolCalls { get; set; } = 128;
-    public int LlmRetries { get; set; } = 3;
+    public int LlmRetries { get; set; } = 1;
     public int SubAgentMaxToolCalls { get; set; } = 128;
 }
 

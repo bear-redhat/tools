@@ -43,6 +43,9 @@ spec:
             - name: secrets
               mountPath: /secrets
               readOnly: true
+            - name: gcp-adc
+              mountPath: /secrets/gcp
+              readOnly: true
             - name: aws-token
               mountPath: /var/run/secrets/aws
               readOnly: true
@@ -75,6 +78,10 @@ spec:
         - name: secrets
           secret:
             secretName: investigator-cluster-creds
+            defaultMode: 0600
+        - name: gcp-adc
+          secret:
+            secretName: investigator-gcp-adc
             defaultMode: 0600
         - name: aws-token
           projected:

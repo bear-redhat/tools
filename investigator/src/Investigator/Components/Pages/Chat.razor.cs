@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Threading.Channels;
 using Investigator.Models;
 using Investigator.Services;
@@ -10,6 +11,7 @@ namespace Investigator.Components.Pages;
 public partial class Chat : IAsyncDisposable
 {
     [Inject] private InvestigationOrchestrator Orchestrator { get; set; } = default!;
+    [Inject] private RemediationOrchestrator RemediationOrch { get; set; } = default!;
     [Inject] private WorkspaceManager WorkspaceMgr { get; set; } = default!;
     [Inject] private ConversationStore Store { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
@@ -18,16 +20,25 @@ public partial class Chat : IAsyncDisposable
     [Inject] private AuthSettings AuthSettings { get; set; } = default!;
     [Inject] private CircuitAuthState CircuitAuth { get; set; } = default!;
     [Inject] private BrowserTimeZone BrowserTz { get; set; } = default!;
+    [Inject] private PersistentComponentState PersistState { get; set; } = default!;
 
     [Parameter] public string ConversationId { get; set; } = "";
 
     private readonly string _circuitId = Guid.NewGuid().ToString("N");
     private ConversationSession? _session;
+    private SessionView _view = new();
+    private SessionView? _remView;
+    private string _activeRoom = "investigation";
+    private PersistingComponentStateSubscription _persistSub;
+    private bool _viewRestoredFromPersist;
     private bool _isOwner;
     private bool _forcedReadonly;
     private bool _shareCopied;
     private bool _started;
+    private bool _remStarted;
+    private bool _interactive;
     private Task? _eventLoopTask;
+    private Task? _remEventLoopTask;
 
     private string? _highlightedStepId;
     private string _selectedMemberId = "all";
@@ -40,17 +51,28 @@ public partial class Chat : IAsyncDisposable
     private ElementReference _dividerRef;
     private ElementReference _inputDividerRef;
 
-    private List<ConversationItem> _conversationItems => _session?.Items ?? [];
-    private List<LogEntryModel> _logEntries => _session?.LogEntries ?? [];
-    private List<ChatMessage> _history => _session?.History ?? [];
-    private List<GroupMember> _members => _session?.Members ?? [];
-    private bool _isInvestigating => _session?.IsInvestigating ?? false;
-    private bool _hasWorkingAgents => _session?.HasWorkingAgents ?? false;
+    private List<ConversationItem> _filteredItems = [];
+    private List<LogEntryModel> _filteredLogItems = [];
+
+    private SessionView ActiveView =>
+        _activeRoom == "remediation" && _remView is not null ? _remView : _view;
+
+    private IReadOnlyList<ConversationItem> _conversationItems => ActiveView.Items;
+    private IReadOnlyList<LogEntryModel> _logEntries => ActiveView.LogEntries;
+    private IReadOnlyList<GroupMember> _invMembers => _view.Members;
+    private IReadOnlyList<GroupMember>? _remMembers => _remView?.Members;
+    private IReadOnlyList<GroupMember> _activeMembers => ActiveView.Members;
+    private bool _isInvestigating => ActiveView.IsInvestigating;
+    private bool _hasWorkingAgents => ActiveView.HasWorkingAgents;
+    private bool _isRemediation => _activeRoom == "remediation";
+
+    private bool IsLeadAgent(string id) =>
+        _activeRoom == "remediation" ? id == "langur" : id == "little-bear";
 
     private GroupMember? _selectedScout =>
-        _selectedMemberId is "all" or "little-bear"
+        _selectedMemberId is "all" || IsLeadAgent(_selectedMemberId)
             ? null
-            : _members.FirstOrDefault(m => m.Id == _selectedMemberId);
+            : _activeMembers.FirstOrDefault(m => m.Id == _selectedMemberId);
     private bool _isScoutSelected => _selectedScout is not null;
     private bool _selectedScoutIsWorking => _selectedScout?.Status == MemberStatus.Working;
     private bool _scoutActionInFlight;
@@ -58,60 +80,57 @@ public partial class Chat : IAsyncDisposable
 
     private AgentUsage? GetSelectedAgentUsage()
     {
-        if (_session is null || _selectedMemberId == "all") return null;
-        var member = _members.FirstOrDefault(m => m.Id == _selectedMemberId);
+        if (_selectedMemberId == "all") return null;
+        var member = _activeMembers.FirstOrDefault(m => m.Id == _selectedMemberId);
         if (member is null) return null;
-        return _session.UsageByAgent.TryGetValue(member.Name, out var usage) ? usage : null;
+        return ActiveView.UsageByAgent.TryGetValue(member.Id, out var usage) ? usage : null;
     }
 
-    private static readonly HashSet<ConversationItemType> s_roomTypes =
-    [
-        ConversationItemType.UserMessage,
-        ConversationItemType.AssistantMessage,
-        ConversationItemType.SubAgentMessage,
-        ConversationItemType.ScoutQuestion,
-        ConversationItemType.Conclusion,
-        ConversationItemType.Error,
-        ConversationItemType.Dispatch,
-        ConversationItemType.Welcome,
-    ];
+    private static bool IsRoomVisible(ConversationItem item) => item is
+        ConversationItem.UserMessage or ConversationItem.AgentMessage or
+        ConversationItem.ScoutReport or ConversationItem.ScoutQuestion or
+        ConversationItem.Conclusion or ConversationItem.Error or
+        ConversationItem.Dispatch or ConversationItem.Welcome or
+        ConversationItem.SignOffItem or ConversationItem.CaseReceived;
 
     private bool _showFindings => _selectedMemberId is "all";
 
-    private IEnumerable<ConversationItem> FilteredConversation
+    private void RefreshFilteredItems()
     {
-        get
+        var items = ActiveView.Items;
+        if (_selectedMemberId == "all")
+            _filteredItems = items.Where(IsRoomVisible).ToList();
+        else
         {
-            if (_selectedMemberId == "all")
-                return _conversationItems.Where(i => s_roomTypes.Contains(i.Type));
-
             var id = _selectedMemberId;
-            var items = _conversationItems.Where(i =>
-                i.Sender == id || i.Recipient == id);
+            _filteredItems = items
+                .Where(i => i.SenderId == id || i.RecipientId == id)
+                .OrderBy(i => i.Timestamp)
+                .ToList();
+        }
 
-            if (_session?.DetailEvents.TryGetValue(id, out var details) == true)
-                items = items.Concat(details).OrderBy(i => i.Timestamp);
-
-            return items;
+        if (_selectedMemberId != "all" && !IsLeadAgent(_selectedMemberId))
+        {
+            _filteredLogItems = _logEntries
+                .Where(e => e.Sender == _selectedMemberId)
+                .ToList();
+        }
+        else if (IsLeadAgent(_selectedMemberId))
+        {
+            _filteredLogItems = _logEntries
+                .Where(e => e.Sender == _selectedMemberId)
+                .ToList();
+        }
+        else
+        {
+            _filteredLogItems = [];
         }
     }
 
     private IEnumerable<ConversationItem> FilteredFindings =>
-        _conversationItems.Where(i => i.Type is ConversationItemType.Finding or ConversationItemType.Conclusion);
+        _conversationItems.Where(i => i is ConversationItem.Finding or ConversationItem.Conclusion);
 
-    private IEnumerable<LogEntryModel> FilteredLog
-    {
-        get
-        {
-            if (_selectedMemberId == "little-bear")
-                return _logEntries.Where(e => e.Sender == "little-bear");
-
-            if (_session?.DetailLogEntries.TryGetValue(_selectedMemberId, out var logs) == true)
-                return logs;
-
-            return [];
-        }
-    }
+    private record PersistedViews(SessionView Investigation, SessionView? Remediation);
 
     protected override async Task OnInitializedAsync()
     {
@@ -136,182 +155,96 @@ public partial class Chat : IAsyncDisposable
             }
         }
 
+        _view = _session.Investigation.CurrentView;
+        if (_session.Remediation is not null)
+            _remView = _session.Remediation.CurrentView;
+
+        RefreshFilteredItems();
+
+        _persistSub = PersistState.RegisterOnPersisting(PersistViewsAsync);
+        if (PersistState.TryTakeFromJson<PersistedViews>("chat-views", out var restored)
+            && restored is not null)
+        {
+            _view = restored.Investigation;
+            _remView = restored.Remediation;
+            _viewRestoredFromPersist = true;
+            RefreshFilteredItems();
+        }
+
         if (isViewRoute)
         {
             _forcedReadonly = true;
             _isOwner = false;
             return;
         }
-
-        if (AuthSettings.IsEnabled && !CircuitAuth.IsAuthenticated)
-        {
-            Nav.NavigateTo($"/login?returnUrl=/c/{ConversationId}");
-            return;
-        }
-
-        var claim = Store.TryClaim(ConversationId, _circuitId, CircuitAuth.UserId);
-        if (claim == ClaimResult.WrongUser)
-        {
-            Nav.NavigateTo($"/c/{ConversationId}/view", forceLoad: true);
-            return;
-        }
-        _isOwner = claim == ClaimResult.Success;
-
-        if (_isOwner && Orchestrator.IsRunning(ConversationId))
-        {
-            var reader = Orchestrator.Subscribe(ConversationId, _circuitId);
-            if (reader is not null)
-            {
-                _eventLoopTask = RunEventLoopAsync(reader);
-                _started = true;
-                _wasWorking = true;
-            }
-        }
     }
 
-    private void Refresh()
+    private Task PersistViewsAsync()
     {
-        Nav.NavigateTo($"/c/{ConversationId}", forceLoad: true);
-    }
-
-    private async Task CopyShareLink()
-    {
-        var uri = Nav.ToAbsoluteUri($"/c/{ConversationId}/view");
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", uri.ToString());
-        _shareCopied = true;
-        StateHasChanged();
-        await Task.Delay(2000);
-        _shareCopied = false;
-        StateHasChanged();
-    }
-
-    private void OnMemberSelected(string memberId)
-    {
-        _selectedMemberId = memberId;
-        _forceScrollOnRender = true;
-        StateHasChanged();
-    }
-
-    private async Task OnRecallScout(string scoutName)
-    {
-        _scoutActionInFlight = true;
-        try { await Orchestrator.RecallScoutAsync(ConversationId, scoutName); }
-        finally { _scoutActionInFlight = false; }
-    }
-
-    private async Task OnStandDownScout(string scoutName)
-    {
-        _scoutActionInFlight = true;
-        try { await Orchestrator.StandDownScoutAsync(ConversationId, scoutName); }
-        finally { _scoutActionInFlight = false; }
-    }
-
-    private async Task OnSendAsync(string message)
-    {
-        if (!_isOwner || _session is null || string.IsNullOrWhiteSpace(message)) return;
-
-        lock (_session.Lock)
-        {
-            _session.Items.Add(new ConversationItem
-            {
-                Type = ConversationItemType.UserMessage,
-                Sender = "user",
-                Recipient = "little-bear",
-                Content = message,
-                Timestamp = DateTimeOffset.UtcNow,
-            });
-
-            _session.History.Add(new ChatMessage(ChatRole.User, message, DateTimeOffset.UtcNow));
-        }
-
-        _wasWorking = true;
-
-        if (!_started)
-        {
-            _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
-            var reader = Orchestrator.StartAsync(ConversationId, _session, _circuitId, BrowserTz.TimeZone);
-            _eventLoopTask = RunEventLoopAsync(reader);
-            _started = true;
-        }
-
-        await Orchestrator.PostUserMessageAsync(ConversationId, message, CancellationToken.None);
-        _scrollAfterRender = true;
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task RunEventLoopAsync(ChannelReader<AgentEvent> events)
-    {
-        try
-        {
-            await foreach (var evt in events.ReadAllAsync(CancellationToken.None))
-            {
-                HandleUiEvent(evt);
-                _scrollAfterRender = true;
-                await InvokeAsync(StateHasChanged);
-            }
-        }
-        catch (OperationCanceledException) { Logger.LogDebug("Event loop cancelled"); }
-        catch (ChannelClosedException) { Logger.LogDebug("Subscriber channel closed"); }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Event loop ended with error");
-        }
-        finally
-        {
-            if (_wasWorking)
-            {
-                _wasWorking = false;
-                try { await JS.InvokeVoidAsync("playCaseClosedSound"); }
-                catch (JSDisconnectedException) { Logger.LogDebug("JS disconnected during case-closed sound (finally)"); }
-            }
-            _scrollAfterRender = true;
-            await InvokeAsync(StateHasChanged);
-        }
-    }
-
-    private void HandleUiEvent(AgentEvent evt)
-    {
-        switch (evt)
-        {
-            case AgentEvent.StatusChanged sc when !sc.IsActive:
-                TryPlayCaseClosedSound();
-                break;
-        }
-    }
-
-    private void TryPlayCaseClosedSound()
-    {
-        if (_isInvestigating || _hasWorkingAgents || !_wasWorking) return;
-        _wasWorking = false;
-        try { _ = JS.InvokeVoidAsync("playCaseClosedSound"); }
-        catch (JSDisconnectedException) { Logger.LogDebug("JS disconnected during case-closed sound"); }
-    }
-
-    private void OnCancel() => Orchestrator.Cancel(ConversationId);
-
-    private static LogEntryModel? FindLogEntryByStepId(IEnumerable<LogEntryModel> entries, string stepId)
-    {
-        foreach (var entry in entries)
-        {
-            if (entry.StepId == stepId) return entry;
-            if (entry.Children is not null)
-            {
-                var found = FindLogEntryByStepId(entry.Children, stepId);
-                if (found is not null) return found;
-            }
-        }
-        return null;
-    }
-
-    private void ScrollToLogEntry(string stepId)
-    {
-        _highlightedStepId = stepId;
-        StateHasChanged();
+        PersistState.PersistAsJson("chat-views", new PersistedViews(_view, _remView));
+        return Task.CompletedTask;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender || !_jsInitialized)
+        if (firstRender)
+        {
+            if (_viewRestoredFromPersist && _session is not null)
+            {
+                _view = _session.Investigation.CurrentView;
+                if (_session.Remediation is not null)
+                    _remView = _session.Remediation.CurrentView;
+                _viewRestoredFromPersist = false;
+                RefreshFilteredItems();
+            }
+
+            _interactive = true;
+
+            if (!_forcedReadonly && _session is not null)
+            {
+                if (AuthSettings.IsEnabled && !CircuitAuth.IsAuthenticated)
+                {
+                    Nav.NavigateTo($"/login?returnUrl=/c/{ConversationId}");
+                    return;
+                }
+
+                var claim = Store.TryClaim(ConversationId, _circuitId, CircuitAuth.UserId);
+                if (claim == ClaimResult.WrongUser)
+                {
+                    Nav.NavigateTo($"/c/{ConversationId}/view", forceLoad: true);
+                    return;
+                }
+                _isOwner = claim == ClaimResult.Success;
+            }
+
+            if (_isOwner && _session is not null)
+            {
+                if (Orchestrator.IsRunning(ConversationId))
+                {
+                    var reader = Orchestrator.Subscribe(ConversationId, _circuitId);
+                    if (reader is not null)
+                    {
+                        _eventLoopTask = RunRoomEventLoopAsync(reader, _session.Investigation);
+                        _started = true;
+                        _wasWorking = true;
+                    }
+                }
+                if (_session.Remediation is not null && RemediationOrch.IsRunning(ConversationId))
+                {
+                    var reader = RemediationOrch.Subscribe(ConversationId, _circuitId);
+                    if (reader is not null)
+                    {
+                        _remEventLoopTask = RunRoomEventLoopAsync(reader, _session.Remediation);
+                        _remStarted = true;
+                        _wasWorking = true;
+                    }
+                }
+            }
+
+            StateHasChanged();
+        }
+
+        if (!_jsInitialized)
         {
             try
             {
@@ -321,7 +254,7 @@ public partial class Chat : IAsyncDisposable
                 await JS.InvokeAsync<bool>("initDividerResize", _inputDividerRef, "row");
             }
             catch (JSDisconnectedException) { Logger.LogDebug("JS disconnected during interop initialization"); }
-            catch (Exception ex)
+            catch (JSException ex)
             {
                 Logger.LogWarning(ex, "JS interop initialization failed (firstRender={FirstRender})", firstRender);
             }
@@ -343,10 +276,209 @@ public partial class Chat : IAsyncDisposable
             }
         }
         catch (JSDisconnectedException) { Logger.LogDebug("JS disconnected during scroll"); }
-        catch (Exception ex)
+        catch (JSException ex)
         {
             Logger.LogDebug(ex, "JS scroll interop failed");
         }
+    }
+
+    private void Refresh()
+    {
+        Nav.NavigateTo($"/c/{ConversationId}", forceLoad: true);
+    }
+
+    private async Task CopyShareLink()
+    {
+        var uri = Nav.ToAbsoluteUri($"/c/{ConversationId}/view");
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", uri.ToString());
+        _shareCopied = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _shareCopied = false;
+        StateHasChanged();
+    }
+
+    private void OnMemberSelected(string memberId)
+    {
+        if (memberId.StartsWith("rem:"))
+        {
+            _activeRoom = "remediation";
+            _selectedMemberId = memberId[4..];
+        }
+        else
+        {
+            _activeRoom = "investigation";
+            _selectedMemberId = memberId;
+        }
+        RefreshFilteredItems();
+        _forceScrollOnRender = true;
+        StateHasChanged();
+    }
+
+    private async Task OnRecallScout(string scoutName)
+    {
+        _scoutActionInFlight = true;
+        try
+        {
+            if (_isRemediation)
+                await RemediationOrch.RecallRangerAsync(ConversationId, scoutName);
+            else
+                await Orchestrator.RecallScoutAsync(ConversationId, scoutName);
+        }
+        finally { _scoutActionInFlight = false; }
+    }
+
+    private async Task OnStandDownScout(string scoutName)
+    {
+        _scoutActionInFlight = true;
+        try
+        {
+            if (_isRemediation)
+                await RemediationOrch.StandDownRangerAsync(ConversationId, scoutName);
+            else
+                await Orchestrator.StandDownScoutAsync(ConversationId, scoutName);
+        }
+        finally { _scoutActionInFlight = false; }
+    }
+
+    private void TryStartRemediation()
+    {
+        if (_session?.Remediation is null || _remStarted) return;
+
+        _remView = _session.Remediation.CurrentView;
+        _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
+        var reader = RemediationOrch.StartAsync(ConversationId, _session, _circuitId, BrowserTz.TimeZone);
+        _remEventLoopTask = RunRoomEventLoopAsync(reader, _session.Remediation);
+        _remStarted = true;
+    }
+
+    private void CommissionRemedyFromUI(ConversationItem.Conclusion conclusion)
+    {
+        if (_session is null || _session.Remediation is not null) return;
+
+        var input = JsonSerializer.SerializeToElement(new
+        {
+            case_description = conclusion.Content,
+            root_cause = conclusion.Content,
+            fix_description = conclusion.Fix?.Description,
+            fix_commands = conclusion.Fix?.Commands,
+        });
+
+        var syntheticId = $"toolu_ui_{Guid.NewGuid():N}";
+
+        var assistantMsg = new LlmMessage { Role = "assistant", Content = JsonSerializer.SerializeToElement(new object[] {
+            new { type = "tool_use", id = syntheticId, name = "commission_remedy", input }
+        })};
+        var resultMsg = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(new[] {
+            new { type = "tool_result", tool_use_id = syntheticId, content = "Remediation commissioned." }
+        })};
+
+        var ctx = new RoomEvent.LlmContext(0, "little-bear", DateTimeOffset.UtcNow, [assistantMsg, resultMsg]);
+        _session.InvestigationTranscriptStore?.Append(ctx);
+    }
+
+    private async Task OnSendAsync(string message)
+    {
+        if (!_isOwner || _session is null || string.IsNullOrWhiteSpace(message)) return;
+
+        if (_activeRoom == "remediation")
+        {
+            if (!_remStarted)
+            {
+                _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
+                var reader = RemediationOrch.StartAsync(ConversationId, _session, _circuitId, BrowserTz.TimeZone);
+                _remEventLoopTask = RunRoomEventLoopAsync(reader, _session.Remediation!);
+                _remStarted = true;
+            }
+            await RemediationOrch.PostUserMessageAsync(ConversationId, message, CancellationToken.None);
+        }
+        else
+        {
+            if (!_started)
+            {
+                _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
+                var reader = Orchestrator.StartAsync(ConversationId, _session, _circuitId, BrowserTz.TimeZone);
+                _eventLoopTask = RunRoomEventLoopAsync(reader, _session.Investigation);
+                _started = true;
+            }
+            await Orchestrator.PostUserMessageAsync(ConversationId, message, CancellationToken.None);
+        }
+
+        _scrollAfterRender = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RunRoomEventLoopAsync(ChannelReader<byte> ticks, RoomState room)
+    {
+        try
+        {
+            await foreach (var tick in ticks.ReadAllAsync(CancellationToken.None))
+            {
+                while (ticks.TryRead(out _)) { }
+
+                UpdateRoomView(room);
+                RefreshFilteredItems();
+                if (_view.IsInvestigating || _view.HasWorkingAgents
+                    || (_remView is not null && (_remView.IsInvestigating || _remView.HasWorkingAgents)))
+                    _wasWorking = true;
+                TryStartRemediation();
+                TryPlayCaseClosedSound();
+                _scrollAfterRender = IsRoomActive(room);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { Logger.LogDebug("Event loop cancelled for {Room}", room.Name); }
+        catch (ChannelClosedException) { Logger.LogDebug("Subscriber channel closed for {Room}", room.Name); }
+        finally
+        {
+            if (room == _session!.Investigation)
+                _started = false;
+            else
+                _remStarted = false;
+
+            TryPlayCaseClosedSound();
+            UpdateRoomView(room);
+            RefreshFilteredItems();
+            if (IsRoomActive(room)) _scrollAfterRender = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void UpdateRoomView(RoomState room)
+    {
+        if (room == _session!.Investigation)
+            _view = room.CurrentView;
+        else
+            _remView = room.CurrentView;
+    }
+
+    private bool IsRoomActive(RoomState room) =>
+        room == _session!.Investigation
+            ? _activeRoom == "investigation"
+            : _activeRoom == "remediation";
+
+    private void TryPlayCaseClosedSound()
+    {
+        if (_view.IsInvestigating || _view.HasWorkingAgents) return;
+        if (_remView is not null && (_remView.IsInvestigating || _remView.HasWorkingAgents)) return;
+        if (!_wasWorking) return;
+        _wasWorking = false;
+        try { _ = JS.InvokeVoidAsync("playCaseClosedSound"); }
+        catch (JSDisconnectedException) { Logger.LogDebug("JS disconnected during case-closed sound"); }
+    }
+
+    private void OnCancel()
+    {
+        if (_activeRoom == "remediation")
+            RemediationOrch.Cancel(ConversationId);
+        else
+            Orchestrator.Cancel(ConversationId);
+    }
+
+    private void ScrollToLogEntry(string stepId)
+    {
+        _highlightedStepId = stepId;
+        StateHasChanged();
     }
 
     private readonly HashSet<ConversationItem> _expandedFindings = [];
@@ -367,12 +499,27 @@ public partial class Chat : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _persistSub.Dispose();
         Orchestrator.Unsubscribe(ConversationId, _circuitId);
+        RemediationOrch.Unsubscribe(ConversationId, _circuitId);
 
         if (_eventLoopTask is not null)
         {
             try { await _eventLoopTask; }
-            catch (Exception ex) { Logger.LogDebug(ex, "Event loop task completed with error during dispose"); }
+            catch (OperationCanceledException) { }
+            catch (ChannelClosedException) { }
+        }
+        if (_remEventLoopTask is not null)
+        {
+            try { await _remEventLoopTask; }
+            catch (OperationCanceledException) { }
+            catch (ChannelClosedException) { }
+        }
+
+        if (_session is not null)
+        {
+            try { await WorkspaceMgr.SaveSessionAsync(_session); }
+            catch (IOException ex) { Logger.LogWarning(ex, "Failed to save session on circuit disconnect"); }
         }
 
         if (_isOwner && _session is not null)

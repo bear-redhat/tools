@@ -58,6 +58,8 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             _logger.LogInformation("github: initialised in unauthenticated mode (public repos only, 60 req/hr)");
     }
 
+    public Task RegisterAsync(CancellationToken ct = default) => Task.CompletedTask;
+
     public ToolDefinition Definition => new(
         Name: "github",
         Description: "Query the GitHub API -- pull requests, checks, comments, workflow runs/logs, search, "

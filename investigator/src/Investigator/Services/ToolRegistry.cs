@@ -11,6 +11,8 @@ public sealed class ToolRegistry
     private readonly Dictionary<string, IInvestigatorTool> _tools = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<ToolRegistry> _logger;
     private readonly ToolOutputOptions _options;
+    private readonly List<Type> _sorted;
+    private readonly IServiceProvider _rootSp;
 
     public ToolRegistry(
         IServiceProvider sp,
@@ -20,33 +22,54 @@ public sealed class ToolRegistry
     {
         _logger = logger;
         _options = toolOutputOptions.Value;
+        _sorted = TopologicalSort(toolTypes.ToList());
+        _rootSp = sp;
+    }
 
-        var toolTypeList = toolTypes.ToList();
-        var sorted = TopologicalSort(toolTypeList);
-        var toolSp = new ToolAwareServiceProvider(sp);
+    public async Task InitializeAsync(CancellationToken ct = default)
+    {
+        using var scope = _rootSp.CreateScope();
+        var toolSp = new ToolAwareServiceProvider(scope.ServiceProvider);
 
-        foreach (var type in sorted)
+        foreach (var type in _sorted)
         {
+            var tool = (IInvestigatorTool)ActivatorUtilities.CreateInstance(toolSp, type);
+
             try
             {
-                var tool = (IInvestigatorTool)ActivatorUtilities.CreateInstance(toolSp, type);
-                _tools[tool.Definition.Name] = tool;
-                toolSp.Register(type, tool);
-                _logger.LogInformation("Registered tool: {Name} (timeout={Timeout}s, truncate={Truncate})",
-                    tool.Definition.Name, tool.Definition.DefaultTimeout.TotalSeconds, tool.Definition.TruncateOutput);
+                await tool.RegisterAsync(ct);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Tool {Type} failed to register", type.Name);
+                _logger.LogWarning(ex, "Tool {Type} skipped (registration failed)", type.Name);
+                continue;
             }
+
+            _tools[tool.Definition.Name] = tool;
+            toolSp.Register(type, tool);
+            _logger.LogInformation("Registered tool: {Name} (timeout={Timeout}s, truncate={Truncate})",
+                tool.Definition.Name, tool.Definition.DefaultTimeout.TotalSeconds, tool.Definition.TruncateOutput);
         }
     }
 
     public IReadOnlyList<ToolDefinition> GetToolDefinitions() =>
         _tools.Values.Select(t => t.Definition).ToList();
 
+    public IReadOnlyList<ToolDefinition> GetToolDefinitions(ToolScope scope) =>
+        _tools.Values
+            .Where(t => t.Definition.Scope.HasFlag(scope))
+            .Select(t => t.Definition).ToList();
+
     public IReadOnlyList<string> GetSystemPromptContributions() =>
         _tools.Values
+            .OfType<ISystemPromptContributor>()
+            .Select(c => c.GetSystemPromptSection())
+            .Where(s => s is not null)
+            .ToList()!;
+
+    public IReadOnlyList<string> GetSystemPromptContributions(ToolScope scope) =>
+        _tools.Values
+            .Where(t => t.Definition.Scope.HasFlag(scope))
             .OfType<ISystemPromptContributor>()
             .Select(c => c.GetSystemPromptSection())
             .Where(s => s is not null)
@@ -79,11 +102,6 @@ public sealed class ToolRegistry
             _logger.LogWarning("Tool {Name} timed out after {Timeout}s", toolName, def.DefaultTimeout.TotalSeconds);
             result = new ToolResult($"[Timed out after {def.DefaultTimeout.TotalSeconds}s]", ExitCode: -1, TimedOut: true);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Tool {Name} threw an unexpected exception", toolName);
-            result = new ToolResult($"Tool error: {ex.Message}", ExitCode: -1);
-        }
 
         var outputNum = context.NextOutputNumber();
         var fileName = $"{outputNum:D3}-{toolName}.txt";
@@ -97,7 +115,7 @@ public sealed class ToolRegistry
             await File.WriteAllTextAsync(fullPath, result.Output, ct);
             outputFilePath = $"tool_outputs/{fileName}";
         }
-        catch (Exception ex)
+        catch (IOException ex)
         {
             _logger.LogError(ex, "Failed to write tool output file {File} for tool {Name}", fileName, toolName);
         }

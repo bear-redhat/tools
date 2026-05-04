@@ -79,6 +79,8 @@ public sealed class PrometheusTool : IInvestigatorTool, ISystemPromptContributor
         _httpClient.Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds);
     }
 
+    public Task RegisterAsync(CancellationToken ct = default) => Task.CompletedTask;
+
     public ToolDefinition Definition => new(
         Name: "prometheus",
         Description: "Query Prometheus metrics via centralized Thanos and list monitoring custom resources (ServiceMonitor, PodMonitor, PrometheusRule, AlertmanagerConfig) on clusters.",

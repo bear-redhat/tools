@@ -43,24 +43,26 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
     private readonly WebBrowserOptions _options;
     private readonly ILogger<WebBrowserTool> _logger;
     private readonly ConcurrentDictionary<string, BrowseSession> _sessions = new();
-    private readonly Timer _cleanupTimer;
+    private Timer _cleanupTimer = null!;
 
-    private readonly IPlaywright _playwright;
-    private readonly IBrowser _browser;
+    private IPlaywright _playwright = null!;
+    private IBrowser _browser = null!;
 
     public WebBrowserTool(IOptions<WebBrowserOptions> options, ILogger<WebBrowserTool> logger)
     {
         _options = options.Value;
         _logger = logger;
+    }
 
-        _playwright = Playwright.CreateAsync().GetAwaiter().GetResult();
-        _browser = _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+    public async Task RegisterAsync(CancellationToken ct = default)
+    {
+        _playwright = await Playwright.CreateAsync();
+        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = _options.Headless,
             Args = ["--no-sandbox", "--disable-setuid-sandbox"]
-        }).GetAwaiter().GetResult();
-
-        logger.LogInformation("web_browse: Chromium {Version} ready", _browser.Version);
+        });
+        _logger.LogInformation("web_browse: Chromium {Version} ready", _browser.Version);
         _cleanupTimer = new Timer(CleanupIdleSessions, null,
             TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
     }

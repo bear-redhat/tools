@@ -1,0 +1,177 @@
+@using Investigator.Models
+@using Investigator.Components.Shared
+
+<div class="plan-panel">
+    @if (Plan is null || Plan.Steps.Count == 0)
+    {
+        <div class="log-empty">@(SignedOff ? "No remediation plan was required." : "The remediation plan will appear here once Intendant Langur presents it.")</div>
+    }
+    else
+    {
+        var stepIndex = 0;
+        @foreach (var step in Plan.Steps)
+        {
+            stepIndex++;
+            var num = stepIndex;
+            var isExpanded = IsExpanded(step.Id);
+            var needsAction = step.Status is StepStatus.Ready or StepStatus.AwaitingClient;
+            <div @key="step.Id" class="plan-step @StatusClass(step.Status) @(needsAction ? "needs-action" : "")"
+                 @onclick="() => ToggleStep(step.Id)">
+                <div class="plan-step-header">
+                    <span class="toggle-arrow">@(isExpanded ? "▼" : "▶")</span>
+                    <span class="plan-step-num">@num</span>
+                    <span class="plan-step-type-icon" title="@step.Change.Type">@TypeIcon(step.Change.Type)</span>
+                    <span class="plan-step-title">@step.Title</span>
+                    <span class="plan-step-status">@FormatStatus(step.Status)</span>
+                </div>
+                @if (isExpanded)
+                {
+                    <div class="plan-step-body" @onclick:stopPropagation="true">
+                        <div class="plan-step-rationale">@step.Rationale</div>
+
+                        <div class="plan-step-section">
+                            <span class="plan-step-label">Target</span>
+                            <span class="plan-step-target">@FormatTarget(step.Target)</span>
+                        </div>
+
+                        @if (step.Change.CurrentValue is not null || step.Change.DesiredValue is not null)
+                        {
+                            <div class="plan-step-section plan-step-change">
+                                @if (step.Change.CurrentValue is not null)
+                                {
+                                    <div class="plan-step-value plan-val-current">
+                                        <span class="plan-step-label">Current</span>
+                                        <code>@step.Change.CurrentValue</code>
+                                    </div>
+                                }
+                                @if (step.Change.DesiredValue is not null)
+                                {
+                                    <div class="plan-step-value plan-val-desired">
+                                        <span class="plan-step-label">Desired</span>
+                                        <code>@step.Change.DesiredValue</code>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (step.Change.Commands is { Count: > 0 })
+                        {
+                            <div class="plan-step-section plan-step-commands">
+                                <span class="plan-step-label">Commands</span>
+                                @foreach (var cmd in step.Change.Commands)
+                                {
+                                    <div class="plan-step-command">
+                                        <code>@cmd</code>
+                                        <CopyButton Text="@cmd" />
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (step.Change.PatchFile is not null)
+                        {
+                            <div class="plan-step-section plan-step-patch">
+                                <span class="plan-step-label">Patch</span>
+                                <code>@step.Change.PatchFile</code>
+                                <CopyButton Text="@step.Change.PatchFile" />
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(step.Change.Warnings))
+                        {
+                            <div class="plan-step-warning">⚠ @step.Change.Warnings</div>
+                        }
+
+                        <div class="plan-step-section plan-step-validation">
+                            <span class="plan-step-label">Validation</span>
+                            <span>@step.Validation.Description</span>
+                            @if (step.Validation.Commands is { Count: > 0 })
+                            {
+                                @foreach (var cmd in step.Validation.Commands)
+                                {
+                                    <div class="plan-step-val-command">
+                                        <code>@cmd</code>
+                                        <CopyButton Text="@cmd" />
+                                    </div>
+                                }
+                            }
+                            @if (!string.IsNullOrWhiteSpace(step.Validation.Expected))
+                            {
+                                <span class="plan-step-expected">Expected: <code>@step.Validation.Expected</code></span>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(step.Note))
+                        {
+                            <div class="plan-step-note">@step.Note</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RemediationPlan? Plan { get; set; }
+    [Parameter] public bool SignedOff { get; set; }
+
+    private readonly HashSet<string> _expandedSteps = new();
+
+    private bool IsExpanded(string stepId) => _expandedSteps.Contains(stepId);
+
+    private void ToggleStep(string stepId)
+    {
+        if (!_expandedSteps.Remove(stepId))
+            _expandedSteps.Add(stepId);
+    }
+
+    private static string TypeIcon(string changeType) => changeType switch
+    {
+        "command" => "⌨",
+        "patch" => "📄",
+        "config" => "⚙",
+        "external" => "📬",
+        "verification" => "✔",
+        _ => "•",
+    };
+
+    private static string FormatStatus(StepStatus status) => status switch
+    {
+        StepStatus.Pending => "pending",
+        StepStatus.Preparing => "preparing…",
+        StepStatus.Ready => "ready",
+        StepStatus.AwaitingClient => "awaiting you",
+        StepStatus.Done => "done",
+        StepStatus.Verified => "verified ✓",
+        StepStatus.Failed => "failed ✗",
+        StepStatus.Blocked => "blocked",
+        _ => status.ToString().ToLowerInvariant(),
+    };
+
+    private static string StatusClass(StepStatus status) => $"step-{status.ToString().ToLowerInvariant()}";
+
+    private static string FormatTarget(RemediationTarget target)
+    {
+        switch (target.Type)
+        {
+            case "cluster_resource":
+                return $"{target.Cluster} / {target.Namespace} / {target.Resource}";
+            case "cloud_resource":
+                var parts = new[] { target.Resource, target.Cluster, target.Namespace }
+                    .Where(s => !string.IsNullOrEmpty(s));
+                return parts.Any() ? string.Join(" / ", parts) : "cloud resource";
+            case "file":
+                var file = $"{target.Repo} : {target.Path}";
+                return target.LineRange is not null ? $"{file} (L{target.LineRange})" : file;
+            case "verification_only":
+                return "verification only";
+            default:
+                var fields = new[] { target.Resource, target.Cluster, target.Namespace, target.Repo, target.Path }
+                    .Where(s => !string.IsNullOrEmpty(s));
+                return fields.Any()
+                    ? $"{target.Type} — {string.Join(" / ", fields)}"
+                    : target.Type;
+        }
+    }
+}

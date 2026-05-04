@@ -1,3 +1,5 @@
+@using System.Globalization
+@using Investigator.Models
 @using Investigator.Services
 
 @if (SelectedAgent is not null)
@@ -67,20 +69,12 @@ else
         @if (_expanded)
         {
             <div class="cost-panel-body" @onclick:stopPropagation="true">
-                @foreach (var (name, usage) in UsageByAgent.OrderByDescending(kv => kv.Value.Cost))
+                @foreach (var (agentId, usage) in UsageByAgent.OrderByDescending(kv => kv.Value.Cost))
                 {
                     <div class="cost-row">
-                        <span class="cost-row-name">@name</span>
+                        <span class="cost-row-name">@DisplayName(agentId)</span>
                         <span class="cost-row-amount">@FormatCost(usage.Cost)</span>
                         <span class="cost-row-tokens">@FormatTokens(usage.InputTokens) in @FormatTokens(usage.OutputTokens) out@(usage.CacheReadTokens > 0 ? $" {FormatTokens(usage.CacheReadTokens)} cached" : "")@(usage.CacheCreateTokens > 0 ? $" {FormatTokens(usage.CacheCreateTokens)} cache-write" : "")</span>
-                    </div>
-                }
-                @if (PanelSummarizationUsage.Cost > 0)
-                {
-                    <div class="cost-row">
-                        <span class="cost-row-name">Panel Summaries</span>
-                        <span class="cost-row-amount">@FormatCost(PanelSummarizationUsage.Cost)</span>
-                        <span class="cost-row-tokens">@FormatTokens(PanelSummarizationUsage.InputTokens) in @FormatTokens(PanelSummarizationUsage.OutputTokens) out@(PanelSummarizationUsage.CacheReadTokens > 0 ? $" {FormatTokens(PanelSummarizationUsage.CacheReadTokens)} cached" : "")@(PanelSummarizationUsage.CacheCreateTokens > 0 ? $" {FormatTokens(PanelSummarizationUsage.CacheCreateTokens)} cache-write" : "")</span>
                     </div>
                 }
                 <div class="cost-row cost-row-total">
@@ -94,22 +88,26 @@ else
 }
 
 @code {
-    [Parameter] public Dictionary<string, AgentUsage> UsageByAgent { get; set; } = new();
-    [Parameter] public AgentUsage PanelSummarizationUsage { get; set; } = new();
+    [Parameter] public IReadOnlyDictionary<string, AgentUsage> UsageByAgent { get; set; } = new Dictionary<string, AgentUsage>();
+    [Parameter] public IReadOnlyList<GroupMember> Members { get; set; } = [];
     [Parameter] public decimal TotalCost { get; set; }
     [Parameter] public AgentUsage? SelectedAgent { get; set; }
+
+    private string DisplayName(string? id) =>
+        Members.FirstOrDefault(m => m.Id == id)?.Name
+        ?? CultureInfo.InvariantCulture.TextInfo.ToTitleCase((id ?? "").Replace("-", " "));
 
     private bool _expanded;
     private void Toggle() => _expanded = !_expanded;
 
     private int TotalInputTokens =>
-        UsageByAgent.Values.Sum(u => u.InputTokens) + PanelSummarizationUsage.InputTokens;
+        UsageByAgent.Values.Sum(u => u.InputTokens);
     private int TotalOutputTokens =>
-        UsageByAgent.Values.Sum(u => u.OutputTokens) + PanelSummarizationUsage.OutputTokens;
+        UsageByAgent.Values.Sum(u => u.OutputTokens);
     private int TotalCacheReadTokens =>
-        UsageByAgent.Values.Sum(u => u.CacheReadTokens) + PanelSummarizationUsage.CacheReadTokens;
+        UsageByAgent.Values.Sum(u => u.CacheReadTokens);
     private int TotalCacheCreateTokens =>
-        UsageByAgent.Values.Sum(u => u.CacheCreateTokens) + PanelSummarizationUsage.CacheCreateTokens;
+        UsageByAgent.Values.Sum(u => u.CacheCreateTokens);
 
     private static decimal TokenCost(int tokens, decimal pricePerMToken) =>
         tokens * pricePerMToken / 1_000_000m;

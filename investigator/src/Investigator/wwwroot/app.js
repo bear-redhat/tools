@@ -126,6 +126,11 @@ window.playCaseClosedSound = () => {
   }
 };
 
+window.checkOverflow = (element) => {
+  if (!element) return false;
+  return element.scrollHeight > element.clientHeight;
+};
+
 window.initPasteHandler = (textarea) => {
   if (!textarea) return;
   textarea.addEventListener('paste', (e) => {

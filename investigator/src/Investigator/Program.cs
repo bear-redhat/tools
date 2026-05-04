@@ -24,8 +24,11 @@ builder.Services.AddInvestigatorAuth(builder.Configuration, builder.Environment)
 builder.Services.AddScoped<BrowserTimeZone>();
 builder.Services.AddSingleton<ConversationStore>();
 builder.Services.AddSingleton<InvestigationOrchestrator>();
+builder.Services.AddSingleton<RemediationOrchestrator>();
 
 var app = builder.Build();
+
+await app.Services.GetRequiredService<ToolRegistry>().InitializeAsync();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -37,7 +40,7 @@ var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 };
-forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownIPNetworks.Clear();
 forwardedHeadersOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeadersOptions);
 

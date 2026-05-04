@@ -1,107 +1,96 @@
+@using System.Globalization
 @using Investigator.Components.Shared
+@using Investigator.Models
 @using Investigator.Services
+@using Microsoft.JSInterop
 @inject BrowserTimeZone BrowserTz
+@inject IJSRuntime JS
 
 <div class="chat-message @GetMessageClass() @GetSenderClass()">
-    @if (Item.Type == ConversationItemType.UserMessage)
+    @if (Item is ConversationItem.UserMessage msg)
     {
         <div class="message-role">Client</div>
-        <div class="message-content"><MarkdownRenderer Content="@Item.Content" /></div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content"><MarkdownRenderer Content="@msg.Content" /></div>
+        </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
     }
-    else if (Item.Type == ConversationItemType.Thinking)
+    else if (Item is ConversationItem.Thinking thinking)
     {
         <div class="message-role">
-            Little Bear
+            @DisplayName(thinking.LeadId)
             <span class="thinking-label">reasoning</span>
-            @if (Item.StepId is not null)
+            <button class="step-badge" @onclick="() => OnStepClick.InvokeAsync(thinking.StepId)">@GetStepLabel()</button>
+        </div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content thinking">
+                <MarkdownRenderer Content="@thinking.Content" />
+            </div>
+        </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
+    }
+    else if (Item is ConversationItem.ScoutThinking scoutThinking)
+    {
+        <div class="message-role">
+            @DisplayName(scoutThinking.ScoutId)
+            <span class="thinking-label">reasoning</span>
+        </div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content thinking">
+                <MarkdownRenderer Content="@scoutThinking.Content" />
+            </div>
+        </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
+    }
+    else if (Item is ConversationItem.AgentMessage agent)
+    {
+        <div class="message-role">
+            @DisplayName(agent.LeadId)
+            @if (agent.RecipientId is not null and not "user" && agent.RecipientId != agent.LeadId)
             {
-                <button class="step-badge" @onclick="() => OnStepClick.InvokeAsync(Item.StepId)">@GetStepLabel()</button>
+                <span class="recipient-label">to @DisplayName(agent.RecipientId)</span>
             }
         </div>
-        <div class="message-content thinking">
-            <MarkdownRenderer Content="@Item.Content" />
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content assistant">
+                <MarkdownRenderer Content="@agent.Content" />
+            </div>
         </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
     }
-    else if (Item.Type == ConversationItemType.SubAgentThinking)
+    else if (Item is ConversationItem.ScoutReport report)
     {
-        <div class="message-role">
-            @(Item.SenderDisplayName ?? Item.Sender)
-            <span class="thinking-label">reasoning</span>
-        </div>
-        <div class="message-content thinking">
-            <MarkdownRenderer Content="@Item.Content" />
-        </div>
-    }
-    else if (Item.Type == ConversationItemType.AssistantMessage)
-    {
-        <div class="message-role">@GetDisplayName()</div>
-        <div class="message-content assistant">
-            <MarkdownRenderer Content="@Item.Content" />
-        </div>
-    }
-    else if (Item.Type == ConversationItemType.SubAgentMessage)
-    {
-        <div class="message-role">@(Item.SenderDisplayName ?? Item.Sender)</div>
-        @if (Item.Summary is not null)
-        {
+        <div class="message-role">@DisplayName(report.ScoutId)</div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
             <div class="message-content subagent">
-                <div class="report-summary">
-                    <MarkdownRenderer Content="@Item.Summary" />
-                </div>
+                @if (report.Summary is not null)
+                {
+                    <div class="report-summary">
+                        <MarkdownRenderer Content="@report.Summary" />
+                    </div>
+                }
                 <button class="panel-toggle report-toggle" @onclick="ToggleReport">
                     <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Full report
                 </button>
                 @if (_reportExpanded)
                 {
                     <div class="report-full">
-                        <MarkdownRenderer Content="@Item.Content" />
-                        @if (Item.Evidence is not null)
-                        {
-                            <EvidencePanel Evidence="Item.Evidence" />
-                        }
-                        @if (Item.Fix is not null)
-                        {
-                            <FixPanel Fix="Item.Fix" />
-                        }
+                        <MarkdownRenderer Content="@report.Report" />
+                        @if (report.Evidence is not null) { <EvidencePanel Evidence="report.Evidence" /> }
+                        @if (report.Fix is not null) { <FixPanel Fix="report.Fix" /> }
                     </div>
                 }
             </div>
-        }
-        else
-        {
-            <div class="message-content subagent">
-                <div class="report-summary loading">Summarising...</div>
-                <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                    <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Full report
-                </button>
-                @if (_reportExpanded)
-                {
-                    <div class="report-full">
-                        <MarkdownRenderer Content="@Item.Content" />
-                        @if (Item.Evidence is not null)
-                        {
-                            <EvidencePanel Evidence="Item.Evidence" />
-                        }
-                        @if (Item.Fix is not null)
-                        {
-                            <FixPanel Fix="Item.Fix" />
-                        }
-                    </div>
-                }
-            </div>
-        }
+        </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
     }
-    else if (Item.Type == ConversationItemType.Conclusion)
+    else if (Item is ConversationItem.Conclusion conclusion)
     {
-        <div class="message-role">Little Bear -- Conclusion</div>
+        <div class="message-role">@DisplayName(conclusion.LeadId) -- Conclusion</div>
         <div class="message-content conclusion">
-            @if (Item.Summary is not null)
+            @if (conclusion.Headline is not null)
             {
-                <div class="conclusion-headline">@Item.Summary</div>
-            }
-            else
-            {
-                <div class="conclusion-headline loading">Summarising conclusion...</div>
+                <div class="conclusion-headline">@conclusion.Headline</div>
             }
             <button class="panel-toggle report-toggle" @onclick="ToggleReport">
                 <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Full conclusion
@@ -109,71 +98,150 @@
             @if (_reportExpanded)
             {
                 <div class="report-full">
-                    <MarkdownRenderer Content="@Item.Content" />
-                    @if (Item.Evidence is not null)
-                    {
-                        <EvidencePanel Evidence="Item.Evidence" />
-                    }
-                    @if (Item.Fix is not null)
-                    {
-                        <FixPanel Fix="Item.Fix" />
-                    }
+                    <MarkdownRenderer Content="@conclusion.Content" />
+                    @if (conclusion.Evidence is not null) { <EvidencePanel Evidence="conclusion.Evidence" /> }
+                    @if (conclusion.Fix is not null) { <FixPanel Fix="conclusion.Fix" /> }
                 </div>
             }
         </div>
     }
-    else if (Item.Type == ConversationItemType.Finding)
+    else if (Item is ConversationItem.Finding finding)
     {
-        <div class="message-role">Little Bear -- Finding</div>
-        <div class="message-content finding">
-            <MarkdownRenderer Content="@Item.Content" />
+        <div class="message-role">@DisplayName(finding.LeadId) -- Finding</div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content finding">
+                <MarkdownRenderer Content="@($"**{finding.Title}**\n{finding.Description}")" />
+            </div>
         </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
     }
-    else if (Item.Type == ConversationItemType.ScoutQuestion)
+    else if (Item is ConversationItem.ScoutQuestion question)
     {
-        <div class="message-role">@(Item.SenderDisplayName ?? Item.Sender)</div>
-        <div class="message-content scout-question">
-            <MarkdownRenderer Content="@Item.Content" />
+        <div class="message-role">@DisplayName(question.ScoutId)</div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content scout-question">
+                <MarkdownRenderer Content="@question.Question" />
+            </div>
         </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
     }
-    else if (Item.Type == ConversationItemType.Dispatch)
+    else if (Item is ConversationItem.Dispatch dispatch)
     {
         <div class="message-role">
-            Little Bear
-            <span class="thinking-label">commissioning @(Item.SenderDisplayName ?? Item.Sender)</span>
+            @DisplayName(dispatch.LeadId)
+            <span class="thinking-label">commissioning @DisplayName(dispatch.ScoutId)</span>
         </div>
-        <div class="message-content dispatch">
-            <div class="dispatch-summary">
-                <MarkdownRenderer Content="@(Item.Summary ?? "")" />
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content dispatch">
+                <div class="dispatch-summary">
+                    <MarkdownRenderer Content="@dispatch.Role" />
+                </div>
+                <button class="panel-toggle report-toggle" @onclick="ToggleReport">
+                    <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Brief
+                </button>
+                @if (_reportExpanded)
+                {
+                    <div class="report-full">
+                        <MarkdownRenderer Content="@dispatch.Task" />
+                    </div>
+                }
             </div>
+        </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
+    }
+    else if (Item is ConversationItem.Welcome welcome)
+    {
+        <div class="message-role">@(welcome.RoomName ?? "221B Banyan Row")</div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content welcome-content">
+                <pre class="ascii-art welcome-room">@FormatWelcomeContent(welcome.Content)</pre>
+            </div>
+        </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
+    }
+    else if (Item is ConversationItem.CaseReceived cr)
+    {
+        <div class="message-role">Intendant G. Langur</div>
+        <div class="message-content case-received">
+            <div class="case-received-header">Case file received from 221B Banyan Row</div>
+            <div class="case-received-findings"><strong>Findings:</strong> @cr.FindingCount from investigation</div>
+            <div class="case-received-summary"><strong>Summary:</strong> <MarkdownRenderer Content="@cr.Summary" Inline="true" /></div>
             <button class="panel-toggle report-toggle" @onclick="ToggleReport">
-                <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Brief
+                <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Full case file
             </button>
             @if (_reportExpanded)
             {
                 <div class="report-full">
-                    <MarkdownRenderer Content="@Item.Content" />
+                    <div class="case-received-statement"><strong>Case:</strong> @cr.CaseStatement</div>
+                    @if (cr.Findings.Count > 0)
+                    {
+                        <ul class="case-received-finding-list">
+                            @foreach (var f in cr.Findings)
+                            {
+                                <li><strong>@f.Title:</strong> @f.Description</li>
+                            }
+                        </ul>
+                    }
                 </div>
             }
         </div>
     }
-    else if (Item.Type == ConversationItemType.Welcome)
+    else if (Item is ConversationItem.SignOffItem signOff)
     {
-        <div class="message-role">221B Banyan Row</div>
-        <div class="message-content welcome-content">
-            <pre class="ascii-art welcome-room">@FormatWelcomeContent(Item.Content)</pre>
+        <div class="message-role">Intendant G. Langur <span class="signoff-label">Ledger Closed</span></div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content sign-off-content">
+                <div class="signoff-outcome"><strong>Outcome:</strong> <span class="signoff-outcome-badge outcome-@signOff.Outcome.ToLowerInvariant()">@signOff.Outcome</span></div>
+                @if (signOff.ActionsTaken.Count > 0)
+                {
+                    <div class="signoff-section">
+                        <strong>Actions taken:</strong>
+                        <ul class="signoff-actions">
+                            @foreach (var action in signOff.ActionsTaken)
+                            {
+                                <li>@action.Summary</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                @if (signOff.Verification is not null)
+                {
+                    <div class="signoff-section"><strong>Verification:</strong> <MarkdownRenderer Content="@signOff.Verification" Inline="true" /></div>
+                }
+                @if (signOff.Remaining is not null)
+                {
+                    <div class="signoff-section"><strong>Remaining:</strong> <MarkdownRenderer Content="@signOff.Remaining" Inline="true" /></div>
+                }
+                @if (signOff.Warnings is not null)
+                {
+                    <div class="signoff-section signoff-warnings"><strong>Warnings:</strong> <MarkdownRenderer Content="@signOff.Warnings" Inline="true" /></div>
+                }
+            </div>
         </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
     }
-    else if (Item.Type == ConversationItemType.Error)
+    else if (Item is ConversationItem.Error error)
     {
         <div class="message-role">Error</div>
-        <div class="message-content error-message">@Item.Content</div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content error-message">@error.Content</div>
+        </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
+    }
+    else
+    {
+        <div class="message-role">@Item.GetType().Name</div>
+        <div class="message-body @CollapseClass()" @ref="_contentRef">
+            <div class="message-content fallback-content">@Item.ToString()</div>
+        </div>
+        @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
     }
 
     <div class="message-footer">
-        @if (ShowUsage && Item.Usage is not null)
+        @{ var usage = GetUsage(); }
+        @if (ShowUsage && usage is not null)
         {
-            <span class="turn-usage">@FormatCost(Item.Usage.Cost) | @FormatTokens(Item.Usage.InputTokens) in @FormatTokens(Item.Usage.OutputTokens) out@(Item.Usage.CacheReadTokens > 0 ? $" {FormatTokens(Item.Usage.CacheReadTokens)} cached" : "")@(Item.Usage.CacheCreateTokens > 0 ? $" {FormatTokens(Item.Usage.CacheCreateTokens)} cache-write" : "")</span>
+            <span class="turn-usage">@FormatCost(usage.Cost) | @FormatTokens(usage.InputTokens) in @FormatTokens(usage.OutputTokens) out@(usage.CacheReadTokens > 0 ? $" {FormatTokens(usage.CacheReadTokens)} cached" : "")@(usage.CacheCreateTokens > 0 ? $" {FormatTokens(usage.CacheCreateTokens)} cache-write" : "")</span>
         }
         <span class="message-time">@BrowserTz.ToLocal(Item.Timestamp).ToString("HH:mm:ss")</span>
     </div>
@@ -181,61 +249,193 @@
 
 @code {
     [Parameter, EditorRequired] public ConversationItem Item { get; set; } = default!;
+    [Parameter] public IReadOnlyList<GroupMember>? Members { get; set; }
     [Parameter] public EventCallback<string> OnStepClick { get; set; }
     [Parameter] public bool ShowUsage { get; set; }
 
-    private bool _reportExpanded;
-    private void ToggleReport() => _reportExpanded = !_reportExpanded;
+    private bool _needsRender = true;
 
-    private string GetMessageClass() => Item.Type switch
+    public override Task SetParametersAsync(ParameterView parameters)
     {
-        ConversationItemType.UserMessage => "user",
-        ConversationItemType.Thinking => "thinking",
-        ConversationItemType.SubAgentThinking => "thinking",
-        ConversationItemType.AssistantMessage => "assistant",
-        ConversationItemType.SubAgentMessage => "subagent",
-        ConversationItemType.Conclusion => "conclusion",
-        ConversationItemType.Finding => "finding",
-        ConversationItemType.ScoutQuestion => "scout-question",
-        ConversationItemType.Dispatch => "dispatch",
-        ConversationItemType.Welcome => "welcome",
-        ConversationItemType.Error => "error",
-        _ => "",
+        if (parameters.TryGetValue<ConversationItem>(nameof(Item), out var newItem)
+            && !ReferenceEquals(newItem, Item))
+            _needsRender = true;
+        if (parameters.TryGetValue<bool>(nameof(ShowUsage), out var newShow)
+            && newShow != ShowUsage)
+            _needsRender = true;
+        return base.SetParametersAsync(parameters);
+    }
+
+    protected override bool ShouldRender()
+    {
+        if (!_needsRender) return false;
+        _needsRender = false;
+        return true;
+    }
+
+    private string DisplayName(string? id) =>
+        Members?.FirstOrDefault(m => m.Id == id)?.Name
+        ?? CultureInfo.InvariantCulture.TextInfo.ToTitleCase((id ?? "").Replace("-", " "));
+
+    private bool _reportExpanded;
+    private void ToggleReport() { _reportExpanded = !_reportExpanded; _needsRender = true; }
+
+    private ElementReference _contentRef;
+    private bool _isCollapsed = true;
+    private bool _isOverflowing;
+    private bool _overflowChecked;
+
+    private bool IsCollapsible => Item is not ConversationItem.Conclusion
+        and not ConversationItem.Welcome
+        and not ConversationItem.CaseReceived;
+
+    private string CollapseClass() =>
+        IsCollapsible && _isCollapsed && _isOverflowing ? "collapsed" : "";
+
+    private void ToggleCollapse() { _isCollapsed = !_isCollapsed; _needsRender = true; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!IsCollapsible) return;
+        if (!_overflowChecked)
+        {
+            _overflowChecked = true;
+            var overflows = await JS.InvokeAsync<bool>("checkOverflow", _contentRef);
+            if (overflows != _isOverflowing)
+            {
+                _isOverflowing = overflows;
+                _needsRender = true;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private TurnUsage? GetUsage() => Item switch
+    {
+        ConversationItem.Thinking t => t.Usage,
+        ConversationItem.AgentMessage a => a.Usage,
+        ConversationItem.Conclusion c => c.Usage,
+        ConversationItem.ScoutThinking st => st.Usage,
+        ConversationItem.ScoutReport sr => sr.Usage,
+        _ => null,
     };
 
-    private string GetSenderClass() => Item.Sender switch
+    private string GetMessageClass()
+    {
+        var cls = Item switch
+        {
+            ConversationItem.UserMessage => "user",
+            ConversationItem.Thinking => "thinking",
+            ConversationItem.ScoutThinking => "thinking",
+            ConversationItem.AgentMessage => "assistant",
+            ConversationItem.ScoutReport => "subagent",
+            ConversationItem.Conclusion => "conclusion",
+            ConversationItem.Finding => "finding",
+            ConversationItem.ScoutQuestion => "scout-question",
+            ConversationItem.Dispatch => "dispatch",
+            ConversationItem.Welcome => "welcome",
+            ConversationItem.CaseReceived => "case-received",
+            ConversationItem.SignOffItem => "sign-off",
+            ConversationItem.Error => "error",
+            _ => "",
+        };
+        if (Item is ConversationItem.AgentMessage am
+            && am.RecipientId is not null and not "user" && am.RecipientId != am.LeadId)
+            cls += " directed";
+        return cls;
+    }
+
+    private string GetSenderClass() => Item.SenderId switch
     {
         "little-bear" => "sender-bear",
+        "langur" => "sender-langur",
         "user" => "sender-user",
         _ => "sender-irregular",
     };
 
-    private string GetDisplayName() => Item.Sender switch
-    {
-        "little-bear" => "Little Bear",
-        "user" => "Client",
-        _ => Item.SenderDisplayName ?? Item.Sender,
-    };
-
     private string GetStepLabel()
     {
-        if (Item.StepId is null) return "";
-        var num = Item.StepId.Replace("step-", "");
+        var stepId = Item switch
+        {
+            ConversationItem.Thinking t => t.StepId,
+            ConversationItem.AgentMessage a => a.StepId,
+            ConversationItem.Conclusion c => c.StepId,
+            ConversationItem.ScoutThinking st => st.StepId,
+            ConversationItem.ScoutReport sr => sr.StepId,
+            ConversationItem.ScoutQuestion sq => sq.StepId,
+            ConversationItem.Dispatch d => d.StepId,
+            ConversationItem.Finding f => f.StepId,
+            ConversationItem.Error e => e.StepId,
+            _ => null,
+        };
+        if (stepId is null) return "";
+        var num = stepId.Replace("step-", "");
         return int.TryParse(num, out var n) ? ((char)('a' + (n - 1) % 26)).ToString() : num;
     }
 
     private static MarkupString FormatWelcomeContent(string content)
     {
-        var sb = new System.Text.StringBuilder();
-        foreach (var rune in content.EnumerateRunes())
+        var lines = content.Split('\n');
+
+        int refWidth = 0;
+        foreach (var line in lines)
         {
-            var ch = System.Net.WebUtility.HtmlEncode(rune.ToString());
-            if (IsEmoji(rune))
-                sb.Append("<span class=\"emoji-cell\">").Append(ch).Append("</span>");
+            var elems = GetGraphemes(line);
+            if (!elems.Any(IsBoxDrawing)) continue;
+            if (elems.Any(IsEmojiCluster)) continue;
+            if (elems.Count > refWidth) refWidth = elems.Count;
+        }
+
+        bool compensate = false;
+        if (refWidth > 0)
+        {
+            foreach (var line in lines)
+            {
+                var elems = GetGraphemes(line);
+                int emojis = elems.Count(IsEmojiCluster);
+                if (emojis > 0 && elems.Count + emojis > refWidth)
+                {
+                    compensate = true;
+                    break;
+                }
+            }
+        }
+
+        string cls = compensate ? "emoji-cell emoji-1ch" : "emoji-cell";
+        var sb = new System.Text.StringBuilder();
+        var en = System.Globalization.StringInfo.GetTextElementEnumerator(content);
+        while (en.MoveNext())
+        {
+            var elem = en.GetTextElement();
+            var encoded = System.Net.WebUtility.HtmlEncode(elem);
+            if (IsEmojiCluster(elem))
+                sb.Append("<span class=\"").Append(cls).Append("\">").Append(encoded).Append("</span>");
             else
-                sb.Append(ch);
+                sb.Append(encoded);
         }
         return new MarkupString(sb.ToString());
+    }
+
+    private static List<string> GetGraphemes(string s)
+    {
+        var list = new List<string>();
+        var en = System.Globalization.StringInfo.GetTextElementEnumerator(s);
+        while (en.MoveNext()) list.Add(en.GetTextElement());
+        return list;
+    }
+
+    private static bool IsEmojiCluster(string elem)
+    {
+        int cp = char.ConvertToUtf32(elem, 0);
+        return (cp >= 0x2600 && cp <= 0x27BF)
+            || (cp >= 0x1F300 && cp <= 0x1F9FF)
+            || (cp >= 0x1FA00 && cp <= 0x1FAFF);
+    }
+
+    private static bool IsBoxDrawing(string elem)
+    {
+        int cp = char.ConvertToUtf32(elem, 0);
+        return cp >= 0x2500 && cp <= 0x257F;
     }
 
     private static string FormatCost(decimal cost) =>
@@ -243,12 +443,4 @@
 
     private static string FormatTokens(int tokens) =>
         tokens >= 1000 ? $"{tokens / 1000.0:F1}k" : tokens.ToString("N0");
-
-    private static bool IsEmoji(System.Text.Rune rune)
-    {
-        int v = rune.Value;
-        return (v >= 0x2600 && v <= 0x27BF)
-            || (v >= 0x1F300 && v <= 0x1F9FF)
-            || (v >= 0x1FA00 && v <= 0x1FAFF);
-    }
 }

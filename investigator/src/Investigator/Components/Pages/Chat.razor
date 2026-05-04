@@ -4,9 +4,10 @@
 @using Investigator.Services
 @using Investigator.Components.Conversation
 @using Investigator.Components.InvestigationLog
+@using Investigator.Components.Remediation
 @using Investigator.Components.Shared
 
-<PageTitle>Little Bear, the Detective</PageTitle>
+<PageTitle>@(_isRemediation ? "The Canopy Post" : "Little Bear, the Detective")</PageTitle>
 
 <div class="chat-page @(!_isOwner ? "readonly" : "")">
 
@@ -23,21 +24,24 @@
 
 <div class="investigator-layout">
     <div class="conversation-panel">
-        <MemberPanel Members="_members" SelectedId="_selectedMemberId" OnSelect="OnMemberSelected" />
+        <MemberPanel Members="_invMembers"
+                     RemediationMembers="_remMembers"
+                     SelectedId="@(_activeRoom == "remediation" ? $"rem:{_selectedMemberId}" : _selectedMemberId)"
+                     OnSelect="OnMemberSelected" />
         <div class="conversation-messages" @ref="_messagesRef">
-            @foreach (var item in FilteredConversation)
-            {
-                <ChatMessage Item="item" OnStepClick="ScrollToLogEntry" ShowUsage="_isAgentSelected" />
-            }
+            <Virtualize Items="_filteredItems" Context="item" OverscanCount="5">
+                <ChatMessage @key="item" Item="item" Members="_activeMembers" OnStepClick="ScrollToLogEntry" ShowUsage="_isAgentSelected" />
+            </Virtualize>
         </div>
-        @if (_isOwner && _selectedMemberId is "all")
+        @if (_interactive && _isOwner && _selectedMemberId is "all")
         {
             <div class="input-divider" @ref="_inputDividerRef"></div>
             <ChatInput OnSend="OnSendAsync" OnCancel="OnCancel"
                        IsInvestigating="_isInvestigating"
-                       HasWorkingAgents="_hasWorkingAgents" />
+                       HasWorkingAgents="_hasWorkingAgents"
+                       IsRemediation="_isRemediation" />
         }
-        else if (_isOwner && _isScoutSelected)
+        else if (_interactive && _isOwner && _isScoutSelected)
         {
             <div class="input-divider" @ref="_inputDividerRef"></div>
             <div class="chat-input">
@@ -56,7 +60,22 @@
     <div class="panel-divider" @ref="_dividerRef"></div>
 
     <div class="log-panel">
-        @if (_showFindings)
+        @if (_isRemediation && _selectedMemberId == "all")
+        {
+            <div class="log-header">
+                <span>Remediation Plan</span>
+                @if (_isOwner)
+                {
+                    <button class="btn-share-readonly" @onclick="CopyShareLink" title="Copy read-only link to clipboard">
+                        @(_shareCopied ? "Copied!" : "Share Record")
+                    </button>
+                }
+            </div>
+            <div class="log-entries plan-panel-container" @ref="_logRef">
+                <PlanPanel Plan="ActiveView.Plan" SignedOff="ActiveView.Items.Any(i => i is ConversationItem.SignOffItem)" />
+            </div>
+        }
+        else if (_showFindings)
         {
             <div class="log-header">
                 <span>Findings</span>
@@ -70,21 +89,43 @@
             <div class="log-entries findings-panel" @ref="_logRef">
                 @foreach (var item in FilteredFindings)
                 {
-                    var isConclusion = item.Type == ConversationItemType.Conclusion;
+                    var isConclusion = item is ConversationItem.Conclusion;
                     var expanded = IsFindingExpanded(item);
-                    <div class="finding-entry @(isConclusion ? "finding-conclusion" : "")" @onclick="() => ToggleFinding(item)">
+                    var summaryText = item switch
+                    {
+                        ConversationItem.Finding f => f.Summary ?? Truncate($"**{f.Title}**\n{f.Description}"),
+                        ConversationItem.Conclusion c => c.Headline ?? Truncate(c.Content),
+                        _ => "",
+                    };
+                    var fullText = item switch
+                    {
+                        ConversationItem.Finding f => $"**{f.Title}**\n{f.Description}",
+                        ConversationItem.Conclusion c => c.Content,
+                        _ => "",
+                    };
+                    <div @key="item" class="finding-entry @(isConclusion ? "finding-conclusion" : "")" @onclick="() => ToggleFinding(item)">
                         <div class="finding-header">
                             <span class="finding-chevron toggle-arrow">@(expanded ? "▼" : "▶")</span>
                             @if (isConclusion)
                             {
                                 <span class="finding-label conclusion-label">Conclusion</span>
                             }
-                            <span class="finding-summary"><MarkdownRenderer Content="@(item.Summary ?? Truncate(item.Content))" Inline="true" /></span>
+                            <span class="finding-summary"><MarkdownRenderer Content="@summaryText" Inline="true" /></span>
+                            @if (isConclusion && _interactive && _isOwner && !_isInvestigating && !_isRemediation && _session?.Remediation is null)
+                            {
+                                var c = (ConversationItem.Conclusion)item;
+                                <button class="btn-transfer-new"
+                                        @onclick:stopPropagation="true"
+                                        @onclick="() => CommissionRemedyFromUI(c)"
+                                        title="Commission The Canopy Post to begin remediation">
+                                    Commission The Canopy Post
+                                </button>
+                            }
                         </div>
                         @if (expanded)
                         {
                             <div class="finding-full">
-                                <MarkdownRenderer Content="@item.Content" />
+                                <MarkdownRenderer Content="@fullText" />
                             </div>
                         }
                         <div class="finding-time">@BrowserTz.ToLocal(item.Timestamp).ToString("HH:mm:ss")</div>
@@ -102,27 +143,26 @@
                 Investigation Log
                 @if (_selectedMemberId != "all")
                 {
-                    <span class="log-filter-badge">@(_members.FirstOrDefault(m => m.Id == _selectedMemberId)?.Name ?? _selectedMemberId)</span>
+                    <span class="log-filter-badge">@(_activeMembers.FirstOrDefault(m => m.Id == _selectedMemberId)?.Name ?? _selectedMemberId)</span>
                 }
             </div>
             <div class="log-entries" @ref="_logRef">
-                @foreach (var entry in FilteredLog)
-                {
-                    <LogEntry Entry="entry" HighlightedStepId="_highlightedStepId" />
-                }
-                @if (!FilteredLog.Any())
+                <Virtualize Items="_filteredLogItems" Context="entry" OverscanCount="5">
+                    <LogEntry @key="entry" Entry="entry" Members="_activeMembers" HighlightedStepId="_highlightedStepId" />
+                </Virtualize>
+                @if (_filteredLogItems.Count == 0)
                 {
                     <div class="log-empty">Inquiries will appear here when you select a member.</div>
                 }
             </div>
         }
-        @if (_session is not null && _session.TotalCost > 0)
+        @{ var av = ActiveView; }
+        @if (av.TotalCost > 0)
         {
             @if (_selectedMemberId == "all")
             {
-                <CostPanel UsageByAgent="_session.UsageByAgent"
-                           PanelSummarizationUsage="_session.PanelSummarizationUsage"
-                           TotalCost="_session.TotalCost" />
+                <CostPanel UsageByAgent="av.UsageByAgent" Members="av.Members"
+                           TotalCost="av.TotalCost" />
             }
             else
             {

@@ -48,6 +48,8 @@ public class ThinkingConfig
     public int BudgetTokens { get; set; } = 10000;
 }
 
+[JsonDerivedType(typeof(LlmToolResultMessage), "tool_result")]
+[JsonDerivedType(typeof(LlmInboxMessage), "inbox")]
 public class LlmMessage
 {
     [JsonPropertyName("role")]
@@ -55,6 +57,39 @@ public class LlmMessage
 
     [JsonPropertyName("content")]
     public JsonElement Content { get; set; }
+}
+
+public sealed class LlmToolResultMessage : LlmMessage
+{
+    [JsonPropertyName("toolMeta")]
+    public required List<ToolCallMeta> ToolMeta { get; init; }
+}
+
+public sealed class LlmInboxMessage : LlmMessage
+{
+    [JsonPropertyName("sourceFrom")]
+    public required string SourceFrom { get; init; }
+
+    [JsonPropertyName("sourceTo")]
+    public string? SourceTo { get; init; }
+}
+
+public sealed class ToolCallMeta
+{
+    [JsonPropertyName("toolUseId")]
+    public required string ToolUseId { get; init; }
+
+    [JsonPropertyName("summary")]
+    public string? Summary { get; init; }
+
+    [JsonPropertyName("exitCode")]
+    public int ExitCode { get; init; }
+
+    [JsonPropertyName("outputFile")]
+    public string? OutputFile { get; init; }
+
+    [JsonPropertyName("timedOut")]
+    public bool TimedOut { get; init; }
 }
 
 public class LlmTool

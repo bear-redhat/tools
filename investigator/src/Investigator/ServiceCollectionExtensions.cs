@@ -38,6 +38,10 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient("Prow", client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "Investigator");
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
         });
         services.AddHttpClient("Prometheus");
         services.AddSingleton<GitHubAppAuth>();
@@ -56,9 +60,13 @@ public static class ServiceCollectionExtensions
                     client = StorageClient.Create(credential);
                     logger.LogInformation("GCS StorageClient created from {CredFile}", credFile);
                 }
-                catch (Exception ex)
+                catch (IOException ex)
                 {
                     logger.LogWarning(ex, "Failed to create GCS StorageClient from {CredFile}", credFile);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    logger.LogWarning(ex, "Invalid GCS credential in {CredFile}", credFile);
                 }
             }
 
@@ -95,6 +103,7 @@ public static class ServiceCollectionExtensions
                 typeof(GitHubTool),
                 typeof(ProwTool),
                 typeof(PrometheusTool),
+                typeof(DraftPatchTool),
             };
 
             var pluginOpts = sp.GetRequiredService<IOptions<PluginOptions>>().Value;
@@ -142,7 +151,6 @@ public static class ServiceCollectionExtensions
                 break;
         }
 
-        services.AddSingleton<SummarizationService>();
         return services;
     }
 

@@ -56,7 +56,7 @@ public sealed class WorkspaceManager
             Directory.CreateDirectory(Path.Combine(path, "tool_outputs"));
             _logger.LogInformation("Created workspace: {Path}", path);
         }
-        catch (Exception ex)
+        catch (IOException ex)
         {
             _logger.LogError(ex, "Failed to create workspace directory at {Path}", path);
             throw;
@@ -90,7 +90,7 @@ public sealed class WorkspaceManager
             File.Move(tmp, file, overwrite: true);
             _logger.LogInformation("Saved session {Id} to {File}", session.Id, file);
         }
-        catch (Exception ex)
+        catch (IOException ex)
         {
             _logger.LogError(ex, "Failed to save session {Id} to {File}", session.Id, file);
         }
@@ -118,9 +118,14 @@ public sealed class WorkspaceManager
             _logger.LogInformation("Loaded session {Id} from {File}", conversationId, file);
             return session;
         }
-        catch (Exception ex)
+        catch (IOException ex)
         {
             _logger.LogError(ex, "Failed to load session from {File}", file);
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to deserialize session from {File}", file);
             return null;
         }
     }
@@ -133,7 +138,7 @@ public sealed class WorkspaceManager
             var json = JsonSerializer.Serialize(entry, s_jsonOptions);
             await File.AppendAllTextAsync(file, json + "\n");
         }
-        catch (Exception ex)
+        catch (IOException ex)
         {
             _logger.LogError(ex, "Failed to write transcript entry to {File}", file);
         }

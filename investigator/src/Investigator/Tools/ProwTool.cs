@@ -66,6 +66,8 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         _logger = logger;
     }
 
+    public Task RegisterAsync(CancellationToken ct = default) => Task.CompletedTask;
+
     public ToolDefinition Definition => new(
         Name: "prow",
         Description: "Query OpenShift CI Prow -- job results, build logs, test artifacts, "
@@ -470,9 +472,14 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             {
                 return await FallbackLogDownload(bucket!, storagePath!, outFile, ctx, ct);
             }
-            catch (Exception ex)
+            catch (Google.GoogleApiException ex)
             {
-                _logger.LogWarning(ex, "prow: GCS SDK download failed, falling back to HTTP");
+                _logger.LogWarning(ex, "prow: GCS SDK download failed (API error), falling back to HTTP");
+                return await FallbackLogDownload(bucket!, storagePath!, outFile, ctx, ct);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "prow: GCS SDK download failed (IO error), falling back to HTTP");
                 return await FallbackLogDownload(bucket!, storagePath!, outFile, ctx, ct);
             }
         }
@@ -491,6 +498,12 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         try
         {
             using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400)
+            {
+                return new ToolResult(
+                    $"Build log not available at this path. The job may still be running, or the log has not been uploaded yet.\nURL: {url}",
+                    ExitCode: 1);
+            }
             if (!response.IsSuccessStatusCode)
             {
                 var body = await ReadContentAsStringAsync(response.Content, ct);
@@ -571,9 +584,14 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             if (count == 0)
                 sb.AppendLine("  (no artifacts found at this path)");
         }
-        catch (Exception ex)
+        catch (Google.GoogleApiException ex)
         {
             _logger.LogWarning(ex, "prow: GCS SDK list failed for {Bucket}/{Prefix}", bucket, prefix);
+            return await ListArtifactsHttp(bucket, prefix, ctx, ct);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "prow: GCS SDK list IO failed for {Bucket}/{Prefix}", bucket, prefix);
             return await ListArtifactsHttp(bucket, prefix, ctx, ct);
         }
 
@@ -700,7 +718,12 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
                     sb.AppendLine($"\n  ... and {failures.Count - 30} more failures");
             }
         }
-        catch (Exception ex)
+        catch (System.Xml.XmlException ex)
+        {
+            sb.AppendLine($"Failed to parse JUnit XML: {ex.Message}");
+            sb.AppendLine($"First 500 chars: {Truncate(xml, 500)}");
+        }
+        catch (InvalidOperationException ex)
         {
             sb.AppendLine($"Failed to parse JUnit XML: {ex.Message}");
             sb.AppendLine($"First 500 chars: {Truncate(xml, 500)}");
@@ -819,6 +842,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
 
         if (!string.IsNullOrEmpty(storagePath))
         {
+            storagePath = Regex.Replace(storagePath, @"/build-log\.txt$", "", RegexOptions.IgnoreCase);
             if (string.IsNullOrEmpty(bucket)) bucket = _options.DefaultBucket;
             return (bucket, storagePath, null);
         }
@@ -867,6 +891,8 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         try
         {
             var response = await _httpClient.GetAsync(url, ct);
+            if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400)
+                return null;
             if (!response.IsSuccessStatusCode)
                 return null;
             return await ReadContentAsStringAsync(response.Content, ct);

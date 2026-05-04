@@ -1,14 +1,13 @@
+@using System.Globalization
 @using Investigator.Components.Shared
+@using Investigator.Models
 @using Investigator.Services
 @inject BrowserTimeZone BrowserTz
 
 <div class="log-entry @GetStatusClass() @(IsHighlighted ? "highlighted" : "")" id="@Entry.StepId">
     <div class="log-entry-header" @onclick="Toggle">
         <span class="log-entry-num">#@GetEntryNumber()</span>
-        @if (Entry.SenderDisplayName is not null)
-        {
-            <span class="log-entry-agent">@Entry.SenderDisplayName</span>
-        }
+        <span class="log-entry-agent">@DisplayName(Entry.Sender)</span>
         <span class="log-entry-tool">@Entry.Tool</span>
         @if (Entry.Context is not null)
         {
@@ -45,7 +44,7 @@
         <div class="log-entry-children">
             @foreach (var child in Entry.Children)
             {
-                <LogEntry Entry="child" HighlightedStepId="HighlightedStepId" />
+                <LogEntry Entry="child" Members="Members" HighlightedStepId="HighlightedStepId" />
             }
         </div>
     }
@@ -58,7 +57,12 @@
 
 @code {
     [Parameter, EditorRequired] public LogEntryModel Entry { get; set; } = default!;
+    [Parameter] public IReadOnlyList<GroupMember>? Members { get; set; }
     [Parameter] public string? HighlightedStepId { get; set; }
+
+    private string DisplayName(string? id) =>
+        Members?.FirstOrDefault(m => m.Id == id)?.Name
+        ?? CultureInfo.InvariantCulture.TextInfo.ToTitleCase((id ?? "").Replace("-", " "));
     private bool _expanded;
 
     private bool IsHighlighted => HighlightedStepId == Entry.StepId;

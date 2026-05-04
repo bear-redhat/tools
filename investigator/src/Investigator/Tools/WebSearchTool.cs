@@ -21,18 +21,27 @@ public sealed class WebSearchTool : IInvestigatorTool
     }
     """).RootElement.Clone();
 
-    private readonly HttpClient _httpClient;
-    private readonly WebSearchOptions _options;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IOptions<WebSearchOptions> _optionsAccessor;
+    private HttpClient _httpClient = null!;
+    private WebSearchOptions _options = null!;
 
     public WebSearchTool(IHttpClientFactory httpClientFactory, IOptions<WebSearchOptions> options)
     {
-        var opts = options.Value;
+        _httpClientFactory = httpClientFactory;
+        _optionsAccessor = options;
+    }
+
+    public Task RegisterAsync(CancellationToken ct = default)
+    {
+        var opts = _optionsAccessor.Value;
         if (string.IsNullOrEmpty(opts.GoogleApiKey) || string.IsNullOrEmpty(opts.GoogleSearchEngineId))
             throw new InvalidOperationException(
                 "web_search: GoogleApiKey and GoogleSearchEngineId must be configured");
 
-        _httpClient = httpClientFactory.CreateClient("WebSearch");
+        _httpClient = _httpClientFactory.CreateClient("WebSearch");
         _options = opts;
+        return Task.CompletedTask;
     }
 
     public ToolDefinition Definition => new(

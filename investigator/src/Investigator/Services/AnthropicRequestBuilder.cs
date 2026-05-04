@@ -29,7 +29,7 @@ public static class AnthropicRequestBuilder
             AnthropicVersion = anthropicVersion,
             Stream = stream ? true : null,
             System = systemPrompt,
-            Messages = messages,
+            Messages = messages.Select(m => new LlmMessage { Role = m.Role, Content = m.Content }).ToList(),
             MaxTokens = profile.MaxTokens,
             Thinking = new ThinkingConfig { Type = "enabled", BudgetTokens = thinkingBudget },
             Tools = tools.Select(t => new LlmTool
