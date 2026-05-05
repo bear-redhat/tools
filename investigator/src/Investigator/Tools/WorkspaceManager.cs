@@ -75,10 +75,20 @@ public sealed class WorkspaceManager
         return matches.Length > 0 ? matches[0] : null;
     }
 
+    private static readonly TimeSpan s_saveDebounce = TimeSpan.FromSeconds(5);
+
     public async Task SaveSessionAsync(ConversationSession session)
     {
         if (session.WorkspacePath is null)
             return;
+
+        var now = DateTimeOffset.UtcNow;
+        if (now - session.LastSavedAt < s_saveDebounce)
+        {
+            _logger.LogDebug("Skipping save for {Id} -- last save was {Ago}ms ago",
+                session.Id, (now - session.LastSavedAt).TotalMilliseconds);
+            return;
+        }
 
         var file = Path.Combine(session.WorkspacePath, "session.json");
         var tmp = file + ".tmp";
@@ -88,6 +98,7 @@ public sealed class WorkspaceManager
             var json = JsonSerializer.Serialize(snapshot, s_snapshotWriteOptions);
             await File.WriteAllTextAsync(tmp, json);
             File.Move(tmp, file, overwrite: true);
+            session.LastSavedAt = now;
             _logger.LogInformation("Saved session {Id} to {File}", session.Id, file);
         }
         catch (IOException ex)

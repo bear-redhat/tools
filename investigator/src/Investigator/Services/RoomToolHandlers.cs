@@ -9,11 +9,11 @@ namespace Investigator.Services;
 
 internal sealed class RoomToolHandlers
 {
-    private readonly ConcurrentDictionary<string, InvestigationRoom.AgentSlot> _agents;
+    private readonly ConcurrentDictionary<string, AgentRoom.AgentSlot> _agents;
     private readonly ILogger _logger;
 
     internal RoomToolHandlers(
-        ConcurrentDictionary<string, InvestigationRoom.AgentSlot> agents,
+        ConcurrentDictionary<string, AgentRoom.AgentSlot> agents,
         ILogger logger)
     {
         _agents = agents;
@@ -21,7 +21,7 @@ internal sealed class RoomToolHandlers
     }
 
     internal Task<AgentRunner.ToolExecutionResult> HandleConclude(
-        InvestigationRoom.AgentSlot callerSlot, AgentRunner.Config callerConfig,
+        AgentRoom.AgentSlot callerSlot, AgentRunner.Config callerConfig,
         JsonElement input)
     {
         var (evidence, fix, summary) = ParseConcludeParams(input);
@@ -53,13 +53,13 @@ internal sealed class RoomToolHandlers
     }
 
     internal Task<AgentRunner.ToolExecutionResult> HandlePresentFinding(
-        InvestigationRoom.AgentSlot callerSlot, JsonElement input)
+        AgentRoom.AgentSlot callerSlot, JsonElement input)
     {
         return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "Finding noted."));
     }
 
     internal Task<AgentRunner.ToolExecutionResult> HandleMessage(
-        InvestigationRoom.AgentSlot callerSlot, JsonElement input)
+        AgentRoom.AgentSlot callerSlot, JsonElement input)
     {
         var to = input.TryGetProperty("to", out var toVal) ? toVal.GetString() ?? "" : "";
 

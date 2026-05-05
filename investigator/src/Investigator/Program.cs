@@ -6,6 +6,7 @@ using Investigator.Tools;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,19 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddHealthChecks();
+
+var workspaceRoot = builder.Configuration.GetValue<string>("Workspace:RootPath");
+if (!string.IsNullOrEmpty(workspaceRoot))
+{
+    var keyDir = new DirectoryInfo(Path.Combine(workspaceRoot, "dp-keys"));
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(keyDir);
+}
+
+builder.Services.AddAntiforgery(options =>
+{
+    options.Cookie.Name = ".Investigator.Antiforgery";
+});
 
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection(AgentOptions.Section));
 

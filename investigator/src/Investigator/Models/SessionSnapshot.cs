@@ -18,8 +18,12 @@ public sealed class SessionSnapshot
             Id = session.Id,
             OwnerUserId = session.OwnerUserId,
             StartedAt = session.StartedAt,
-            Events = session.InvestigationTranscriptStore?.Events.ToList() ?? [],
-            RemediationEvents = session.RemediationTranscriptStore?.Events.ToList() ?? [],
+            Events = session.InvestigationTranscriptStore?.Events.ToList()
+                ?? session.LoadedInvestigationEvents?.ToList()
+                ?? [],
+            RemediationEvents = session.RemediationTranscriptStore?.Events.ToList()
+                ?? session.LoadedRemediationEvents?.ToList()
+                ?? [],
             CaseFile = session.Remediation?.CaseFile,
         };
     }

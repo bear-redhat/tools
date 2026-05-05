@@ -15,13 +15,13 @@ public record SubAgentConfig(
 internal sealed class SubAgentCoordinator
 {
     private readonly SubAgentConfig _config;
-    private readonly ConcurrentDictionary<string, InvestigationRoom.AgentSlot> _agents;
+    private readonly ConcurrentDictionary<string, AgentRoom.AgentSlot> _agents;
     private readonly ILlmClientFactory _llmFactory;
     private readonly ToolRegistry _toolRegistry;
     private readonly AgentOptions _agentOptions;
     private readonly IReadOnlyList<string> _toolSections;
     private readonly ILogger _logger;
-    private readonly Func<InvestigationRoom.AgentSlot, AgentRunner.Config, CancellationToken, List<LlmMessage>?, Task> _runAgent;
+    private readonly Func<AgentRoom.AgentSlot, AgentRunner.Config, CancellationToken, List<LlmMessage>?, Task> _runAgent;
     private readonly JsonElement _concludeSchema;
     private readonly RoomEventBus _bus;
 
@@ -35,13 +35,13 @@ internal sealed class SubAgentCoordinator
 
     internal SubAgentCoordinator(
         SubAgentConfig config,
-        ConcurrentDictionary<string, InvestigationRoom.AgentSlot> agents,
+        ConcurrentDictionary<string, AgentRoom.AgentSlot> agents,
         ILlmClientFactory llmFactory,
         ToolRegistry toolRegistry,
         AgentOptions agentOptions,
         IReadOnlyList<string> toolSections,
         ILogger logger,
-        Func<InvestigationRoom.AgentSlot, AgentRunner.Config, CancellationToken, List<LlmMessage>?, Task> runAgent,
+        Func<AgentRoom.AgentSlot, AgentRunner.Config, CancellationToken, List<LlmMessage>?, Task> runAgent,
         JsonElement concludeSchema,
         RoomEventBus bus)
     {
@@ -98,7 +98,7 @@ internal sealed class SubAgentCoordinator
 
         var subSlotId = agentName.ToLowerInvariant().Replace(" ", "-");
 
-        var subSlot = new InvestigationRoom.AgentSlot
+        var subSlot = new AgentRoom.AgentSlot
         {
             Id = subSlotId,
             Name = agentName,

@@ -12,12 +12,12 @@ internal sealed class RemediationToolHandlers
     private const string LeadAgentId = "langur";
     private const string LeadAgentName = "Intendant G. Langur";
 
-    private readonly ConcurrentDictionary<string, InvestigationRoom.AgentSlot> _agents;
+    private readonly ConcurrentDictionary<string, AgentRoom.AgentSlot> _agents;
     private readonly ILogger _logger;
     private readonly Func<RemediationPlan?> _getPlan;
 
     internal RemediationToolHandlers(
-        ConcurrentDictionary<string, InvestigationRoom.AgentSlot> agents,
+        ConcurrentDictionary<string, AgentRoom.AgentSlot> agents,
         ILogger logger,
         Func<RemediationPlan?> getPlan)
     {
@@ -29,7 +29,7 @@ internal sealed class RemediationToolHandlers
     // ── Sign-off (Langur only) ──────────────────────────────────────────
 
     internal Task<AgentRunner.ToolExecutionResult> HandleSignOff(
-        InvestigationRoom.AgentSlot callerSlot, AgentRunner.Config callerConfig,
+        AgentRoom.AgentSlot callerSlot, AgentRunner.Config callerConfig,
         JsonElement input)
     {
         if (callerSlot.Id != LeadAgentId)
@@ -53,7 +53,7 @@ internal sealed class RemediationToolHandlers
     // ── Conclude (Rangers only) ─────────────────────────────────────────
 
     internal Task<AgentRunner.ToolExecutionResult> HandleConclude(
-        InvestigationRoom.AgentSlot callerSlot, AgentRunner.Config callerConfig,
+        AgentRoom.AgentSlot callerSlot, AgentRunner.Config callerConfig,
         JsonElement input)
     {
         var (evidence, fix, summary) = ParseConcludeParams(input);
@@ -67,7 +67,7 @@ internal sealed class RemediationToolHandlers
     // ── Present plan ────────────────────────────────────────────────────
 
     internal Task<AgentRunner.ToolExecutionResult> HandlePresentPlan(
-        InvestigationRoom.AgentSlot callerSlot, JsonElement input)
+        AgentRoom.AgentSlot callerSlot, JsonElement input)
     {
         return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "Plan presented to the Client."));
     }
@@ -75,7 +75,7 @@ internal sealed class RemediationToolHandlers
     // ── Update step ─────────────────────────────────────────────────────
 
     internal Task<AgentRunner.ToolExecutionResult> HandleUpdateStep(
-        InvestigationRoom.AgentSlot callerSlot, JsonElement input)
+        AgentRoom.AgentSlot callerSlot, JsonElement input)
     {
         var plan = _getPlan();
         if (plan is null)
@@ -115,7 +115,7 @@ internal sealed class RemediationToolHandlers
     // ── Report progress ───────────────────────────────────────────────────
 
     internal Task<AgentRunner.ToolExecutionResult> HandleReportProgress(
-        InvestigationRoom.AgentSlot callerSlot, JsonElement input)
+        AgentRoom.AgentSlot callerSlot, JsonElement input)
     {
         return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "Progress noted."));
     }
@@ -123,7 +123,7 @@ internal sealed class RemediationToolHandlers
     // ── Message ──────────────────────────────────────────────────────────
 
     internal Task<AgentRunner.ToolExecutionResult> HandleMessage(
-        InvestigationRoom.AgentSlot callerSlot, JsonElement input)
+        AgentRoom.AgentSlot callerSlot, JsonElement input)
     {
         var to = input.TryGetProperty("to", out var toVal) ? toVal.GetString() ?? "" : "";
 

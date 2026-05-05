@@ -321,9 +321,9 @@ public partial class Chat : IAsyncDisposable
         try
         {
             if (_isRemediation)
-                await RemediationOrch.RecallRangerAsync(ConversationId, scoutName);
+                await RemediationOrch.RecallSubAgentAsync(ConversationId, scoutName);
             else
-                await Orchestrator.RecallScoutAsync(ConversationId, scoutName);
+                await Orchestrator.RecallSubAgentAsync(ConversationId, scoutName);
         }
         finally { _scoutActionInFlight = false; }
     }
@@ -334,9 +334,9 @@ public partial class Chat : IAsyncDisposable
         try
         {
             if (_isRemediation)
-                await RemediationOrch.StandDownRangerAsync(ConversationId, scoutName);
+                await RemediationOrch.StandDownSubAgentAsync(ConversationId, scoutName);
             else
-                await Orchestrator.StandDownScoutAsync(ConversationId, scoutName);
+                await Orchestrator.StandDownSubAgentAsync(ConversationId, scoutName);
         }
         finally { _scoutActionInFlight = false; }
     }
@@ -516,7 +516,7 @@ public partial class Chat : IAsyncDisposable
             catch (ChannelClosedException) { }
         }
 
-        if (_session is not null)
+        if (_session is not null && _isOwner)
         {
             try { await WorkspaceMgr.SaveSessionAsync(_session); }
             catch (IOException ex) { Logger.LogWarning(ex, "Failed to save session on circuit disconnect"); }
@@ -524,6 +524,11 @@ public partial class Chat : IAsyncDisposable
 
         if (_isOwner && _session is not null)
         {
+            if (Orchestrator.IsIdle(ConversationId) && RemediationOrch.IsIdle(ConversationId))
+            {
+                Orchestrator.TryCleanupIdle(ConversationId);
+                RemediationOrch.TryCleanupIdle(ConversationId);
+            }
             Store.Release(_session.Id, _circuitId);
         }
     }

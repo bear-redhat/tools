@@ -337,6 +337,7 @@ Intendant G. Langur. The case file from Banyan Row is on my desk. I shall assess
     public DateTimeOffset StartedAt { get; set; }
     public string? OwnerUserId { get; set; }
     public string? OwnerCircuitId { get; set; }
+    public DateTimeOffset LastSavedAt { get; set; }
 
     public RoomState Investigation { get; }
     public RoomState? Remediation { get; set; }
