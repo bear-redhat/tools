@@ -305,6 +305,7 @@ public sealed class AgentRunner
                     if (toolUses.Count > 0)
                     {
                         textOnlyRetries = 0;
+                        hasBeenNudged = false;
 
                         var assistantContent = new List<object>();
                         foreach (var tp in textParts) assistantContent.Add(new { type = "text", text = tp });

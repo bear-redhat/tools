@@ -14,7 +14,17 @@
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <ErrorBoundary>
+        <ChildContent>
+            <Routes @rendermode="InteractiveServer" />
+        </ChildContent>
+        <ErrorContent>
+            <div class="error-boundary">
+                <p>Something went wrong.</p>
+                <button onclick="location.reload()">Reload</button>
+            </div>
+        </ErrorContent>
+    </ErrorBoundary>
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="@Assets["app.js"]"></script>

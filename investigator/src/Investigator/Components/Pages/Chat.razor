@@ -1,5 +1,4 @@
 @page "/c/{ConversationId}"
-@page "/c/{ConversationId}/view"
 @using Investigator.Models
 @using Investigator.Services
 @using Investigator.Components.Conversation
@@ -8,6 +7,14 @@
 @using Investigator.Components.Shared
 
 <PageTitle>@(_isRemediation ? "The Canopy Post" : "Little Bear, the Detective")</PageTitle>
+
+@if (_sessionNotFound)
+{
+    <div class="session-not-found">
+        <p>This investigation session was not found or has ended.</p>
+    </div>
+    return;
+}
 
 <div class="chat-page @(!_isOwner ? "readonly" : "")">
 

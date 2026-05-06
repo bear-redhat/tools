@@ -20,7 +20,6 @@ public partial class Chat : IAsyncDisposable
     [Inject] private AuthSettings AuthSettings { get; set; } = default!;
     [Inject] private CircuitAuthState CircuitAuth { get; set; } = default!;
     [Inject] private BrowserTimeZone BrowserTz { get; set; } = default!;
-    [Inject] private PersistentComponentState PersistState { get; set; } = default!;
 
     [Parameter] public string ConversationId { get; set; } = "";
 
@@ -29,14 +28,13 @@ public partial class Chat : IAsyncDisposable
     private SessionView _view = new();
     private SessionView? _remView;
     private string _activeRoom = "investigation";
-    private PersistingComponentStateSubscription _persistSub;
-    private bool _viewRestoredFromPersist;
     private bool _isOwner;
     private bool _forcedReadonly;
     private bool _shareCopied;
     private bool _started;
     private bool _remStarted;
     private bool _interactive;
+    private bool _sessionNotFound;
     private Task? _eventLoopTask;
     private Task? _remEventLoopTask;
 
@@ -130,13 +128,11 @@ public partial class Chat : IAsyncDisposable
     private IEnumerable<ConversationItem> FilteredFindings =>
         _conversationItems.Where(i => i is ConversationItem.Finding or ConversationItem.Conclusion);
 
-    private record PersistedViews(SessionView Investigation, SessionView? Remediation);
+    protected virtual bool IsReadonly => false;
 
     protected override async Task OnInitializedAsync()
     {
-        var isViewRoute = Nav.ToBaseRelativePath(Nav.Uri)
-            .TrimEnd('/')
-            .EndsWith("/view", StringComparison.OrdinalIgnoreCase);
+        _forcedReadonly = IsReadonly;
 
         _session = Store.TryGetSession(ConversationId);
         if (_session is null)
@@ -144,11 +140,16 @@ public partial class Chat : IAsyncDisposable
             _session = await Store.TryGetOrLoadSessionAsync(ConversationId, WorkspaceMgr);
             if (_session is null)
             {
+                if (_forcedReadonly)
+                {
+                    _sessionNotFound = true;
+                    return;
+                }
                 Nav.NavigateTo("/", forceLoad: true);
                 return;
             }
 
-            if (!isViewRoute)
+            if (!_forcedReadonly)
             {
                 Nav.NavigateTo($"/c/{ConversationId}/view", forceLoad: true);
                 return;
@@ -160,44 +161,12 @@ public partial class Chat : IAsyncDisposable
             _remView = _session.Remediation.CurrentView;
 
         RefreshFilteredItems();
-
-        _persistSub = PersistState.RegisterOnPersisting(PersistViewsAsync);
-        if (PersistState.TryTakeFromJson<PersistedViews>("chat-views", out var restored)
-            && restored is not null)
-        {
-            _view = restored.Investigation;
-            _remView = restored.Remediation;
-            _viewRestoredFromPersist = true;
-            RefreshFilteredItems();
-        }
-
-        if (isViewRoute)
-        {
-            _forcedReadonly = true;
-            _isOwner = false;
-            return;
-        }
-    }
-
-    private Task PersistViewsAsync()
-    {
-        PersistState.PersistAsJson("chat-views", new PersistedViews(_view, _remView));
-        return Task.CompletedTask;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            if (_viewRestoredFromPersist && _session is not null)
-            {
-                _view = _session.Investigation.CurrentView;
-                if (_session.Remediation is not null)
-                    _remView = _session.Remediation.CurrentView;
-                _viewRestoredFromPersist = false;
-                RefreshFilteredItems();
-            }
-
             _interactive = true;
 
             if (!_forcedReadonly && _session is not null)
@@ -217,7 +186,7 @@ public partial class Chat : IAsyncDisposable
                 _isOwner = claim == ClaimResult.Success;
             }
 
-            if (_isOwner && _session is not null)
+            if (_session is not null)
             {
                 if (Orchestrator.IsRunning(ConversationId))
                 {
@@ -404,7 +373,7 @@ public partial class Chat : IAsyncDisposable
             await Orchestrator.PostUserMessageAsync(ConversationId, message, CancellationToken.None);
         }
 
-        _scrollAfterRender = true;
+        _forceScrollOnRender = true;
         await InvokeAsync(StateHasChanged);
     }
 
@@ -499,7 +468,6 @@ public partial class Chat : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        _persistSub.Dispose();
         Orchestrator.Unsubscribe(ConversationId, _circuitId);
         RemediationOrch.Unsubscribe(ConversationId, _circuitId);
 

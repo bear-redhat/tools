@@ -6,26 +6,46 @@ window.getBrowserTimezone = () => {
 const scrollState = new WeakMap();
 
 window.initAutoScroll = (element) => {
-  if (!element) return;
-  scrollState.set(element, true);
-  element.addEventListener('scroll', () => {
+  if (!element || scrollState.has(element)) return;
+  const state = { pinned: true };
+  scrollState.set(element, state);
+
+  const checkPin = () => {
     const atBottom =
       element.scrollHeight - element.scrollTop - element.clientHeight <= 150;
-    scrollState.set(element, atBottom);
+    state.pinned = atBottom;
+  };
+
+  element.addEventListener('wheel', () => requestAnimationFrame(checkPin), { passive: true });
+  element.addEventListener('touchmove', () => requestAnimationFrame(checkPin), { passive: true });
+
+  element.addEventListener('keydown', (e) => {
+    const scrollKeys = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '];
+    if (scrollKeys.includes(e.key)) requestAnimationFrame(checkPin);
+  });
+
+  element.addEventListener('pointerdown', () => {
+    const onUp = () => {
+      requestAnimationFrame(checkPin);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointerup', onUp);
   });
 };
 
 window.scrollToBottom = (element) => {
   if (!element) return;
-  if (scrollState.get(element) !== false) {
-    element.scrollTop = element.scrollHeight;
-  }
+  const state = scrollState.get(element);
+  if (state && !state.pinned) return;
+  element.scrollTop = element.scrollHeight;
 };
 
 window.forceScrollToBottom = (element) => {
   if (!element) return;
   element.scrollTop = element.scrollHeight;
-  scrollState.set(element, true);
+  const state = scrollState.get(element);
+  if (state) state.pinned = true;
+  else scrollState.set(element, { pinned: true });
 };
 
 window.initDividerResize = (divider, direction) => {
