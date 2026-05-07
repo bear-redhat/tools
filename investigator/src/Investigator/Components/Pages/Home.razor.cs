@@ -20,18 +20,17 @@ public partial class Home
         ╰────────────────────────────────╯
         """;
 
-    [Inject] private InvestigationOrchestrator Orchestrator { get; set; } = default!;
     [Inject] private ConversationStore Store { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
     [Inject] private AuthSettings AuthSettings { get; set; } = default!;
     [Inject] private CircuitAuthState CircuitAuth { get; set; } = default!;
     [Inject] private BrowserTimeZone BrowserTz { get; set; } = default!;
 
-    private IReadOnlyList<ActiveInvestigationInfo> _investigations = [];
+    private IReadOnlyList<SessionInfo> _investigations = [];
 
     protected override void OnInitialized()
     {
-        var allInv = Orchestrator.GetActiveInvestigations();
+        var allInv = Store.GetAllSessionInfo();
 
         if (AuthSettings.IsEnabled && CircuitAuth.IsAuthenticated)
         {

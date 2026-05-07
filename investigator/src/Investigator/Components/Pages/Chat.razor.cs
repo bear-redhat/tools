@@ -492,12 +492,15 @@ public partial class Chat : IAsyncDisposable
 
         if (_isOwner && _session is not null)
         {
-            if (Orchestrator.IsIdle(ConversationId) && RemediationOrch.IsIdle(ConversationId))
+            var bothIdle = Orchestrator.IsIdle(ConversationId) && RemediationOrch.IsIdle(ConversationId);
+            if (bothIdle)
             {
                 Orchestrator.TryCleanupIdle(ConversationId);
                 RemediationOrch.TryCleanupIdle(ConversationId);
             }
             Store.Release(_session.Id, _circuitId);
+            if (bothIdle)
+                Store.UnloadSession(_session.Id);
         }
     }
 }

@@ -14,13 +14,13 @@
     @if (_investigations.Count > 0)
     {
         <div class="home-section">
-            <h2>Active Investigations</h2>
+            <h2>Investigations</h2>
             <div class="investigation-list">
                 @foreach (var inv in _investigations)
                 {
-                    <a class="investigation-card" href="/c/@inv.ConversationId">
+                    <a class="investigation-card" href="/c/@inv.Id">
                         <div class="investigation-card-header">
-                            <span class="investigation-status-dot"></span>
+                            <span class="investigation-status-dot @(inv.HasWorkingAgents ? "" : "idle")"></span>
                             <span class="investigation-time">@FormatRelativeTime(inv.StartedAt)</span>
                             @if (inv.OwnerUserId is not null)
                             {
@@ -54,7 +54,7 @@
     {
         <div class="home-empty">
             <pre class="ascii-art home-ascii">@FormatAsciiArt(s_homeArt)</pre>
-            <p>No active investigations. Start a new one to begin.</p>
+            <p>No investigations yet. Start a new one to begin.</p>
         </div>
     }
 </div>

@@ -7,15 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Investigator.Services;
 
-public record ActiveInvestigationInfo(
-    string ConversationId,
-    DateTimeOffset StartedAt,
-    string? OwnerUserId,
-    string CaseSummary,
-    int AgentCount,
-    bool HasWorkingAgents,
-    bool HasRemediation);
-
 public sealed class InvestigationOrchestrator : RoomOrchestrator<InvestigationRoom>
 {
     private readonly ConcurrentDictionary<string, Dictionary<int, RoomEvent.ToolRequest>> _pendingRequests = new();
@@ -75,31 +66,12 @@ public sealed class InvestigationOrchestrator : RoomOrchestrator<InvestigationRo
         }
     }
 
-    public IReadOnlyList<ActiveInvestigationInfo> GetActiveInvestigations()
+    public new bool TryCleanupIdle(string conversationId)
     {
-        var list = new List<ActiveInvestigationInfo>();
-        foreach (var (convId, run) in _running)
-        {
-            var session = run.Session;
-            var room = session.Investigation;
-            var firstMsg = room.Items.OfType<ConversationItem.UserMessage>().FirstOrDefault();
-            var summary = firstMsg?.Content ?? "";
-            if (summary.Length > 120)
-                summary = summary[..120] + "...";
-
-            var agentCount = room.Members.Count(m =>
-                m.Id is not "all" and not "little-bear");
-
-            list.Add(new ActiveInvestigationInfo(
-                convId,
-                run.StartedAt,
-                session.OwnerUserId,
-                summary,
-                agentCount,
-                room.HasWorkingAgents,
-                session.Remediation is not null));
-        }
-        return list;
+        var result = base.TryCleanupIdle(conversationId);
+        if (result)
+            _pendingRequests.TryRemove(conversationId, out _);
+        return result;
     }
 
     private void TriggerRemediation(RunningRoom<InvestigationRoom> run, JsonElement input, RoomState room)
