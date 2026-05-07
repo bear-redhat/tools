@@ -16,6 +16,7 @@ internal static class SseParser
 
         while (await reader.ReadLineAsync(ct) is { } line)
         {
+            ct.ThrowIfCancellationRequested();
             if (!line.StartsWith("data: ")) continue;
             var data = line["data: ".Length..];
             if (data == "[DONE]") break;

@@ -117,7 +117,7 @@ public sealed class InvestigationRoom : AgentRoom
         : base(llmFactory, toolRegistry, agentOptions, pipeline, transcriptStore, logger,
             scope: null, subAgentConfig: s_scoutConfig, subAgentConcludeSchema: s_concludeSchema)
     {
-        _roomToolHandlers = new RoomToolHandlers(_agents, _logger);
+        _roomToolHandlers = new RoomToolHandlers(_agents, LeadId, _logger);
     }
 
     public async Task StartAsync(string workspacePath, CancellationToken ct,

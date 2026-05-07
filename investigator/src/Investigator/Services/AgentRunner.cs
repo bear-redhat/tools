@@ -321,6 +321,7 @@ public sealed class AgentRunner
 
                         foreach (var tu in toolUses)
                         {
+                            ct.ThrowIfCancellationRequested();
                             toolCallCount++;
                             var toolName = tu.Name ?? "unknown";
                             var toolInput = tu.Input ?? default;
@@ -430,7 +431,10 @@ public sealed class AgentRunner
                 var blocks = new List<ContentBlock>();
                 await foreach (var block in config.LlmClient.StreamMessageAsync(
                     messages, config.Tools, config.SystemPrompt, ct, thinkingBudgetOverride, context))
+                {
+                    ct.ThrowIfCancellationRequested();
                     blocks.Add(block);
+                }
                 return blocks;
             }
             catch (HttpRequestException ex) when (attempt < config.MaxRetries && IsTransientHttpError(ex))

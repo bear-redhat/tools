@@ -10,13 +10,16 @@ namespace Investigator.Services;
 internal sealed class RoomToolHandlers
 {
     private readonly ConcurrentDictionary<string, AgentRoom.AgentSlot> _agents;
+    private readonly string _leadId;
     private readonly ILogger _logger;
 
     internal RoomToolHandlers(
         ConcurrentDictionary<string, AgentRoom.AgentSlot> agents,
+        string leadId,
         ILogger logger)
     {
         _agents = agents;
+        _leadId = leadId;
         _logger = logger;
     }
 
@@ -26,10 +29,10 @@ internal sealed class RoomToolHandlers
     {
         var (evidence, fix, summary) = ParseConcludeParams(input);
 
-        if (callerSlot.Id == "little-bear")
+        if (callerSlot.Id == _leadId)
         {
             var undismissed = _agents
-                .Where(kv => kv.Value.Id != "little-bear")
+                .Where(kv => kv.Value.Id != _leadId)
                 .Where(kv => !kv.Value.Dismissed)
                 .ToList();
             if (undismissed.Count > 0)
@@ -63,18 +66,18 @@ internal sealed class RoomToolHandlers
     {
         var to = input.TryGetProperty("to", out var toVal) ? toVal.GetString() ?? "" : "";
 
-        if (callerSlot.Id == "little-bear" && _agents.TryGetValue(to, out var targetSlot)
-            && targetSlot.Id != "little-bear")
+        if (callerSlot.Id == _leadId && _agents.TryGetValue(to, out var targetSlot)
+            && targetSlot.Id != _leadId)
         {
             return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"Message sent to {to}."));
         }
 
-        if (callerSlot.Id == "little-bear" && to is "user" or "client")
+        if (callerSlot.Id == _leadId && to is "user" or "client")
         {
             return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "Message sent to the client."));
         }
 
-        if (callerSlot.Id != "little-bear")
+        if (callerSlot.Id != _leadId)
         {
             return Task.FromResult(new AgentRunner.ToolExecutionResult(
                 Output: "Message delivered to Little Bear. Wait for a reply."));
@@ -87,7 +90,7 @@ internal sealed class RoomToolHandlers
     {
         var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
 
-        if (!_agents.TryGetValue(name, out var slot) || slot.Id == "little-bear")
+        if (!_agents.TryGetValue(name, out var slot) || slot.Id == _leadId)
             return new AgentRunner.ToolExecutionResult($"No Scout by the name of '{name}' is present.");
 
         if (!slot.Idle)
@@ -103,9 +106,13 @@ internal sealed class RoomToolHandlers
     {
         var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
 
-        if (!_agents.TryGetValue(name, out var slot) || slot.Id == "little-bear")
+        if (!_agents.TryGetValue(name, out var slot) || slot.Id == _leadId)
             return Task.FromResult(new AgentRunner.ToolExecutionResult(
                 $"No Scout by the name of '{name}' is abroad."));
+
+        if (slot.Dismissed)
+            return Task.FromResult(new AgentRunner.ToolExecutionResult(
+                $"{name} has already been dismissed."));
 
         if (slot.Idle)
             return Task.FromResult(new AgentRunner.ToolExecutionResult(
@@ -117,11 +124,11 @@ internal sealed class RoomToolHandlers
     }
 
     internal bool HasActiveScouts() =>
-        _agents.Any(kv => kv.Value.Id != "little-bear" && !kv.Value.Idle);
+        _agents.Any(kv => kv.Value.Id != _leadId && !kv.Value.Dismissed && !kv.Value.Idle);
 
     internal string BuildCheckAgentsResponse()
     {
-        var scouts = _agents.Where(kv => kv.Value.Id != "little-bear").ToList();
+        var scouts = _agents.Where(kv => kv.Value.Id != _leadId && !kv.Value.Dismissed).ToList();
         if (scouts.Count == 0)
             return "No Scouts have been dispatched.";
 

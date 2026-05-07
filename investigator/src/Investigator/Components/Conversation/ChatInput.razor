@@ -54,8 +54,7 @@
     private async Task CancelInvestigation()
     {
         _cancelling = true;
-        try { await OnCancel.InvokeAsync(); }
-        finally { _cancelling = false; }
+        await OnCancel.InvokeAsync();
     }
 
     private async Task Send()

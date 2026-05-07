@@ -184,7 +184,7 @@ public abstract class AgentRoom
 
                 if (removed)
                 {
-                    var remainingSubs = _agents.Where(kv => kv.Value.Id != LeadId).ToList();
+                    var remainingSubs = _agents.Where(kv => kv.Value.Id != LeadId && !kv.Value.Dismissed).ToList();
                     if (remainingSubs.Count == 0
                         && _agents.TryGetValue(LeadName, out var lead)
                         && !lead.Idle)
