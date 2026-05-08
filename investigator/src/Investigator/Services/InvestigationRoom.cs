@@ -145,7 +145,7 @@ public sealed class InvestigationRoom : AgentRoom
             SystemPrompt: InvestigationPrompts.BuildSystemPrompt(
                 _toolSections, workspacePath,
                 _llmFactory.Models, _llmFactory.DefaultProfileName,
-                clientTimeZone),
+                conversationId, clientTimeZone),
             LlmClient: _llmFactory.GetClient(_llmFactory.PrimaryProfileName),
             Tools: BuildLeadTools(),
             MaxToolCalls: _agentOptions.MaxToolCalls,
@@ -258,7 +258,7 @@ public sealed class InvestigationRoom : AgentRoom
             case DismissToolName:
                 return _roomToolHandlers.HandleDismiss(input);
             case RecallToolName:
-                return await _roomToolHandlers.HandleRecall(input);
+                return _roomToolHandlers.HandleRecall(input);
             default:
                 return null;
         }
@@ -279,19 +279,4 @@ public sealed class InvestigationRoom : AgentRoom
         };
     }
 
-    protected override bool HasTerminalToolResult(RoomEvent.LlmContext ctx, IReadOnlySet<string> terminalTools)
-    {
-        foreach (var msg in ctx.Messages)
-        {
-            if (msg.Role != "assistant" || msg.Content.ValueKind != JsonValueKind.Array) continue;
-            foreach (var block in msg.Content.EnumerateArray())
-            {
-                if (block.TryGetProperty("type", out var t) && t.GetString() == "tool_use"
-                    && block.TryGetProperty("name", out var n) && terminalTools.Contains(n.GetString() ?? ""))
-                    return true;
-            }
-        }
-
-        return false;
-    }
 }

@@ -38,6 +38,7 @@ internal sealed class RemediationToolHandlers
 
         var runningRangers = _agents
             .Where(kv => kv.Value.Id != LeadAgentId)
+            .Where(kv => !kv.Value.Dismissed)
             .Where(kv => !kv.Value.Idle)
             .ToList();
         if (runningRangers.Count > 0)
@@ -149,67 +150,21 @@ internal sealed class RemediationToolHandlers
 
     // ── Dismiss ranger ──────────────────────────────────────────────────
 
-    internal AgentRunner.ToolExecutionResult HandleDismiss(JsonElement input)
-    {
-        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
-
-        if (!_agents.TryGetValue(name, out var slot) || slot.Id == LeadAgentId)
-            return new AgentRunner.ToolExecutionResult($"No Ranger by the name of '{name}' is present.");
-
-        if (!slot.Idle)
-            return new AgentRunner.ToolExecutionResult(
-                $"{name} is busy. Wait until they are idle, or use recall first.");
-
-        _logger.LogInformation("Ranger {Name} dismissed by {Lead}", name, LeadAgentName);
-        return new AgentRunner.ToolExecutionResult($"{name} dismissed.");
-    }
+    internal AgentRunner.ToolExecutionResult HandleDismiss(JsonElement input) =>
+        SubAgentHelpers.Dismiss(_agents, LeadAgentId, input, "Ranger", LeadAgentName, _logger);
 
     // ── Recall ranger ───────────────────────────────────────────────────
 
-    internal Task<AgentRunner.ToolExecutionResult> HandleRecall(JsonElement input)
-    {
-        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
-
-        if (!_agents.TryGetValue(name, out var slot) || slot.Id == LeadAgentId)
-            return Task.FromResult(new AgentRunner.ToolExecutionResult(
-                $"No Ranger by the name of '{name}' is abroad."));
-
-        if (slot.Idle)
-            return Task.FromResult(new AgentRunner.ToolExecutionResult(
-                $"{name} is already idle. Use dismiss to send them on their way, or message to give new instructions."));
-
-        _logger.LogInformation("Ranger {Name} recalled by {Lead}", name, LeadAgentName);
-        return Task.FromResult(new AgentRunner.ToolExecutionResult(
-            $"Word has been sent to {name}. They will return to the Canopy Post presently."));
-    }
+    internal AgentRunner.ToolExecutionResult HandleRecall(JsonElement input) =>
+        SubAgentHelpers.Recall(_agents, LeadAgentId, input, "Ranger", "the Canopy Post", _logger, LeadAgentName);
 
     // ── Status queries ──────────────────────────────────────────────────
 
     internal bool HasActiveRangers() =>
-        _agents.Any(kv => kv.Value.Id != LeadAgentId && !kv.Value.Idle);
+        SubAgentHelpers.HasActiveSubAgents(_agents, LeadAgentId);
 
-    internal string BuildCheckAgentsResponse()
-    {
-        var rangers = _agents.Where(kv => kv.Value.Id != LeadAgentId).ToList();
-        if (rangers.Count == 0)
-            return "No Rangers have been dispatched.";
-
-        var sb = new StringBuilder();
-        sb.AppendLine("Canopy Post Rangers:");
-        foreach (var (name, slot) in rangers)
-        {
-            var status = slot.Idle ? "idle"
-                : slot.RunTask switch
-                {
-                    null => "working",
-                    { IsCompletedSuccessfully: true } => "completed",
-                    { IsFaulted: true } => "failed",
-                    _ => "working",
-                };
-            sb.AppendLine($"- {name} ({slot.Role}): {status}");
-        }
-        return sb.ToString();
-    }
+    internal string BuildCheckAgentsResponse() =>
+        SubAgentHelpers.BuildCheckAgentsResponse(_agents, LeadAgentId, "Canopy Post Rangers", "Ranger");
 
     // ── Parsing helpers ─────────────────────────────────────────────────
 

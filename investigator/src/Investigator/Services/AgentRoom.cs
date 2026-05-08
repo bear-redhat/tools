@@ -55,7 +55,21 @@ public abstract class AgentRoom
 
     protected abstract bool IsAllowedWhenStoodDown(string toolName);
     protected abstract string? GetSummaryText(string toolName, JsonElement input);
-    protected abstract bool HasTerminalToolResult(RoomEvent.LlmContext ctx, IReadOnlySet<string> terminalTools);
+    protected bool HasTerminalToolResult(RoomEvent.LlmContext ctx, IReadOnlySet<string> terminalTools)
+    {
+        foreach (var msg in ctx.Messages)
+        {
+            if (msg.Role != "assistant" || msg.Content.ValueKind != JsonValueKind.Array) continue;
+            foreach (var block in msg.Content.EnumerateArray())
+            {
+                if (block.TryGetProperty("type", out var t) && t.GetString() == "tool_use"
+                    && block.TryGetProperty("name", out var n) && terminalTools.Contains(n.GetString() ?? ""))
+                    return true;
+            }
+        }
+
+        return false;
+    }
 
     protected AgentRoom(
         ILlmClientFactory llmFactory,
@@ -154,7 +168,7 @@ public abstract class AgentRoom
             TranscriptStore.Append(ctx);
             if (ctx.IsInboxBatch)
                 slot.Idle = false;
-            else if (HasTerminalToolResult(ctx, terminalTools))
+            else if (ctx.IsConcludedBatch || HasTerminalToolResult(ctx, terminalTools))
                 slot.Idle = true;
             return ValueTask.CompletedTask;
         }

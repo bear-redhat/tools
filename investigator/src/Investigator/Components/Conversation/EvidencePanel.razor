@@ -23,7 +23,18 @@
                         @if (!string.IsNullOrWhiteSpace(step.Source))
                         {
                             <span class="step-source" title="@step.Source">
-                                <span class="step-source-text">@StripPrefix(step.Source)</span>
+                                @if (ConversationId is not null && IsLocalFile(step.Source))
+                                {
+                                    <a class="step-source-link" href="/api/conversations/@ConversationId/files/@step.Source" target="_blank">@StripPrefix(step.Source)</a>
+                                }
+                                else if (step.Source.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <a class="step-source-link" href="@step.Source" target="_blank" rel="noopener">@StripPrefix(step.Source)</a>
+                                }
+                                else
+                                {
+                                    <span class="step-source-text">@StripPrefix(step.Source)</span>
+                                }
                                 <CopyButton Text="@step.Source" />
                             </span>
                         }
@@ -47,6 +58,7 @@
 
 @code {
     [Parameter, EditorRequired] public EvidenceChain Evidence { get; set; } = default!;
+    [Parameter] public string? ConversationId { get; set; }
     private bool _expanded;
     private void Toggle() => _expanded = !_expanded;
 
@@ -61,4 +73,7 @@
         }
         return source.TrimStart('/');
     }
+
+    private static bool IsLocalFile(string source) =>
+        source.StartsWith("tool_outputs/", StringComparison.OrdinalIgnoreCase);
 }

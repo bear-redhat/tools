@@ -76,7 +76,7 @@
                 {
                     <div class="report-full">
                         <MarkdownRenderer Content="@report.Report" />
-                        @if (report.Evidence is not null) { <EvidencePanel Evidence="report.Evidence" /> }
+                        @if (report.Evidence is not null) { <EvidencePanel Evidence="report.Evidence" ConversationId="ConversationId" /> }
                         @if (report.Fix is not null) { <FixPanel Fix="report.Fix" /> }
                     </div>
                 }
@@ -99,7 +99,7 @@
             {
                 <div class="report-full">
                     <MarkdownRenderer Content="@conclusion.Content" />
-                    @if (conclusion.Evidence is not null) { <EvidencePanel Evidence="conclusion.Evidence" /> }
+                    @if (conclusion.Evidence is not null) { <EvidencePanel Evidence="conclusion.Evidence" ConversationId="ConversationId" /> }
                     @if (conclusion.Fix is not null) { <FixPanel Fix="conclusion.Fix" /> }
                 </div>
             }
@@ -252,6 +252,7 @@
     [Parameter] public IReadOnlyList<GroupMember>? Members { get; set; }
     [Parameter] public EventCallback<string> OnStepClick { get; set; }
     [Parameter] public bool ShowUsage { get; set; }
+    [Parameter] public string? ConversationId { get; set; }
 
     private bool _needsRender = true;
 

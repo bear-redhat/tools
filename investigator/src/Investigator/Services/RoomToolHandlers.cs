@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text;
 using System.Text.Json;
 using Investigator.Contracts;
 using Investigator.Models;
@@ -86,68 +85,17 @@ internal sealed class RoomToolHandlers
         return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"Unknown recipient '{to}'."));
     }
 
-    internal AgentRunner.ToolExecutionResult HandleDismiss(JsonElement input)
-    {
-        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
+    internal AgentRunner.ToolExecutionResult HandleDismiss(JsonElement input) =>
+        SubAgentHelpers.Dismiss(_agents, _leadId, input, "Scout", "Little Bear", _logger);
 
-        if (!_agents.TryGetValue(name, out var slot) || slot.Id == _leadId)
-            return new AgentRunner.ToolExecutionResult($"No Scout by the name of '{name}' is present.");
-
-        if (!slot.Idle)
-            return new AgentRunner.ToolExecutionResult(
-                $"{name} is busy. Wait until they are idle, or use recall first.");
-
-        slot.Dismissed = true;
-        _logger.LogInformation("Scout {Name} dismissed by Little Bear", name);
-        return new AgentRunner.ToolExecutionResult($"{name} dismissed.");
-    }
-
-    internal Task<AgentRunner.ToolExecutionResult> HandleRecall(JsonElement input)
-    {
-        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
-
-        if (!_agents.TryGetValue(name, out var slot) || slot.Id == _leadId)
-            return Task.FromResult(new AgentRunner.ToolExecutionResult(
-                $"No Scout by the name of '{name}' is abroad."));
-
-        if (slot.Dismissed)
-            return Task.FromResult(new AgentRunner.ToolExecutionResult(
-                $"{name} has already been dismissed."));
-
-        if (slot.Idle)
-            return Task.FromResult(new AgentRunner.ToolExecutionResult(
-                $"{name} is already idle. Use dismiss to send them on their way, or message to give new instructions."));
-
-        _logger.LogInformation("Scout {Name} recalled by Little Bear", name);
-        return Task.FromResult(new AgentRunner.ToolExecutionResult(
-            $"Word has been sent to {name}. They will return to Banyan Row presently."));
-    }
+    internal AgentRunner.ToolExecutionResult HandleRecall(JsonElement input) =>
+        SubAgentHelpers.Recall(_agents, _leadId, input, "Scout", "Banyan Row", _logger, "Little Bear");
 
     internal bool HasActiveScouts() =>
-        _agents.Any(kv => kv.Value.Id != _leadId && !kv.Value.Dismissed && !kv.Value.Idle);
+        SubAgentHelpers.HasActiveSubAgents(_agents, _leadId);
 
-    internal string BuildCheckAgentsResponse()
-    {
-        var scouts = _agents.Where(kv => kv.Value.Id != _leadId && !kv.Value.Dismissed).ToList();
-        if (scouts.Count == 0)
-            return "No Scouts have been dispatched.";
-
-        var sb = new StringBuilder();
-        sb.AppendLine("Banyan Row Scouts:");
-        foreach (var (name, slot) in scouts)
-        {
-            var status = slot.Idle ? "idle"
-                : slot.RunTask switch
-                {
-                    null => "working",
-                    { IsCompletedSuccessfully: true } => "completed",
-                    { IsFaulted: true } => "failed",
-                    _ => "working",
-                };
-            sb.AppendLine($"- {name} ({slot.Role}): {status}");
-        }
-        return sb.ToString();
-    }
+    internal string BuildCheckAgentsResponse() =>
+        SubAgentHelpers.BuildCheckAgentsResponse(_agents, _leadId, "Banyan Row Scouts", "Scout");
 
     internal (EvidenceChain?, FixSuggestion?, string Summary) ParseConcludeParams(JsonElement input)
     {

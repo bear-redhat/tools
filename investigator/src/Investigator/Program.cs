@@ -82,6 +82,7 @@ if (authSettings.HasOidc)
 app.UseAntiforgery();
 
 app.MapHealthChecks("/health");
+app.MapWorkspaceFiles();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

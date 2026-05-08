@@ -37,7 +37,7 @@
                      OnSelect="OnMemberSelected" />
         <div class="conversation-messages" @ref="_messagesRef">
             <Virtualize Items="_filteredItems" Context="item" OverscanCount="5">
-                <ChatMessage @key="item" Item="item" Members="_activeMembers" OnStepClick="ScrollToLogEntry" ShowUsage="_isAgentSelected" />
+                <ChatMessage @key="item" Item="item" Members="_activeMembers" OnStepClick="ScrollToLogEntry" ShowUsage="_isAgentSelected" ConversationId="ConversationId" />
             </Virtualize>
         </div>
         @if (_interactive && _isOwner && _selectedMemberId is "all")
@@ -79,7 +79,7 @@
                 }
             </div>
             <div class="log-entries plan-panel-container" @ref="_logRef">
-                <PlanPanel Plan="ActiveView.Plan" SignedOff="ActiveView.Items.Any(i => i is ConversationItem.SignOffItem)" />
+                <PlanPanel Plan="ActiveView.Plan" SignedOff="ActiveView.Items.Any(i => i is ConversationItem.SignOffItem)" ConversationId="ConversationId" />
             </div>
         }
         else if (_showFindings)
@@ -155,7 +155,7 @@
             </div>
             <div class="log-entries" @ref="_logRef">
                 <Virtualize Items="_filteredLogItems" Context="entry" OverscanCount="5">
-                    <LogEntry @key="entry" Entry="entry" Members="_activeMembers" HighlightedStepId="_highlightedStepId" />
+                    <LogEntry @key="entry" Entry="entry" Members="_activeMembers" HighlightedStepId="_highlightedStepId" ConversationId="ConversationId" />
                 </Virtualize>
                 @if (_filteredLogItems.Count == 0)
                 {

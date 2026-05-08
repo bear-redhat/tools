@@ -64,12 +64,12 @@ public sealed class AgentRunner
 
         RoomEvent.LlmContext MakeCtx(IReadOnlyList<LlmMessage> msgs, int removed = 0,
             UsageInfo? usage = null, string? thinkingText = null,
-            bool isInboxBatch = false) =>
+            bool isInboxBatch = false, bool isConcluded = false) =>
             new(0, config.Id, DateTimeOffset.UtcNow, msgs, removed, usage, thinkingText,
                 config.ModelProfile,
                 config.InputPricePerMToken, config.OutputPricePerMToken,
                 config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken,
-                isInboxBatch);
+                isInboxBatch, isConcluded);
 
         _logger.LogInformation("Agent {Name} ({Role}) starting, maxToolCalls={Max}", config.Name, config.Role, config.MaxToolCalls);
 
@@ -341,7 +341,7 @@ public sealed class AgentRunner
                         messages.AddRange(bufferedInbox);
                         var ctxBatch = new List<LlmMessage> { toolResultMsg };
                         ctxBatch.AddRange(bufferedInbox);
-                        await store(MakeCtx(ctxBatch));
+                        await store(MakeCtx(ctxBatch, isConcluded: anyToolConcluded));
 
                         if (anyToolConcluded)
                         {
@@ -386,7 +386,7 @@ public sealed class AgentRunner
 
                         messages.Add(syntheticAssistant);
                         messages.Add(syntheticResult);
-                        await store(MakeCtx([syntheticAssistant, syntheticResult], thinkingText: thinkingText, usage: usageInfo));
+                        await store(MakeCtx([syntheticAssistant, syntheticResult], thinkingText: thinkingText, usage: usageInfo, isConcluded: true));
 
                         concluded = true;
                         break;

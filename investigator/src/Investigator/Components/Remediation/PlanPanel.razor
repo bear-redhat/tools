@@ -74,6 +74,11 @@
                                 <span class="plan-step-label">Patch</span>
                                 <code>@step.Change.PatchFile</code>
                                 <CopyButton Text="@step.Change.PatchFile" />
+                                @if (ConversationId is not null)
+                                {
+                                    <a class="plan-step-download" href="/api/conversations/@ConversationId/files/@step.Change.PatchFile?download=true"
+                                       download title="Download patch file">⬇</a>
+                                }
                             </div>
                         }
 
@@ -115,6 +120,7 @@
 @code {
     [Parameter, EditorRequired] public RemediationPlan? Plan { get; set; }
     [Parameter] public bool SignedOff { get; set; }
+    [Parameter] public string? ConversationId { get; set; }
 
     private readonly HashSet<string> _expandedSteps = new();
 

@@ -8,7 +8,7 @@ public record SubAgentConfig(
     string Label,
     string[] Adjectives,
     string[] Animals,
-    Func<string, string, string, string, IReadOnlyList<string>, TimeZoneInfo?, string> BuildPrompt,
+    Func<string, string, string, string, IReadOnlyList<string>, string?, TimeZoneInfo?, string> BuildPrompt,
     string LeadAgentName,
     ToolScope ToolScope);
 
@@ -114,7 +114,7 @@ internal sealed class SubAgentCoordinator
             Id: subSlot.Id,
             Name: agentName,
             Role: role,
-            SystemPrompt: _config.BuildPrompt(agentName, role, task, WorkspacePath, _toolSections, ClientTimeZone),
+            SystemPrompt: _config.BuildPrompt(agentName, role, task, WorkspacePath, _toolSections, ConversationId, ClientTimeZone),
             LlmClient: subClient,
             Tools: BuildSubAgentTools(),
             MaxToolCalls: _agentOptions.SubAgentMaxToolCalls,

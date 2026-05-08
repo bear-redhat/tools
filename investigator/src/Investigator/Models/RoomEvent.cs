@@ -45,7 +45,8 @@ public abstract record RoomEvent(int Seq, string From, DateTimeOffset Timestamp)
         decimal OutputPrice = 0,
         decimal CacheReadPrice = 0,
         decimal CacheCreatePrice = 0,
-        bool IsInboxBatch = false)
+        bool IsInboxBatch = false,
+        bool IsConcludedBatch = false)
         : RoomEvent(Seq, From, Timestamp);
 
     public record ExternalInput(int Seq, string From, DateTimeOffset Timestamp,

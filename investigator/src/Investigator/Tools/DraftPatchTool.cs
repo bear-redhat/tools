@@ -51,7 +51,7 @@ public sealed partial class DraftPatchTool : IInvestigatorTool, ISystemPromptCon
     public string? GetSystemPromptSection() =>
         """
         PATCH DRAFTING:
-        Use draft_patch to capture git changes as a downloadable .patch file. Make your edits first (via run_shell), then call draft_patch with the repo path and a description. The Client will download and apply the patch through their own review process. You do not push, commit to remote, or create pull requests.
+        Use draft_patch to capture git changes as a downloadable .patch file. Make your edits first (via run_shell), then call draft_patch with the repo path and a description. Present the resulting patch to the Client as a download link using the format described in the FILE LINKS section. The Client will download and apply the patch through their own review process. You do not push, commit to remote, or create pull requests.
         """;
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)

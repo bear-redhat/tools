@@ -10,6 +10,7 @@ internal static class InvestigationPrompts
         string workspacePath,
         IReadOnlyDictionary<string, ModelOptions> models,
         string defaultProfileName,
+        string? conversationId = null,
         TimeZoneInfo? clientTimeZone = null)
     {
         var toolContext = toolSections.Count > 0
@@ -32,6 +33,8 @@ internal static class InvestigationPrompts
             The current date and time is: {{Now(clientTimeZone)}}
             Shell commands execute in this directory. Tool output files are saved to tool_outputs/ within it.
             Do NOT change directory (cd) -- always use absolute paths or paths relative to the workspace.
+
+            {{FileLinksSection(conversationId)}}
 
             TIMESTAMPS:
             {{TimestampInstruction(clientTimeZone)}}
@@ -113,6 +116,7 @@ internal static class InvestigationPrompts
         string name, string role, string task,
         string workspacePath,
         IReadOnlyList<string> toolSections,
+        string? conversationId = null,
         TimeZoneInfo? clientTimeZone = null)
     {
         var toolContext = toolSections.Count > 0
@@ -128,6 +132,8 @@ internal static class InvestigationPrompts
             WORKSPACE: {{workspacePath}}
             The current date and time is: {{Now(clientTimeZone)}}
             Tool output files are in tool_outputs/ within the workspace. Do NOT change directory.
+
+            {{FileLinksSection(conversationId)}}
 
             TIMESTAMPS:
             {{TimestampInstruction(clientTimeZone)}}
@@ -178,6 +184,22 @@ internal static class InvestigationPrompts
         tz ??= s_fallbackTz;
         return $"""
             The Client's local timezone is {tz.Id} ({tz.DisplayName}). When you mention a date or time to the Client -- whether in conversation, findings, or conclusions -- present it in the Client's timezone and include the timezone abbreviation. If you are quoting a raw UTC timestamp from a log or tool output, convert it or annotate both (e.g. "03:14 UTC (00:44 NST)"). Never present a bare timestamp without timezone context.
+            """;
+    }
+
+    internal static string FileLinksSection(string? conversationId)
+    {
+        if (string.IsNullOrEmpty(conversationId))
+            return "";
+
+        return $"""
+            FILE LINKS:
+            When you reference a file under tool_outputs/ in conversation -- a patch, a log, a downloaded file -- present it as a markdown link so the Client can open or download it directly in the browser:
+            [description](/api/conversations/{conversationId}/files/tool_outputs/path/to/file)
+            For example, if draft_patch writes to tool_outputs/patches/001-fix-hpa.patch, present it as:
+            [Download patch](/api/conversations/{conversationId}/files/tool_outputs/patches/001-fix-hpa.patch)
+            Append ?download=true to force a file download rather than inline display.
+            This applies to patches, GitHub file downloads, log files, and any other tool output you mention to the Client.
             """;
     }
 

@@ -11,6 +11,7 @@ internal static class RemediationPrompts
         CaseFile caseFile,
         IReadOnlyDictionary<string, ModelOptions> models,
         string defaultProfileName,
+        string? conversationId = null,
         TimeZoneInfo? clientTimeZone = null)
     {
         var toolContext = toolSections.Count > 0
@@ -33,6 +34,8 @@ internal static class RemediationPrompts
             The current date and time is: {{Now(clientTimeZone)}}
             Shell commands execute in this directory. Tool output files are saved to tool_outputs/ within it.
             Do NOT change directory (cd) -- always use absolute paths or paths relative to the workspace.
+
+            {{InvestigationPrompts.FileLinksSection(conversationId)}}
 
             TIMESTAMPS:
             {{TimestampInstruction(clientTimeZone)}}
@@ -159,6 +162,7 @@ internal static class RemediationPrompts
         string name, string role, string task,
         string workspacePath,
         IReadOnlyList<string> toolSections,
+        string? conversationId = null,
         TimeZoneInfo? clientTimeZone = null)
     {
         var toolContext = toolSections.Count > 0
@@ -174,6 +178,8 @@ internal static class RemediationPrompts
             WORKSPACE: {{workspacePath}}
             The current date and time is: {{Now(clientTimeZone)}}
             Tool output files are in tool_outputs/ within the workspace. Do NOT change directory.
+
+            {{InvestigationPrompts.FileLinksSection(conversationId)}}
 
             TIMESTAMPS:
             {{TimestampInstruction(clientTimeZone)}}
