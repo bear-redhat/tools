@@ -11,7 +11,10 @@ Almost all work happens in the **`openshift`** organisation. Occasionally there 
 
 ## Tool Overview
 
-The `github` tool queries the GitHub REST API. It operates in authenticated (GitHub App, 5000 req/hr) or unauthenticated (public repos only, 60 req/hr) mode depending on configuration.
+The `github` tool queries the GitHub REST API. It operates in one of three modes depending on configuration:
+- **GitHub App** (authenticated, 5000 req/hr) -- preferred for production deployments.
+- **Fine-grained Personal Access Token** (authenticated, 5000 req/hr) -- suitable for personal or development use.
+- **Unauthenticated** (public repos only, 60 req/hr) -- fallback when no credentials are configured.
 
 **IMPORTANT:** Do NOT use `run_shell` with `curl` against `api.github.com` or `raw.githubusercontent.com`. Use the `github` tool for all GitHub API access.
 
@@ -182,3 +185,5 @@ Repos exceeding the size limit (default 50 MB) are refused -- use `get_file` or 
 - **Check what files exist in a directory** -- use `list_directory`.
 - **Understand the overall repo layout** -- use `get_tree`.
 - **Grep across many files or explore broadly** -- use `clone_repo`.
+
+**Unauthenticated mode (60 req/hr):** When running without credentials, you have a very limited API budget. In this mode, **always prefer `clone_repo`** over `get_file`, `list_directory`, or `get_tree` for inspecting repository contents. A clone uses only one API call (repo metadata check) plus a git operation, whereas browsing files individually can exhaust the rate limit quickly. Clone first, then use `run_shell` to browse and grep locally. Only fall back to `get_file` for repos that exceed the clone size limit.

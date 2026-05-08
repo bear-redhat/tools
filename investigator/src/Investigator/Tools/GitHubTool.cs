@@ -52,10 +52,13 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         _options = options.Value;
         _logger = logger;
 
-        if (_auth.IsConfigured)
-            _logger.LogInformation("github: initialised in authenticated mode (GitHub App)");
-        else
-            _logger.LogInformation("github: initialised in unauthenticated mode (public repos only, 60 req/hr)");
+        var modeDesc = _auth.AuthMode switch
+        {
+            "app" => "authenticated mode (GitHub App)",
+            "pat" => "authenticated mode (Personal Access Token)",
+            _ => "unauthenticated mode (public repos only, 60 req/hr)",
+        };
+        _logger.LogInformation("github: initialised in {Mode}", modeDesc);
     }
 
     public Task RegisterAsync(CancellationToken ct = default) => Task.CompletedTask;
@@ -69,7 +72,19 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
 
     public string? GetSystemPromptSection()
     {
-        var mode = _auth.IsConfigured ? "authenticated (GitHub App)" : "unauthenticated (public repos only, 60 req/hr)";
+        var mode = _auth.AuthMode switch
+        {
+            "app" => "authenticated (GitHub App, 5000 req/hr)",
+            "pat" => "authenticated (Personal Access Token, 5000 req/hr)",
+            _ => "unauthenticated (public repos only, 60 req/hr)",
+        };
+
+        var cloneGuidance = _auth.IsConfigured
+            ? $"For clone_repo, provide owner and repo, optionally ref and depth. Clones the repo to the workspace for local browsing (repos over {_options.MaxCloneSizeKb / 1024} MB are refused — use get_file instead)."
+            : $"""
+            IMPORTANT — you are in unauthenticated mode with only 60 API requests per hour. To conserve this budget, ALWAYS prefer clone_repo over get_file, list_directory, or get_tree when you need to inspect repository contents. Cloning costs one metadata API call plus a git operation, whereas browsing files individually can exhaust the rate limit quickly. Clone the repo first, then use run_shell to browse and grep locally. Only fall back to get_file for repos that exceed the {_options.MaxCloneSizeKb / 1024} MB clone size limit.
+            """;
+
         return $"""
             ## GitHub tool
             The `github` tool queries the GitHub REST API ({mode}).
@@ -81,7 +96,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             For get_file, provide owner, repo, path, and optionally ref. The file is saved to disk — use run_shell to read it.
             For list_directory, provide owner, repo, path (or omit path for repo root), and optionally ref.
             For get_tree, provide owner, repo, and optionally ref. Returns a recursive listing of all files.
-            For clone_repo, provide owner and repo, optionally ref and depth. Clones the repo to the workspace for local browsing (repos over {_options.MaxCloneSizeKb / 1024} MB are refused — use get_file instead).
+            {cloneGuidance}
             Do NOT use run_shell with curl to access github.com or api.github.com — use this tool instead.
             """;
     }

@@ -18,13 +18,13 @@
 }
 
 .btn-new {
-    padding: 0.5rem 1.2rem;
+    padding: 0.35rem 0.85rem;
     border: 0;
     border-radius: 4px;
     background: #4a7dff;
     color: white;
     font-family: inherit;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
 }

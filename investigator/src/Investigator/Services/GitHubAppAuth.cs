@@ -7,9 +7,10 @@ using Microsoft.Extensions.Options;
 namespace Investigator.Services;
 
 /// <summary>
-/// Manages GitHub App authentication: generates JWTs from the App private key,
-/// exchanges them for short-lived installation tokens, and caches the result.
-/// Returns null when GitHub App credentials are not configured (unauthenticated mode).
+/// Manages GitHub authentication. Supports two modes (in priority order):
+/// 1. GitHub App — generates JWTs from the App private key, exchanges for installation tokens.
+/// 2. Personal Access Token — uses a fine-grained PAT directly as a bearer token.
+/// Returns null when neither is configured (unauthenticated mode, 60 req/hr).
 /// </summary>
 public sealed class GitHubAppAuth
 {
@@ -23,6 +24,9 @@ public sealed class GitHubAppAuth
 
     public bool IsConfigured { get; }
 
+    /// <summary>Reports the active authentication mode: "app", "pat", or "none".</summary>
+    public string AuthMode { get; }
+
     public GitHubAppAuth(IHttpClientFactory httpClientFactory, IOptions<GitHubOptions> options,
         ILogger<GitHubAppAuth> logger)
     {
@@ -30,17 +34,41 @@ public sealed class GitHubAppAuth
         _httpClient = httpClientFactory.CreateClient("GitHub");
         _logger = logger;
 
-        IsConfigured = !string.IsNullOrEmpty(_options.AppId)
+        var appConfigured = !string.IsNullOrEmpty(_options.AppId)
             && !string.IsNullOrEmpty(_options.PrivateKeyFile)
             && !string.IsNullOrEmpty(_options.InstallationId);
 
-        if (!IsConfigured)
-            _logger.LogInformation("GitHub App credentials not configured; using unauthenticated mode (60 req/hr)");
+        var patConfigured = !string.IsNullOrEmpty(_options.PersonalAccessToken);
+
+        if (appConfigured)
+        {
+            AuthMode = "app";
+            IsConfigured = true;
+            if (patConfigured)
+                _logger.LogInformation("GitHub App and PAT both configured; preferring GitHub App (higher rate limits)");
+        }
+        else if (patConfigured)
+        {
+            AuthMode = "pat";
+            IsConfigured = true;
+
+            if (!_options.PersonalAccessToken!.StartsWith("github_pat_", StringComparison.Ordinal))
+                _logger.LogWarning("GitHub PAT does not have the fine-grained token prefix (github_pat_); consider using a fine-grained personal access token");
+        }
+        else
+        {
+            AuthMode = "none";
+            IsConfigured = false;
+            _logger.LogInformation("GitHub credentials not configured; using unauthenticated mode (60 req/hr)");
+        }
     }
 
     public async Task<string?> GetTokenAsync(CancellationToken ct = default)
     {
         if (!IsConfigured) return null;
+
+        if (AuthMode == "pat")
+            return _options.PersonalAccessToken;
 
         if (_installationToken is not null && DateTimeOffset.UtcNow < _tokenExpiry)
             return _installationToken;
