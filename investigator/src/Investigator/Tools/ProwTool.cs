@@ -877,8 +877,9 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             {
                 return await FetchArtifactHttp(bucket, storagePath, fileName, ct);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogWarning(ex, "prow: GCS download failed for {Bucket}/{Path}, falling back to HTTP", bucket, storagePath);
                 return await FetchArtifactHttp(bucket, storagePath, fileName, ct);
             }
         }

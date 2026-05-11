@@ -189,11 +189,11 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
                 new RoomEvent.SessionEnded(0, "system", DateTimeOffset.UtcNow));
             run.Room.TranscriptStore.Complete();
 
-            try { await projectionTask; } catch (OperationCanceledException) { }
+            try { await projectionTask; } catch (OperationCanceledException) { _logger.LogDebug("Projection task cancelled for {Id}", run.Session.Id); }
 
             run.Room.Bus.Complete();
 
-            try { await fanOutTask; } catch (OperationCanceledException) { }
+            try { await fanOutTask; } catch (OperationCanceledException) { _logger.LogDebug("Fan-out task cancelled for {Id}", run.Session.Id); }
 
             await _workspaceManager.SaveSessionAsync(run.Session);
         }
@@ -229,7 +229,7 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
                 }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { _logger.LogDebug("{RoomType} {Id} consumer loop cancelled", typeof(TRoom).Name, run.Session.Id); }
         finally
         {
             foreach (var (_, sub) in run.Subscribers)

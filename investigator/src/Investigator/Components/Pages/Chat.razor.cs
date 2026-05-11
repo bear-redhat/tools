@@ -474,14 +474,14 @@ public partial class Chat : IAsyncDisposable
         if (_eventLoopTask is not null)
         {
             try { await _eventLoopTask; }
-            catch (OperationCanceledException) { }
-            catch (ChannelClosedException) { }
+            catch (OperationCanceledException) { Logger.LogDebug("Event loop task cancelled during dispose"); }
+            catch (ChannelClosedException) { Logger.LogDebug("Event loop channel closed during dispose"); }
         }
         if (_remEventLoopTask is not null)
         {
             try { await _remEventLoopTask; }
-            catch (OperationCanceledException) { }
-            catch (ChannelClosedException) { }
+            catch (OperationCanceledException) { Logger.LogDebug("Remediation event loop task cancelled during dispose"); }
+            catch (ChannelClosedException) { Logger.LogDebug("Remediation event loop channel closed during dispose"); }
         }
 
         if (_session is not null && _isOwner)

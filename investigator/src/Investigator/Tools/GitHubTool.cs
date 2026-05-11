@@ -724,7 +724,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         catch (OperationCanceledException)
         {
             if (proc is not null && !proc.HasExited)
-                try { proc.Kill(entireProcessTree: true); } catch { }
+                try { proc.Kill(entireProcessTree: true); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to kill git clone process"); }
             TryCleanupDir(cloneDir);
             return new ToolResult("git clone timed out.", ExitCode: -1, TimedOut: true);
         }
@@ -745,9 +745,9 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         return new ToolResult(sb.ToString());
     }
 
-    private static void TryCleanupDir(string path)
+    private void TryCleanupDir(string path)
     {
-        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); } catch { }
+        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to clean up directory {Path}", path); }
     }
 
     // ------------------------------------------------------------------ HTTP helpers

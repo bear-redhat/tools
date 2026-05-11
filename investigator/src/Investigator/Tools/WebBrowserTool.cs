@@ -305,9 +305,9 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
 
                 elements.Add(new PageElement(loc, description));
             }
-            catch
+            catch (Exception ex)
             {
-                // Element may have gone stale; skip it
+                _logger.LogDebug(ex, "web_browse: skipping stale element");
             }
         }
 

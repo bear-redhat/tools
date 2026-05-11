@@ -487,8 +487,9 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
             var match = s_accountIdRegex.Match(credentials);
             return match.Success ? match.Groups[1].Value : null;
         }
-        catch (FormatException)
+        catch (FormatException ex)
         {
+            _logger.LogDebug(ex, "Failed to decode credentials for AWS account discovery");
             return null;
         }
     }

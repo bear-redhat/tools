@@ -224,7 +224,17 @@ public abstract class AgentRoom
             .Where(t => t is not null)
             .ToArray();
         if (subTasks.Length > 0)
-            try { await Task.WhenAll(subTasks!); } catch { }
+        {
+            try { await Task.WhenAll(subTasks!); }
+            catch (Exception)
+            {
+                foreach (var t in subTasks!)
+                {
+                    if (t!.IsFaulted)
+                        _logger.LogError(t.Exception, "{Label} task faulted", SubAgentLabel);
+                }
+            }
+        }
     }
 
     private async Task<AgentRunner.ToolExecutionResult> HandleToolExecution(
@@ -305,9 +315,11 @@ public abstract class AgentRoom
         void CompleteChild(string childId, string childTool, string output, int exitCode, bool timedOut)
         {
             var reqSeq = int.TryParse(childId, out var r) ? r : 0;
-            _ = Pipeline.EmitAsync(new RoomEvent.ToolResponse(0, $"tool:{childTool}", DateTimeOffset.UtcNow,
+            var task = Pipeline.EmitAsync(new RoomEvent.ToolResponse(0, $"tool:{childTool}", DateTimeOffset.UtcNow,
                 childTool, output, RequestSeq: reqSeq, ExitCode: exitCode, TimedOut: timedOut,
                 ParentSeq: parentSeq) { To = callerConfig.Id }, _ct);
+            if (!task.IsCompletedSuccessfully)
+                Task.Run(async () => { try { await task; } catch (Exception ex) { _logger.LogWarning(ex, "CompleteChild emit failed for {Tool}", childTool); } });
         }
 
         var context = new ToolContext(

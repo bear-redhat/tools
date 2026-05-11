@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Investigator.Services;
 
 /// <summary>
@@ -8,6 +10,10 @@ public class BrowserTimeZone
 {
     private static readonly TimeZoneInfo s_fallback =
         TimeZoneInfo.FindSystemTimeZoneById("America/St_Johns");
+
+    private readonly ILogger<BrowserTimeZone> _logger;
+
+    public BrowserTimeZone(ILogger<BrowserTimeZone> logger) => _logger = logger;
 
     public TimeZoneInfo TimeZone { get; private set; } = s_fallback;
 
@@ -23,8 +29,8 @@ public class BrowserTimeZone
             TimeZone = TimeZoneInfo.FindSystemTimeZoneById(ianaId);
             IanaId = ianaId;
         }
-        catch (TimeZoneNotFoundException) { }
-        catch (InvalidTimeZoneException) { }
+        catch (TimeZoneNotFoundException ex) { _logger.LogDebug(ex, "Unknown timezone {Id}", ianaId); }
+        catch (InvalidTimeZoneException ex) { _logger.LogDebug(ex, "Invalid timezone {Id}", ianaId); }
     }
 
     public DateTimeOffset ToLocal(DateTimeOffset utc) =>

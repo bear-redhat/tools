@@ -386,7 +386,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         }
     }
 
-    private static DateTimeOffset? GetJwtExpiry(string token)
+    private DateTimeOffset? GetJwtExpiry(string token)
     {
         var parts = token.Split('.');
         if (parts.Length < 2)
@@ -407,9 +407,9 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             if (doc.RootElement.TryGetProperty("exp", out var exp))
                 return DateTimeOffset.FromUnixTimeSeconds(exp.GetInt64());
         }
-        catch
+        catch (Exception ex)
         {
-            // Not a valid JWT or missing exp -- treat as non-expiring
+            _logger.LogDebug(ex, "Failed to parse JWT expiry, treating as non-expiring");
         }
 
         return null;
