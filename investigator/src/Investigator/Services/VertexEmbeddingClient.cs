@@ -30,7 +30,7 @@ public sealed class VertexEmbeddingClient : IEmbeddingClient
         var modelOpts = _llmOptions.Models[primaryProfile];
         var region = modelOpts.Region ?? "us-east5";
         var project = modelOpts.ProjectId ?? "";
-        var model = modelOpts.EmbeddingModel ?? "textembedding-gecko@003";
+        var model = modelOpts.EmbeddingModel ?? "gemini-embedding-001";
 
         var url = $"https://{region}-aiplatform.googleapis.com/v1/projects/{project}"
             + $"/locations/{region}/publishers/google/models/{model}:predict";

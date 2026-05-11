@@ -2,6 +2,7 @@
 @using Investigator.Components.Shared
 @using Investigator.Models
 @using Investigator.Services
+@using static Investigator.Services.LogSanitizer
 @inject BrowserTimeZone BrowserTz
 
 <div class="log-entry @GetStatusClass() @(IsHighlighted ? "highlighted" : "")" id="@Entry.StepId">
@@ -40,7 +41,7 @@
     @if (_expanded && Entry.Output is not null)
     {
         <div class="log-entry-output">
-            <pre>@Entry.Output</pre>
+            <pre>@Redact(Entry.Output)</pre>
         </div>
     }
 

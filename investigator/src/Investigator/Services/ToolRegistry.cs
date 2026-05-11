@@ -122,7 +122,7 @@ public sealed class ToolRegistry
 
         var truncated = def.TruncateOutput
             ? TruncateOutput(result, outputFilePath ?? fileName)
-            : ApplyHardCap(result.Output);
+            : ApplyHardCap(result.Output, _options.HardCapBytes);
 
         _logger.LogInformation("Tool {Name} completed: exit={Exit}, timed_out={TimedOut}, output_lines={Lines}, output_file={File}",
             toolName, result.ExitCode, result.TimedOut, result.Output.Split('\n').Length, outputFilePath);
@@ -153,7 +153,7 @@ public sealed class ToolRegistry
     private static string FormatHeader(ToolResult result, int lineCount, string relativePath) =>
         $"[exit_code: {result.ExitCode} | {lineCount} lines | full: {relativePath}]\n\n";
 
-    private string ApplyHardCap(string output, int maxBytes = 65536)
+    private string ApplyHardCap(string output, int maxBytes)
     {
         if (output.Length <= maxBytes) return output;
         _logger.LogWarning("Tool output exceeded hard cap ({Length} > {Max}), truncating", output.Length, maxBytes);

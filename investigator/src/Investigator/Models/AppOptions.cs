@@ -56,6 +56,7 @@ public sealed class ToolOutputOptions
     public const string Section = "ToolOutput";
     public int HeadLines { get; set; } = 20;
     public int TailLines { get; set; } = 10;
+    public int HardCapBytes { get; set; } = 8192;
 }
 
 public sealed class PluginOptions
