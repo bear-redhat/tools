@@ -185,4 +185,161 @@ public class LogSanitizerTests
         var input = "\"token\": \"short\"";
         Assert.Equal(input, LogSanitizer.Redact(input));
     }
+
+    // --- Layer 2: MaskSuspected (entropy) tests ---
+
+    [Fact]
+    public void MaskSuspected_NullInput_ReturnsEmpty()
+    {
+        Assert.Equal(string.Empty, LogSanitizer.MaskSuspected(null));
+    }
+
+    [Fact]
+    public void MaskSuspected_EmptyInput_ReturnsEmpty()
+    {
+        Assert.Equal(string.Empty, LogSanitizer.MaskSuspected(""));
+    }
+
+    [Fact]
+    public void MaskSuspected_UnknownSecretInJsonField()
+    {
+        var input = """{"unknown_token": "AbR7xK9mP2qL4nW8sY1vZ5tU3oJ6hF0gDcEiBaLmNpQrSw"}""";
+        var result = LogSanitizer.MaskSuspected(input);
+        Assert.Contains("[SUSPECTED]", result);
+        Assert.DoesNotContain("AbR7xK9mP2qL", result);
+        Assert.Contains("unknown_token", result);
+    }
+
+    [Fact]
+    public void MaskSuspected_UnknownSecretInPlainText()
+    {
+        var input = "Pod uses token AbR7xK9mP2qL4nW8sY1vZ5tU3oJ6hF0gDcEiBaLmNpQrSw in namespace ci";
+        var result = LogSanitizer.MaskSuspected(input);
+        Assert.Contains("[SUSPECTED]", result);
+        Assert.DoesNotContain("AbR7xK9mP2qL", result);
+        Assert.Contains("namespace", result);
+    }
+
+    [Theory]
+    [InlineData("cluster-monitoring-operator-7b4f9c8d6-xk2mn")]
+    [InlineData("grafana-deployment-5f7b8c9d4-abc12")]
+    [InlineData("my-service-deployment-7b4f9c8d6-xk2mn")]
+    public void MaskSuspected_K8sPodNames_PassThrough(string podName)
+    {
+        var input = $"Pod {podName} is running";
+        var result = LogSanitizer.MaskSuspected(input);
+        Assert.Contains(podName, result);
+        Assert.DoesNotContain("[SUSPECTED]", result);
+    }
+
+    [Fact]
+    public void MaskSuspected_HexCommitSha_PassThrough()
+    {
+        var input = "openshift/ci-tools@a3f2b1c4d5e6f7890123456789abcdef01234567";
+        var result = LogSanitizer.MaskSuspected(input);
+        Assert.Contains("a3f2b1c4d5e6f7890123456789abcdef01234567", result);
+        Assert.DoesNotContain("[SUSPECTED]", result);
+    }
+
+    [Theory]
+    [InlineData("console-openshift-console.apps.ci.l2s4.p1.openshiftapps.com")]
+    [InlineData("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")]
+    [InlineData("image-registry.openshift-image-registry.svc")]
+    [InlineData("app.kubernetes.io/managed-by-prometheus-operator")]
+    public void MaskSuspected_InfraIdentifiers_PassThrough(string identifier)
+    {
+        var result = LogSanitizer.MaskSuspected(identifier);
+        Assert.Contains(identifier, result);
+        Assert.DoesNotContain("[SUSPECTED]", result);
+    }
+
+    [Fact]
+    public void MaskSuspected_ContainerId_PassThrough()
+    {
+        var input = "containerd://a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0";
+        var result = LogSanitizer.MaskSuspected(input);
+        Assert.DoesNotContain("[SUSPECTED]", result);
+    }
+
+    [Fact]
+    public void MaskSuspected_ShortHighEntropy_PassThrough()
+    {
+        var input = "short secret xK9mP2qL is fine";
+        var result = LogSanitizer.MaskSuspected(input);
+        Assert.Equal(input, result);
+    }
+
+    [Fact]
+    public void MaskSuspected_AwsSecretKeyValue()
+    {
+        var input = "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        var result = LogSanitizer.MaskSuspected(input);
+        Assert.Contains("[SUSPECTED]", result);
+        Assert.Contains("AWS_SECRET_ACCESS_KEY", result);
+        Assert.DoesNotContain("wJalrXUtnFEMI", result);
+    }
+
+    [Fact]
+    public void MaskSuspected_ArnSegment_PassThrough()
+    {
+        var input = "arn:aws:sts::123456789012:assumed-role/my-role/i-0abc123def456";
+        var result = LogSanitizer.MaskSuspected(input);
+        Assert.Contains("assumed-role/my-role/i-0abc123def456", result);
+        Assert.DoesNotContain("[SUSPECTED]", result);
+    }
+
+    [Fact]
+    public void MaskSuspected_RedactedTextNotDoubleMasked()
+    {
+        var input = "\"token\": \"[REDACTED]\" and normal text";
+        var result = LogSanitizer.MaskSuspected(input);
+        Assert.DoesNotContain("[SUSPECTED]", result);
+    }
+
+    // --- Combined: Layer 1 + Layer 2 ---
+
+    [Fact]
+    public void Combined_KnownAndUnknownSecrets()
+    {
+        var input = """
+            "token": "sha256~lc1xPDAeMC39Xoy2I1jo3bMGVSorQ4WuaA0bvdjLi1CjydiI6MtrLSXbjCINSwlc38Hcmj01i1yvYpbGR",
+            "unknown": "AbR7xK9mP2qL4nW8sY1vZ5tU3oJ6hF0gDcEiBaLmNpQrSw"
+            """;
+        var afterLayer1 = LogSanitizer.Redact(input);
+        var afterBoth = LogSanitizer.MaskSuspected(afterLayer1);
+
+        Assert.Contains("[REDACTED]", afterBoth);
+        Assert.Contains("[SUSPECTED]", afterBoth);
+        Assert.DoesNotContain("lc1xPDAeMC39", afterBoth);
+        Assert.DoesNotContain("AbR7xK9mP2qL", afterBoth);
+    }
+
+    [Fact]
+    public void Redact_DoesNotMaskEntropyOnlySecrets_OwnerViewRegression()
+    {
+        var input = "Secret: AbR7xK9mP2qL4nW8sY1vZ5tU3oJ6hF0gDcEiBaLmNpQrSw";
+        var result = LogSanitizer.Redact(input);
+        Assert.Contains("AbR7xK9mP2qL4nW8sY1vZ5tU3oJ6hF0gDcEiBaLmNpQrSw", result);
+        Assert.DoesNotContain("[SUSPECTED]", result);
+    }
+
+    [Fact]
+    public void Combined_PreservesStructureAroundMaskedTokens()
+    {
+        var input = """
+            {
+                "kind": "ServiceAccount",
+                "namespace": "openshift-monitoring",
+                "unknown_secret": "AbR7xK9mP2qL4nW8sY1vZ5tU3oJ6hF0gDcEiBaLmNpQrSw"
+            }
+            """;
+        var afterLayer1 = LogSanitizer.Redact(input);
+        var afterBoth = LogSanitizer.MaskSuspected(afterLayer1);
+
+        Assert.Contains("ServiceAccount", afterBoth);
+        Assert.Contains("openshift-monitoring", afterBoth);
+        Assert.Contains("unknown_secret", afterBoth);
+        Assert.Contains("[SUSPECTED]", afterBoth);
+        Assert.DoesNotContain("AbR7xK9mP2qL", afterBoth);
+    }
 }

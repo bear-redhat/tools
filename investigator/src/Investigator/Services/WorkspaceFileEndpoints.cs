@@ -76,7 +76,7 @@ public static class WorkspaceFileEndpoints
         return Results.Json(new { path = relativePath, entries });
     }
 
-    private static IResult ServeFile(
+    private static async Task<IResult> ServeFile(
         string conversationId,
         string filePath,
         WorkspaceManager workspaceManager,
@@ -101,6 +101,13 @@ public static class WorkspaceFileEndpoints
         var contentType = ResolveContentType(fullPath);
         var fileName = Path.GetFileName(fullPath);
 
+        if (IsSharedTokenOnly(httpContext, authSettings))
+        {
+            var raw = await File.ReadAllTextAsync(fullPath);
+            var sanitized = LogSanitizer.MaskSuspected(LogSanitizer.Redact(raw));
+            return Results.Text(sanitized, contentType);
+        }
+
         return download
             ? Results.File(fullPath, contentType, fileName)
             : Results.File(fullPath, contentType);
@@ -120,6 +127,17 @@ public static class WorkspaceFileEndpoints
             return true;
 
         return false;
+    }
+
+    private static bool IsSharedTokenOnly(HttpContext httpContext, AuthSettings authSettings)
+    {
+        if (!authSettings.IsEnabled)
+            return false;
+
+        if (httpContext.User.Identity?.IsAuthenticated == true)
+            return false;
+
+        return true;
     }
 
     /// <summary>

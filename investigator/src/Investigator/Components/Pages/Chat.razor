@@ -155,7 +155,7 @@
             </div>
             <div class="log-entries" @ref="_logRef">
                 <Virtualize Items="_filteredLogItems" Context="entry" OverscanCount="5">
-                    <LogEntry @key="entry" Entry="entry" Members="_activeMembers" HighlightedStepId="_highlightedStepId" ConversationId="ConversationId" />
+                    <LogEntry @key="entry" Entry="entry" Members="_activeMembers" HighlightedStepId="_highlightedStepId" ConversationId="ConversationId" IsReadonly="_forcedReadonly" />
                 </Virtualize>
                 @if (_filteredLogItems.Count == 0)
                 {

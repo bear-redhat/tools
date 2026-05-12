@@ -89,4 +89,74 @@ public static partial class LogSanitizer
 
     [GeneratedRegex(@"key=[A-Za-z0-9_-]{20,}", RegexOptions.Compiled)]
     private static partial Regex ApiKeyQueryRegex();
+
+    // --- Layer 2: Entropy-based suspected token masking (independent of regex rules) ---
+
+    private const string Suspected = "[SUSPECTED]";
+    private const double EntropyThreshold = 4.5;
+    private const int MinSegmentLength = 20;
+    private const int MinCharsetClasses = 3;
+
+    [GeneratedRegex(@"[^\s""'{}[\],:;()|<>@=]+")]
+    private static partial Regex SegmentRegex();
+
+    public static string MaskSuspected(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return input ?? string.Empty;
+
+        return SegmentRegex().Replace(input, match =>
+        {
+            if (match.Length < MinSegmentLength)
+                return match.Value;
+            var span = match.ValueSpan;
+            if (ShannonEntropy(span) <= EntropyThreshold)
+                return match.Value;
+            if (CharsetClasses(span) < MinCharsetClasses)
+                return match.Value;
+            return Suspected;
+        });
+    }
+
+    private static double ShannonEntropy(ReadOnlySpan<char> s)
+    {
+        Span<int> counts = stackalloc int[128];
+        int nonAscii = 0;
+        foreach (var c in s)
+        {
+            if (c < 128)
+                counts[c]++;
+            else
+                nonAscii++;
+        }
+
+        double length = s.Length;
+        double entropy = 0;
+        for (int i = 0; i < 128; i++)
+        {
+            if (counts[i] == 0) continue;
+            double freq = counts[i] / length;
+            entropy -= freq * Math.Log2(freq);
+        }
+        if (nonAscii > 0)
+        {
+            double freq = nonAscii / length;
+            entropy -= freq * Math.Log2(freq);
+        }
+
+        return entropy;
+    }
+
+    private static int CharsetClasses(ReadOnlySpan<char> s)
+    {
+        bool hasUpper = false, hasLower = false, hasDigit = false, hasOther = false;
+        foreach (var c in s)
+        {
+            if (c is >= 'A' and <= 'Z') hasUpper = true;
+            else if (c is >= 'a' and <= 'z') hasLower = true;
+            else if (c is >= '0' and <= '9') hasDigit = true;
+            else hasOther = true;
+        }
+        return (hasUpper ? 1 : 0) + (hasLower ? 1 : 0) + (hasDigit ? 1 : 0) + (hasOther ? 1 : 0);
+    }
 }

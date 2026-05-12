@@ -31,7 +31,7 @@
     <div class="log-entry-command">
         <code>@Entry.DisplayCommand</code>
         <CopyButton Text="@Entry.DisplayCommand" />
-        @if (Entry.OutputFile is not null && ConversationId is not null)
+        @if (Entry.OutputFile is not null && ConversationId is not null && !IsReadonly)
         {
             <a class="log-entry-file-link" href="/api/conversations/@ConversationId/files/@Entry.OutputFile"
                target="_blank" title="View full output">📄</a>
@@ -41,7 +41,7 @@
     @if (_expanded && Entry.Output is not null)
     {
         <div class="log-entry-output">
-            <pre>@Redact(Entry.Output)</pre>
+            <pre>@SanitizeOutput(Entry.Output)</pre>
         </div>
     }
 
@@ -50,7 +50,7 @@
         <div class="log-entry-children">
             @foreach (var child in Entry.Children)
             {
-                <LogEntry Entry="child" Members="Members" HighlightedStepId="HighlightedStepId" ConversationId="ConversationId" />
+                <LogEntry Entry="child" Members="Members" HighlightedStepId="HighlightedStepId" ConversationId="ConversationId" IsReadonly="IsReadonly" />
             }
         </div>
     }
@@ -66,6 +66,7 @@
     [Parameter] public IReadOnlyList<GroupMember>? Members { get; set; }
     [Parameter] public string? HighlightedStepId { get; set; }
     [Parameter] public string? ConversationId { get; set; }
+    [Parameter] public bool IsReadonly { get; set; }
 
     private string DisplayName(string? id) =>
         Members?.FirstOrDefault(m => m.Id == id)?.Name
@@ -99,4 +100,11 @@
 
     private static string FormatTokens(int tokens) =>
         tokens >= 1000 ? $"{tokens / 1000.0:F1}k" : tokens.ToString("N0");
+
+    private string SanitizeOutput(string text)
+    {
+        var result = Redact(text);
+        if (IsReadonly) result = MaskSuspected(result);
+        return result;
+    }
 }
