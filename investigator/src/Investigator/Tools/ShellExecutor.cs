@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Investigator.Contracts;
 using Investigator.Models;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Investigator.Tools;
@@ -14,6 +15,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
     private bool _useRunUser;
     private ToolDefinition _definition = null!;
     private readonly ShellOptions _options;
+    private readonly int _hardCapBytes;
 
     public bool IsPowerShell => _isPowerShell;
 
@@ -36,9 +38,10 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             """;
     }
 
-    public ShellExecutor(IOptions<ShellOptions> options)
+    public ShellExecutor(IOptions<ShellOptions> options, IOptions<ToolOutputOptions> toolOutputOptions)
     {
         _options = options.Value;
+        _hardCapBytes = toolOutputOptions.Value.HardCapBytes;
     }
 
     public Task RegisterAsync(CancellationToken ct = default)
@@ -182,10 +185,14 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             }
         }
 
-        var output = new StringBuilder();
+        var (outputPath, outputRelative) = context.AllocateOutputFile("run_shell");
+        var headTail = new HeadTailBuffer(headLines: 20, tailLines: 10);
+        StreamWriter? fileWriter = null;
         Process? proc = null;
         try
         {
+            fileWriter = new StreamWriter(outputPath, append: false, Encoding.UTF8) { AutoFlush = false };
+
             proc = Process.Start(psi);
             if (proc is null)
             {
@@ -197,7 +204,8 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             {
                 while (await proc.StandardOutput.ReadLineAsync(ct) is { } line)
                 {
-                    output.AppendLine(line);
+                    await fileWriter.WriteLineAsync(line);
+                    headTail.Add(line);
                     context.OnOutputLine?.Invoke(line);
                 }
             }, ct);
@@ -215,22 +223,42 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             if (stderr.Length > 0)
             {
                 context.Logger.LogDebug("run_shell: stderr ({Length} chars) for command '{Command}'", stderr.Length, command);
-                output.Append(stderr);
+                await fileWriter.WriteAsync(stderr.ToString());
             }
+
+            await fileWriter.FlushAsync();
 
             if (proc.ExitCode != 0)
                 context.Logger.LogWarning("run_shell: command '{Command}' exited with code {Code}", command, proc.ExitCode);
 
-            return new ToolResult(output.ToString(), ExitCode: proc.ExitCode, ReproCommand: command);
+            var truncated = headTail.BuildRaw();
+            if (truncated.Length > _hardCapBytes)
+            {
+                context.Logger.LogWarning("Tool output exceeded hard cap ({Length} > {Max}), truncating",
+                    truncated.Length, _hardCapBytes);
+                truncated = truncated[.._hardCapBytes] + $"\n... [truncated at {_hardCapBytes / 1024}KB hard cap]";
+            }
+            return new ToolResult(truncated, ExitCode: proc.ExitCode, ReproCommand: command,
+                LineCount: headTail.LineCount, OutputFile: outputRelative);
         }
         catch (OperationCanceledException)
         {
             KillProcess(proc, command, context.Logger);
             context.Logger.LogWarning("run_shell: command '{Command}' was cancelled (timeout)", command);
-            return new ToolResult(output + "\n[timed out]", ExitCode: -1, TimedOut: true, ReproCommand: command);
+            if (fileWriter is not null)
+            {
+                await fileWriter.WriteLineAsync("[timed out]");
+                await fileWriter.FlushAsync();
+            }
+            headTail.Add("[timed out]");
+            var truncated = headTail.BuildRaw();
+            return new ToolResult(truncated, ExitCode: -1, TimedOut: true, ReproCommand: command,
+                LineCount: headTail.LineCount, OutputFile: outputRelative);
         }
         finally
         {
+            if (fileWriter is not null)
+                await fileWriter.DisposeAsync();
             proc?.Dispose();
         }
     }

@@ -5,6 +5,7 @@ using System.Text.Json;
 using Investigator.Contracts;
 using Investigator.Models;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 
 namespace Investigator.Tools;
 
@@ -215,10 +216,14 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         psi.Environment["KUBECONFIG"] = KubeconfigPath(entry.Name);
         foreach (var arg in args) psi.ArgumentList.Add(arg);
 
-        var output = new StringBuilder();
+        var (outputPath, outputRelative) = context.AllocateOutputFile("run_oc");
+        var headTail = new HeadTailBuffer(headLines: 20, tailLines: 10);
+        StreamWriter? fileWriter = null;
         Process? proc = null;
         try
         {
+            fileWriter = new StreamWriter(outputPath, append: false, Encoding.UTF8) { AutoFlush = false };
+
             proc = Process.Start(psi);
             if (proc is null)
             {
@@ -230,7 +235,8 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             {
                 while (await proc.StandardOutput.ReadLineAsync(ct) is { } line)
                 {
-                    output.AppendLine(line);
+                    await fileWriter.WriteLineAsync(line);
+                    headTail.Add(line);
                     context.OnOutputLine?.Invoke(line);
                 }
             }, ct);
@@ -248,22 +254,36 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             if (stderr.Length > 0)
             {
                 context.Logger.LogDebug("run_oc: stderr ({Length} chars) for '{Command}' on {Cluster}", stderr.Length, command, cluster);
-                output.Append(stderr);
+                await fileWriter.WriteAsync(stderr.ToString());
             }
+
+            await fileWriter.FlushAsync();
 
             if (proc.ExitCode != 0)
                 context.Logger.LogWarning("run_oc: '{Command}' on {Cluster} exited with code {Code}", command, cluster, proc.ExitCode);
 
-            return new ToolResult(output.ToString(), ExitCode: proc.ExitCode, ReproCommand: reproCommand);
+            var truncated = headTail.Build(proc.ExitCode, outputRelative);
+            return new ToolResult(truncated, ExitCode: proc.ExitCode, ReproCommand: reproCommand,
+                LineCount: headTail.LineCount, OutputFile: outputRelative);
         }
         catch (OperationCanceledException)
         {
             KillProcess(proc, command, cluster, context.Logger);
             context.Logger.LogWarning("run_oc: '{Command}' on {Cluster} was cancelled (timeout)", command, cluster);
-            return new ToolResult(output + "\n[timed out]", ExitCode: -1, TimedOut: true, ReproCommand: reproCommand);
+            if (fileWriter is not null)
+            {
+                await fileWriter.WriteLineAsync("[timed out]");
+                await fileWriter.FlushAsync();
+            }
+            headTail.Add("[timed out]");
+            var truncated = headTail.Build(-1, outputRelative);
+            return new ToolResult(truncated, ExitCode: -1, TimedOut: true, ReproCommand: reproCommand,
+                LineCount: headTail.LineCount, OutputFile: outputRelative);
         }
         finally
         {
+            if (fileWriter is not null)
+                await fileWriter.DisposeAsync();
             proc?.Dispose();
         }
     }

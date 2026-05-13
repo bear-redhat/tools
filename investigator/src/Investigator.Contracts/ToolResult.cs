@@ -4,4 +4,6 @@ public record ToolResult(
     string Output,
     int ExitCode = 0,
     bool TimedOut = false,
-    string? ReproCommand = null);
+    string? ReproCommand = null,
+    int? LineCount = null,
+    string? OutputFile = null);

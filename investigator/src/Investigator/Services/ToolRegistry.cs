@@ -103,31 +103,57 @@ public sealed class ToolRegistry
             result = new ToolResult($"[Timed out after {def.DefaultTimeout.TotalSeconds}s]", ExitCode: -1, TimedOut: true);
         }
 
-        var outputNum = context.NextOutputNumber();
-        var fileName = $"{outputNum:D3}-{toolName}.txt";
-        var outputDir = Path.Combine(context.WorkspacePath, "tool_outputs");
+        string? outputFilePath;
+        string truncated;
+        int lineCount;
 
-        string? outputFilePath = null;
-        try
+        if (result.OutputFile is not null)
         {
-            Directory.CreateDirectory(outputDir);
-            var fullPath = Path.Combine(outputDir, fileName);
-            await File.WriteAllTextAsync(fullPath, result.Output, ct);
-            outputFilePath = $"tool_outputs/{fileName}";
+            // Tool already streamed output to disk and pre-truncated
+            outputFilePath = result.OutputFile;
+            truncated = result.Output;
+            lineCount = result.LineCount ?? 1;
         }
-        catch (IOException ex)
+        else
         {
-            _logger.LogError(ex, "Failed to write tool output file {File} for tool {Name}", fileName, toolName);
-        }
+            // Legacy path: tool returned full output in memory
+            var outputNum = context.NextOutputNumber();
+            var fileName = $"{outputNum:D3}-{toolName}.txt";
+            var outputDir = Path.Combine(context.WorkspacePath, "tool_outputs");
 
-        var truncated = def.TruncateOutput
-            ? TruncateOutput(result, outputFilePath ?? fileName)
-            : ApplyHardCap(result.Output, _options.HardCapBytes);
+            outputFilePath = null;
+            try
+            {
+                Directory.CreateDirectory(outputDir);
+                var fullPath = Path.Combine(outputDir, fileName);
+                await File.WriteAllTextAsync(fullPath, result.Output, ct);
+                outputFilePath = $"tool_outputs/{fileName}";
+            }
+            catch (IOException ex)
+            {
+                _logger.LogError(ex, "Failed to write tool output file {File} for tool {Name}", fileName, toolName);
+            }
+
+            truncated = def.TruncateOutput
+                ? TruncateOutput(result, outputFilePath ?? fileName)
+                : ApplyHardCap(result.Output, _options.HardCapBytes);
+
+            lineCount = CountLines(result.Output);
+        }
 
         _logger.LogInformation("Tool {Name} completed: exit={Exit}, timed_out={TimedOut}, output_lines={Lines}, output_file={File}",
-            toolName, result.ExitCode, result.TimedOut, result.Output.Split('\n').Length, outputFilePath);
+            toolName, result.ExitCode, result.TimedOut, lineCount, outputFilePath);
 
         return (result, outputFilePath, truncated);
+    }
+
+    private static int CountLines(string text)
+    {
+        if (text.Length == 0) return 0;
+        var count = 1;
+        foreach (var ch in text.AsSpan())
+            if (ch == '\n') count++;
+        return count;
     }
 
     private string TruncateOutput(ToolResult result, string relativePath)
