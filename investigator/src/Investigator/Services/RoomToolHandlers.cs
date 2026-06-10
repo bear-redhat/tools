@@ -68,6 +68,7 @@ internal sealed class RoomToolHandlers
         if (callerSlot.Id == _leadId && _agents.TryGetValue(to, out var targetSlot)
             && targetSlot.Id != _leadId)
         {
+            targetSlot.HasReported = false;
             return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"Message sent to {to}."));
         }
 

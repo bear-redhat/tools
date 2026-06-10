@@ -25,7 +25,7 @@
                             <span class="step-source" title="@step.Source">
                                 @if (ConversationId is not null && IsLocalFile(step.Source))
                                 {
-                                    <a class="step-source-link" href="/api/conversations/@ConversationId/files/@step.Source" target="_blank">@StripPrefix(step.Source)</a>
+                                    <a class="step-source-link" href="/api/conversations/@ConversationId/files/@step.Source" target="_blank" data-enhance-nav="false">@StripPrefix(step.Source)</a>
                                 }
                                 else if (step.Source.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                                 {

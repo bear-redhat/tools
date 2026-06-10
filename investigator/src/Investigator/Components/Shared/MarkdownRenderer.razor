@@ -18,6 +18,9 @@ else
     private static readonly Regex s_blockWrapperRegex = new(
         @"^\s*<p>(.*)</p>\s*$", RegexOptions.Singleline | RegexOptions.Compiled);
 
+    private static readonly Regex s_apiLinkRegex = new(
+        @"<a\s+href=""(/api/[^""]*)"">", RegexOptions.Compiled);
+
     [Parameter, EditorRequired] public string Content { get; set; } = "";
     [Parameter] public bool Inline { get; set; }
 
@@ -34,6 +37,8 @@ else
         try
         {
             _html = Markdown.ToHtml(_lastContent, s_pipeline);
+            _html = s_apiLinkRegex.Replace(_html,
+                @"<a href=""$1"" target=""_blank"" data-enhance-nav=""false"">");
         }
         catch (ArgumentException)
         {

@@ -34,7 +34,7 @@
         @if (Entry.OutputFile is not null && ConversationId is not null && !IsReadonly)
         {
             <a class="log-entry-file-link" href="/api/conversations/@ConversationId/files/@Entry.OutputFile"
-               target="_blank" title="View full output">📄</a>
+               target="_blank" data-enhance-nav="false" title="View full output">📄</a>
         }
     </div>
 

@@ -81,7 +81,8 @@ public sealed class RemediationRoom : AgentRoom
                                 "current_value": { "type": "string", "description": "What the value is now (quote from assessment)" },
                                 "desired_value": { "type": "string", "description": "What it should be after the change" },
                                 "commands": { "type": "array", "items": { "type": "string" }, "description": "Exact commands the Client should run" },
-                                "warnings": { "type": "string", "description": "Precautions or risks" }
+                                "warnings": { "type": "string", "description": "Precautions or risks" },
+                                "patch_file": { "type": "string", "description": "Path to a patch file (relative to workspace), if one has already been prepared" }
                             },
                             "required": ["type"]
                         },

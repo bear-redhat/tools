@@ -132,7 +132,8 @@ internal sealed class SubAgentCoordinator
             ConversationId: ConversationId,
             SummarizerClient: _llmFactory.GetClient(summarizerProfile),
             SummarizerModelOptions: summarizerOptions,
-            TerminalToolNames: new HashSet<string> { "conclude", "message" });
+            TerminalToolNames: new HashSet<string> { "conclude", "message" },
+            ShouldSuppressNextTurn: () => subSlot.HasReported);
 
         subSlot.RunTask = Task.Run(() => _runAgent(subSlot, subConfig, ct, null), ct);
 

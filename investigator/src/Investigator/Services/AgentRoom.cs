@@ -132,6 +132,9 @@ public abstract class AgentRoom
     public Task RecallSubAgentAsync(string agentName)
     {
         if (!_agents.TryGetValue(agentName, out var slot) || slot.Id == LeadId) return Task.CompletedTask;
+        if (slot.Idle || slot.Dismissed || slot.Recalled) return Task.CompletedTask;
+
+        slot.Recalled = true;
 
         var message = $"Return to {RoomName} at once. Report back immediately with whatever "
             + "you have uncovered thus far. Call conclude now.";
@@ -162,6 +165,7 @@ public abstract class AgentRoom
     {
         var runner = new AgentRunner(_logger);
         var terminalTools = config.TerminalToolNames ?? new HashSet<string> { "conclude" };
+        var concludeOnly = new HashSet<string> { "conclude" };
 
         ValueTask Store(RoomEvent.LlmContext ctx)
         {
@@ -170,6 +174,10 @@ public abstract class AgentRoom
                 slot.Idle = false;
             else if (ctx.IsConcludedBatch || HasTerminalToolResult(ctx, terminalTools))
                 slot.Idle = true;
+
+            if (slot.Id != LeadId && HasTerminalToolResult(ctx, concludeOnly))
+                slot.HasReported = true;
+
             return ValueTask.CompletedTask;
         }
 
@@ -396,6 +404,8 @@ public abstract class AgentRoom
 
         public volatile bool StoodDown;
         public volatile bool Dismissed;
+        public volatile bool Recalled;
+        public volatile bool HasReported;
         public CancellationTokenSource? CurrentToolCts;
     }
 }

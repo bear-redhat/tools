@@ -42,21 +42,36 @@ public static class WorkspaceFileEndpoints
         AuthSettings authSettings,
         IOptions<AuthOptions> authOptions,
         HttpContext httpContext,
+        ILoggerFactory loggerFactory,
         string? path = null)
     {
+        var logger = loggerFactory.CreateLogger("Investigator.WorkspaceFileEndpoints");
+
         if (!CheckAuth(httpContext, authSettings, authOptions.Value))
-            return Results.Unauthorized();
+        {
+            logger.LogWarning("Unauthorized file list attempt for conversation {ConversationId}", conversationId);
+            return Results.Json(new { error = "unauthorized" }, statusCode: 401);
+        }
 
         var workspace = workspaceManager.FindWorkspacePath(conversationId);
         if (workspace is null)
-            return Results.NotFound();
+        {
+            logger.LogWarning("Workspace not found for conversation {ConversationId}", conversationId);
+            return Results.Json(new { error = "workspace_not_found", conversationId }, statusCode: 404);
+        }
 
         var relativePath = path ?? "tool_outputs";
         if (!TryResolveSafePath(workspace, relativePath, out var fullPath))
-            return Results.Forbid();
+        {
+            logger.LogWarning("Forbidden path {Path} for conversation {ConversationId}", relativePath, conversationId);
+            return Results.Json(new { error = "path_forbidden", path = relativePath }, statusCode: 403);
+        }
 
         if (!Directory.Exists(fullPath))
-            return Results.NotFound();
+        {
+            logger.LogWarning("Directory not found: {FullPath} for conversation {ConversationId}", fullPath, conversationId);
+            return Results.Json(new { error = "directory_not_found", path = relativePath }, statusCode: 404);
+        }
 
         var entries = new List<object>();
 
@@ -83,20 +98,35 @@ public static class WorkspaceFileEndpoints
         AuthSettings authSettings,
         IOptions<AuthOptions> authOptions,
         HttpContext httpContext,
+        ILoggerFactory loggerFactory,
         bool download = false)
     {
+        var logger = loggerFactory.CreateLogger("Investigator.WorkspaceFileEndpoints");
+
         if (!CheckAuth(httpContext, authSettings, authOptions.Value))
-            return Results.Unauthorized();
+        {
+            logger.LogWarning("Unauthorized file access for conversation {ConversationId}, path {FilePath}", conversationId, filePath);
+            return Results.Json(new { error = "unauthorized" }, statusCode: 401);
+        }
 
         var workspace = workspaceManager.FindWorkspacePath(conversationId);
         if (workspace is null)
-            return Results.NotFound();
+        {
+            logger.LogWarning("Workspace not found for conversation {ConversationId}", conversationId);
+            return Results.Json(new { error = "workspace_not_found", conversationId }, statusCode: 404);
+        }
 
         if (!TryResolveSafePath(workspace, filePath, out var fullPath))
-            return Results.Forbid();
+        {
+            logger.LogWarning("Forbidden path {FilePath} in workspace for conversation {ConversationId}", filePath, conversationId);
+            return Results.Json(new { error = "path_forbidden", path = filePath }, statusCode: 403);
+        }
 
         if (!File.Exists(fullPath))
-            return Results.NotFound();
+        {
+            logger.LogWarning("File not found: {FullPath} for conversation {ConversationId}", fullPath, conversationId);
+            return Results.Json(new { error = "file_not_found", path = filePath }, statusCode: 404);
+        }
 
         var contentType = ResolveContentType(fullPath);
         var fileName = Path.GetFileName(fullPath);

@@ -131,6 +131,7 @@ internal sealed class RemediationToolHandlers
         if (callerSlot.Id == LeadAgentId && _agents.TryGetValue(to, out var targetSlot)
             && targetSlot.Id != LeadAgentId)
         {
+            targetSlot.HasReported = false;
             return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"Message sent to {to}."));
         }
 

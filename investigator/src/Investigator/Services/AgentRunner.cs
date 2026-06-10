@@ -31,7 +31,8 @@ public sealed class AgentRunner
         ILlmClient? SummarizerClient = null,
         ModelOptions? SummarizerModelOptions = null,
         IReadOnlySet<string>? TerminalToolNames = null,
-        string? TextOnlyNudge = null);
+        string? TextOnlyNudge = null,
+        Func<bool>? ShouldSuppressNextTurn = null);
 
     public record ToolExecutionResult(
         string Output,
@@ -82,6 +83,12 @@ public sealed class AgentRunner
                 {
                     var msg = FormatEventAsLlmMessage(evt);
                     if (msg is not null) { messages.Add(msg); inboxBatch.Add(msg); }
+                }
+
+                if (inboxBatch.Count > 0 && config.ShouldSuppressNextTurn?.Invoke() == true)
+                {
+                    messages.RemoveRange(messages.Count - inboxBatch.Count, inboxBatch.Count);
+                    continue;
                 }
 
                 if (inboxBatch.Count > 0)

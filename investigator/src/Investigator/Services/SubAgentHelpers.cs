@@ -42,6 +42,11 @@ internal static class SubAgentHelpers
             return new AgentRunner.ToolExecutionResult(
                 $"{name} is already idle. Use dismiss to send them on their way, or message to give new instructions.");
 
+        if (slot.Recalled)
+            return new AgentRunner.ToolExecutionResult(
+                $"{name} has already been recalled.");
+
+        slot.Recalled = true;
         logger.LogInformation("{Label} {Name} recalled by {Lead}", subAgentLabel, name, leadName);
         return new AgentRunner.ToolExecutionResult(
             $"Word has been sent to {name}. They will return to {locationName} presently.");
