@@ -203,7 +203,8 @@ public sealed class RemediationRoom : AgentRoom
                   "Wolverine", "Jackal", "Dhole", "Harrier", "Merlin"],
         BuildPrompt: RemediationPrompts.BuildRangerSystemPrompt,
         LeadAgentName: "Intendant G. Langur",
-        ToolScope: ToolScope.Remediation);
+        ToolScope: ToolScope.Remediation,
+        BuildAnalystPrompt: RemediationPrompts.BuildAnalystSystemPrompt);
 
     private readonly RemediationToolHandlers _roomToolHandlers;
     private RemediationPlan _plan = new();
@@ -211,10 +212,10 @@ public sealed class RemediationRoom : AgentRoom
     public override string LeadId => "langur";
     public override string LeadName => "Intendant G. Langur";
     protected override string RoomName => "The Canopy Post";
-    protected override string SubAgentLabel => "Ranger";
-    protected override string SubAgentExitMessage => "Ranger exited without reporting.";
+    protected override string SubAgentLabel => "operative";
+    protected override string SubAgentExitMessage => "An operative exited without reporting.";
     protected override string AllSubAgentsFinishedMessage =>
-        "All Rangers have reported back. Review their findings and proceed with the plan.";
+        "All operatives have reported back. Review their findings and proceed with the plan.";
 
     public RemediationRoom(
         ILlmClientFactory llmFactory,
@@ -346,31 +347,31 @@ public sealed class RemediationRoom : AgentRoom
 
         tools.Add(new ToolDefinition(
             Name: "delegate",
-            Description: "Dispatch one of your Canopy Post Rangers. Non-blocking -- returns immediately with their assigned name. They investigate independently and report back as a message. Provide a role, task, and optionally a model profile.",
+            Description: "Dispatch an operative -- a Ranger (tier: field) for reconnaissance, or an Analyst (tier: analyst) for domain-level assessment. Non-blocking -- returns immediately with their assigned name. Use cc to copy a Ranger's report to an Analyst. Use briefing to hand off existing intelligence.",
             ParameterSchema: _delegateSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: CheckAgentsToolName,
-            Description: "Review the status of dispatched Rangers. NOT a polling tool -- call only if you have genuinely lost track of which Rangers are afield. You will be woken automatically when Rangers report; do not call this repeatedly to check.",
+            Description: "Review the registry of operatives in the field -- Rangers and Analysts, their tasks, who dispatched them, and CC targets. Consult before dispatching to avoid duplicate work. NOT a polling tool.",
             ParameterSchema: s_emptySchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: MessageToolName,
-            Description: "Send a message to a Ranger, or to the user. When messaging a Ranger, they resume their work with your reply. When messaging the user, you will wait for their response.",
+            Description: "Send a message to an operative (Ranger or Analyst), or to the user. When messaging an operative, they resume their work with your reply. When messaging the user, you will wait for their response.",
             ParameterSchema: s_messageSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: DismissToolName,
-            Description: "Dismiss a Ranger from the post once they have reported. They depart The Canopy Post and cannot be contacted again. If the Ranger is still abroad, use recall to summon them back first.",
+            Description: "Dismiss an operative from the post once they have reported. They depart The Canopy Post and cannot be contacted again. If they are still abroad, use recall first.",
             ParameterSchema: s_dismissRangerSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: RecallToolName,
-            Description: "Recall a Ranger to The Canopy Post. They will report back immediately with whatever they have uncovered. Use when you no longer require their reconnaissance or need their interim findings now.",
+            Description: "Recall an operative to The Canopy Post. They will report back immediately with whatever they have uncovered. Use when you no longer require their work or need their interim findings now.",
             ParameterSchema: s_recallRangerSchema,
             DefaultTimeout: TimeSpan.Zero));
 
@@ -389,7 +390,7 @@ public sealed class RemediationRoom : AgentRoom
                 if (_roomToolHandlers.HasActiveRangers())
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), ct);
-                    response += "\n\nRangers are still at work. Use your other tools or wait -- you will be woken when a Ranger reports.";
+                    response += "\n\nOperatives are still at work. You will be woken when one reports.";
                 }
                 return new AgentRunner.ToolExecutionResult(response);
             }
@@ -408,9 +409,9 @@ public sealed class RemediationRoom : AgentRoom
             case MessageToolName:
                 return await _roomToolHandlers.HandleMessage(caller, input);
             case DismissToolName:
-                return _roomToolHandlers.HandleDismiss(input);
+                return _roomToolHandlers.HandleDismiss(caller, input);
             case RecallToolName:
-                return _roomToolHandlers.HandleRecall(input);
+                return _roomToolHandlers.HandleRecall(caller, input);
             default:
                 return null;
         }

@@ -65,38 +65,34 @@ internal sealed class RoomToolHandlers
     {
         var to = input.TryGetProperty("to", out var toVal) ? toVal.GetString() ?? "" : "";
 
-        if (callerSlot.Id == _leadId && _agents.TryGetValue(to, out var targetSlot)
-            && targetSlot.Id != _leadId)
+        if (to is "user" or "client")
+        {
+            if (callerSlot.Id == _leadId)
+                return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "Message sent to the client."));
+            return Task.FromResult(new AgentRunner.ToolExecutionResult(
+                Output: "Only the lead may message the client directly. Message your dispatcher instead."));
+        }
+
+        if (_agents.TryGetValue(to, out var targetSlot) && targetSlot.Id != callerSlot.Id)
         {
             targetSlot.HasReported = false;
             return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"Message sent to {to}."));
         }
 
-        if (callerSlot.Id == _leadId && to is "user" or "client")
-        {
-            return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "Message sent to the client."));
-        }
-
-        if (callerSlot.Id != _leadId)
-        {
-            return Task.FromResult(new AgentRunner.ToolExecutionResult(
-                Output: "Message delivered to Little Bear. Wait for a reply."));
-        }
-
         return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"Unknown recipient '{to}'."));
     }
 
-    internal AgentRunner.ToolExecutionResult HandleDismiss(JsonElement input) =>
-        SubAgentHelpers.Dismiss(_agents, _leadId, input, "Scout", "Little Bear", _logger);
+    internal AgentRunner.ToolExecutionResult HandleDismiss(AgentRoom.AgentSlot caller, JsonElement input) =>
+        SubAgentHelpers.Dismiss(_agents, _leadId, caller.Id, input, "operative", "Little Bear", _logger);
 
-    internal AgentRunner.ToolExecutionResult HandleRecall(JsonElement input) =>
-        SubAgentHelpers.Recall(_agents, _leadId, input, "Scout", "Banyan Row", _logger, "Little Bear");
+    internal AgentRunner.ToolExecutionResult HandleRecall(AgentRoom.AgentSlot caller, JsonElement input) =>
+        SubAgentHelpers.Recall(_agents, _leadId, caller.Id, input, "operative", "Banyan Row", _logger, caller.Name);
 
     internal bool HasActiveScouts() =>
         SubAgentHelpers.HasActiveSubAgents(_agents, _leadId);
 
     internal string BuildCheckAgentsResponse() =>
-        SubAgentHelpers.BuildCheckAgentsResponse(_agents, _leadId, "Banyan Row Scouts", "Scout");
+        SubAgentHelpers.BuildCheckAgentsResponse(_agents, _leadId, "Agents afield", "operative");
 
     internal (EvidenceChain?, FixSuggestion?, string Summary) ParseConcludeParams(JsonElement input)
     {

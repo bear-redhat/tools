@@ -95,17 +95,18 @@ public sealed class InvestigationRoom : AgentRoom
                   "Newt", "Toad", "Pipit", "Dunnock", "Fieldfare"],
         BuildPrompt: InvestigationPrompts.BuildScoutSystemPrompt,
         LeadAgentName: "Little Bear",
-        ToolScope: ToolScope.Investigation);
+        ToolScope: ToolScope.Investigation,
+        BuildAnalystPrompt: InvestigationPrompts.BuildAnalystSystemPrompt);
 
     private readonly RoomToolHandlers _roomToolHandlers;
 
     public override string LeadId => "little-bear";
     public override string LeadName => "Little Bear";
     protected override string RoomName => "Banyan Row";
-    protected override string SubAgentLabel => "Scout";
-    protected override string SubAgentExitMessage => "Scout exited without reporting.";
+    protected override string SubAgentLabel => "operative";
+    protected override string SubAgentExitMessage => "An operative exited without reporting.";
     protected override string AllSubAgentsFinishedMessage =>
-        "All Scouts have reported back. Conclude now with the evidence you have.";
+        "All operatives have reported back. Conclude now with the evidence you have.";
 
     public InvestigationRoom(
         ILlmClientFactory llmFactory,
@@ -196,13 +197,13 @@ public sealed class InvestigationRoom : AgentRoom
 
         tools.Add(new ToolDefinition(
             Name: "delegate",
-            Description: "Dispatch one of your Banyan Row Scouts. Non-blocking -- returns immediately with their assigned name. They investigate independently and report back as a message. Provide a role, task, and optionally a model profile.",
+            Description: "Dispatch an operative -- a Scout (tier: field) for data gathering, or an Analyst (tier: analyst) for domain-level reasoning. Non-blocking -- returns immediately with their assigned name. Use cc to copy a Scout's report to an Analyst. Use briefing to hand off existing intelligence.",
             ParameterSchema: _delegateSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: CheckAgentsToolName,
-            Description: "Review the status of dispatched Scouts. NOT a polling tool -- call only if you have genuinely lost track of which Scouts are afield. You will be woken automatically when Scouts report; do not call this repeatedly to check.",
+            Description: "Review the registry of operatives in the field -- Scouts and Analysts, their tasks, who dispatched them, and CC targets. Consult before dispatching to avoid duplicate work. NOT a polling tool.",
             ParameterSchema: s_emptySchema,
             DefaultTimeout: TimeSpan.Zero));
 
@@ -214,19 +215,19 @@ public sealed class InvestigationRoom : AgentRoom
 
         tools.Add(new ToolDefinition(
             Name: MessageToolName,
-            Description: "Send a message to a Scout, or to the user. When messaging a Scout, they resume their work with your reply. When messaging the user, you will wait for their response.",
+            Description: "Send a message to an operative (Scout or Analyst), or to the user. When messaging an operative, they resume their work with your reply. When messaging the user, you will wait for their response.",
             ParameterSchema: s_messageSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: DismissToolName,
-            Description: "Dismiss a Scout from the room once they have reported. They depart Banyan Row and cannot be contacted again. If the Scout is still abroad, use recall to summon them back first.",
+            Description: "Dismiss an operative from the room once they have reported. They depart Banyan Row and cannot be contacted again. If they are still abroad, use recall first.",
             ParameterSchema: s_dismissScoutSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: RecallToolName,
-            Description: "Recall a Scout to Banyan Row. They will report back immediately with whatever they have uncovered. Use when you no longer require their investigation or need their interim findings now.",
+            Description: "Recall an operative to Banyan Row. They will report back immediately with whatever they have uncovered. Use when you no longer require their work or need their interim findings now.",
             ParameterSchema: s_recallScoutSchema,
             DefaultTimeout: TimeSpan.Zero));
 
@@ -245,7 +246,7 @@ public sealed class InvestigationRoom : AgentRoom
                 if (_roomToolHandlers.HasActiveScouts())
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), ct);
-                    response += "\n\nScouts are still at work. Use your other tools or wait -- you will be woken when a Scout reports.";
+                    response += "\n\nOperatives are still at work. You will be woken when one reports.";
                 }
                 return new AgentRunner.ToolExecutionResult(response);
             }
@@ -256,9 +257,9 @@ public sealed class InvestigationRoom : AgentRoom
             case MessageToolName:
                 return await _roomToolHandlers.HandleMessage(caller, input);
             case DismissToolName:
-                return _roomToolHandlers.HandleDismiss(input);
+                return _roomToolHandlers.HandleDismiss(caller, input);
             case RecallToolName:
-                return _roomToolHandlers.HandleRecall(input);
+                return _roomToolHandlers.HandleRecall(caller, input);
             default:
                 return null;
         }

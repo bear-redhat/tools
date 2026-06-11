@@ -128,22 +128,18 @@ internal sealed class RemediationToolHandlers
     {
         var to = input.TryGetProperty("to", out var toVal) ? toVal.GetString() ?? "" : "";
 
-        if (callerSlot.Id == LeadAgentId && _agents.TryGetValue(to, out var targetSlot)
-            && targetSlot.Id != LeadAgentId)
+        if (to is "user" or "client")
+        {
+            if (callerSlot.Id == LeadAgentId)
+                return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "Message sent to the client."));
+            return Task.FromResult(new AgentRunner.ToolExecutionResult(
+                Output: "Only the Intendant may address the client directly. Message your dispatcher instead."));
+        }
+
+        if (_agents.TryGetValue(to, out var targetSlot) && targetSlot.Id != callerSlot.Id)
         {
             targetSlot.HasReported = false;
             return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"Message sent to {to}."));
-        }
-
-        if (callerSlot.Id == LeadAgentId && to is "user" or "client")
-        {
-            return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "Message sent to the client."));
-        }
-
-        if (callerSlot.Id != LeadAgentId)
-        {
-            return Task.FromResult(new AgentRunner.ToolExecutionResult(
-                Output: $"Message delivered to {LeadAgentName}. Wait for a reply."));
         }
 
         return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"Unknown recipient '{to}'."));
@@ -151,13 +147,13 @@ internal sealed class RemediationToolHandlers
 
     // ── Dismiss ranger ──────────────────────────────────────────────────
 
-    internal AgentRunner.ToolExecutionResult HandleDismiss(JsonElement input) =>
-        SubAgentHelpers.Dismiss(_agents, LeadAgentId, input, "Ranger", LeadAgentName, _logger);
+    internal AgentRunner.ToolExecutionResult HandleDismiss(AgentRoom.AgentSlot caller, JsonElement input) =>
+        SubAgentHelpers.Dismiss(_agents, LeadAgentId, caller.Id, input, "operative", LeadAgentName, _logger);
 
-    // ── Recall ranger ───────────────────────────────────────────────────
+    // ── Recall operative ─────────────────────────────────────────────────
 
-    internal AgentRunner.ToolExecutionResult HandleRecall(JsonElement input) =>
-        SubAgentHelpers.Recall(_agents, LeadAgentId, input, "Ranger", "the Canopy Post", _logger, LeadAgentName);
+    internal AgentRunner.ToolExecutionResult HandleRecall(AgentRoom.AgentSlot caller, JsonElement input) =>
+        SubAgentHelpers.Recall(_agents, LeadAgentId, caller.Id, input, "operative", "the Canopy Post", _logger, caller.Name);
 
     // ── Status queries ──────────────────────────────────────────────────
 
@@ -165,7 +161,7 @@ internal sealed class RemediationToolHandlers
         SubAgentHelpers.HasActiveSubAgents(_agents, LeadAgentId);
 
     internal string BuildCheckAgentsResponse() =>
-        SubAgentHelpers.BuildCheckAgentsResponse(_agents, LeadAgentId, "Canopy Post Rangers", "Ranger");
+        SubAgentHelpers.BuildCheckAgentsResponse(_agents, LeadAgentId, "Agents afield", "operative");
 
     // ── Parsing helpers ─────────────────────────────────────────────────
 

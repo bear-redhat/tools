@@ -99,7 +99,7 @@ public abstract class AgentRoom
         _subAgentCoordinator = new SubAgentCoordinator(
             subAgentConfig, _agents, llmFactory, toolRegistry, agentOptions,
             _toolSections, logger,
-            RunAgentWithRouting, subAgentConcludeSchema, pipeline.Bus);
+            RunAgentWithRouting, subAgentConcludeSchema, _delegateSchema, pipeline.Bus);
     }
 
     protected IReadOnlyList<ToolDefinition> GetRegistryToolDefinitions() =>
@@ -257,7 +257,7 @@ public abstract class AgentRoom
         }
 
         if (toolName == DelegateToolName)
-            return await _subAgentCoordinator.HandleDelegate(input, ct);
+            return await _subAgentCoordinator.HandleDelegate(input, ct, callerSlot.Name, callerSlot.Id);
 
         var roomResult = await HandleRoomToolAsync(callerSlot, callerConfig, toolName, input, stepId, ct);
         if (roomResult is not null)
@@ -379,7 +379,10 @@ public abstract class AgentRoom
             "properties": {
                 "role": { "type": "string", "description": "Brief role description" },
                 "task": { "type": "string", "description": "Specific task to perform. Be precise about what to investigate and what to report back." },
-                "model": { "type": "string", "description": "{{modelDesc}}" }
+                "model": { "type": "string", "description": "{{modelDesc}}" },
+                "tier": { "type": "string", "enum": ["field", "analyst"], "default": "field", "description": "Agent tier. 'field' for data-gathering operatives; 'analyst' for senior analytical agents who can delegate their own field agents and synthesize across reports." },
+                "cc": { "type": "array", "items": { "type": "string" }, "description": "Agent names to receive a copy of this agent's conclude report. Use to keep an Analyst informed of field findings in their domain." },
+                "briefing": { "type": "array", "items": { "type": "object", "properties": { "title": { "type": "string" }, "content": { "type": "string" } }, "required": ["title", "content"] }, "description": "Documents to hand off as initial context -- field reports, case file excerpts, evidence, prior findings." }
             },
             "required": ["role", "task"]
         }
@@ -392,6 +395,10 @@ public abstract class AgentRoom
         public required string Id { get; init; }
         public required string Name { get; init; }
         public required string Role { get; init; }
+        public string? DispatcherId { get; init; }
+        public string? TaskDescription { get; init; }
+        public IReadOnlyList<string> CcTargets { get; init; } = [];
+        public bool CanDelegate { get; init; }
         public ChannelReader<RoomEvent>? Inbox { get; set; }
         public Task? RunTask { get; set; }
 
