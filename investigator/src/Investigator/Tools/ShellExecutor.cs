@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Investigator.Contracts;
 using Investigator.Models;
+using Investigator.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -16,6 +17,9 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
     private ToolDefinition _definition = null!;
     private readonly ShellOptions _options;
     private readonly int _hardCapBytes;
+    private readonly int _headLines;
+    private readonly int _tailLines;
+    private readonly OutputSummarizer _summarizer;
 
     public bool IsPowerShell => _isPowerShell;
 
@@ -38,10 +42,13 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             """;
     }
 
-    public ShellExecutor(IOptions<ShellOptions> options, IOptions<ToolOutputOptions> toolOutputOptions)
+    public ShellExecutor(IOptions<ShellOptions> options, IOptions<ToolOutputOptions> toolOutputOptions, OutputSummarizer summarizer)
     {
         _options = options.Value;
         _hardCapBytes = toolOutputOptions.Value.HardCapBytes;
+        _headLines = toolOutputOptions.Value.HeadLines;
+        _tailLines = toolOutputOptions.Value.TailLines;
+        _summarizer = summarizer;
     }
 
     public Task RegisterAsync(CancellationToken ct = default)
@@ -186,7 +193,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
         }
 
         var (outputPath, outputRelative) = context.AllocateOutputFile("run_shell");
-        var headTail = new HeadTailBuffer(headLines: 20, tailLines: 10);
+        var headTail = new HeadTailBuffer(headLines: 50, tailLines: 20);
         StreamWriter? fileWriter = null;
         Process? proc = null;
         try
@@ -231,12 +238,13 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             if (proc.ExitCode != 0)
                 context.Logger.LogWarning("run_shell: command '{Command}' exited with code {Code}", command, proc.ExitCode);
 
-            var truncated = headTail.BuildRaw();
-            if (truncated.Length > _hardCapBytes)
+            var truncated = headTail.Build(proc.ExitCode, outputRelative);
+            if (headTail.LineCount > _headLines + _tailLines)
             {
-                context.Logger.LogWarning("Tool output exceeded hard cap ({Length} > {Max}), truncating",
-                    truncated.Length, _hardCapBytes);
-                truncated = truncated[.._hardCapBytes] + $"\n... [truncated at {_hardCapBytes / 1024}KB hard cap]";
+                var fullText = await ReadUpToAsync(outputPath, ct);
+                var summary = await _summarizer.SummarizeAsync(fullText, ct);
+                if (summary is not null)
+                    truncated = OutputSummarizer.InsertSummary(truncated, summary);
             }
             return new ToolResult(truncated, ExitCode: proc.ExitCode, ReproCommand: command,
                 LineCount: headTail.LineCount, OutputFile: outputRelative);
@@ -251,7 +259,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
                 await fileWriter.FlushAsync();
             }
             headTail.Add("[timed out]");
-            var truncated = headTail.BuildRaw();
+            var truncated = headTail.Build(-1, outputRelative);
             return new ToolResult(truncated, ExitCode: -1, TimedOut: true, ReproCommand: command,
                 LineCount: headTail.LineCount, OutputFile: outputRelative);
         }
@@ -285,5 +293,13 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
     {
         var name = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
         return name is "powershell" or "pwsh";
+    }
+
+    private static async Task<string> ReadUpToAsync(string path, CancellationToken ct, int maxChars = 4000)
+    {
+        using var reader = new StreamReader(path, Encoding.UTF8);
+        var buffer = new char[maxChars];
+        var read = await reader.ReadBlockAsync(buffer, ct);
+        return new string(buffer, 0, read);
     }
 }

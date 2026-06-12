@@ -39,6 +39,7 @@ public abstract class AgentRoom
     public RoomEventPipeline Pipeline { get; }
     public RoomEventBus Bus => Pipeline.Bus;
     public TranscriptStore TranscriptStore { get; }
+    public RoomState? RoomStateRef { get; set; }
 
     public abstract string LeadId { get; }
     public abstract string LeadName { get; }
@@ -106,6 +107,32 @@ public abstract class AgentRoom
         _scope.HasValue
             ? _toolRegistry.GetToolDefinitions(_scope.Value)
             : _toolRegistry.GetToolDefinitions();
+
+    protected AgentSlot ResumeSubAgent(IncompleteAgent agent, CancellationToken ct) =>
+        _subAgentCoordinator.ResumeAgent(agent, ct);
+
+    protected void SetRoomPhase(RoomPhase phase)
+    {
+        if (RoomStateRef is not null)
+        {
+            lock (RoomStateRef.Lock)
+            {
+                RoomStateRef.Phase = phase;
+            }
+        }
+    }
+
+    protected async Task MonitorRecoveryAsync(List<AgentSlot> slots, CancellationToken ct)
+    {
+        try
+        {
+            await Task.WhenAll(slots.Select(s => s.RunTask ?? Task.CompletedTask));
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { }
+
+        SetRoomPhase(RoomPhase.Active);
+    }
 
     protected void InitializeRoom(string workspacePath, CancellationToken ct,
         string? userId = null, string? conversationId = null, TimeZoneInfo? clientTimeZone = null)

@@ -16,6 +16,9 @@ public sealed class RoomEventPipeline
 
     public RoomEventBus Bus => _bus;
 
+    public T? GetEnricher<T>() where T : class, IEventEnricher =>
+        _enrichers.OfType<T>().FirstOrDefault();
+
     public async ValueTask<int> EmitAsync(RoomEvent evt, CancellationToken ct = default)
     {
         evt = AssignSeq(evt);

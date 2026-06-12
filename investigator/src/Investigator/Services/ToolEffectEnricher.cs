@@ -12,6 +12,17 @@ public sealed class ToolEffectEnricher : IEventEnricher
 
     public ToolEffectEnricher(string leadId) => _leadId = leadId;
 
+    internal void PreloadDispatchers(
+        IEnumerable<(string agentId, string dispatcherId, List<string>? ccTargets)> agents)
+    {
+        foreach (var (agentId, dispatcherId, ccTargets) in agents)
+        {
+            _dispatcherOf[agentId] = dispatcherId;
+            if (ccTargets is { Count: > 0 })
+                _ccTargetsOf[agentId] = ccTargets;
+        }
+    }
+
     public ValueTask<IReadOnlyList<RoomEvent>> EnrichAsync(RoomEvent evt, CancellationToken ct)
     {
         if (evt is RoomEvent.ToolRequest tr)

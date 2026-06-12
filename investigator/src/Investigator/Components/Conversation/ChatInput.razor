@@ -19,13 +19,13 @@
     <div class="chat-input-row">
         <textarea @ref="_textareaRef" @bind="_message" @bind:event="oninput"
                   @onkeydown="OnKeyDown"
-                  placeholder="Describe your case..."></textarea>
+                  placeholder="Describe your case..." disabled="@Disabled"></textarea>
         <div class="chat-input-buttons">
             @if (IsInvestigating)
             {
                 <button class="btn-cancel" @onclick="CancelInvestigation" disabled="@_cancelling">Cancel</button>
             }
-            <button class="btn-send" @onclick="Send" disabled="@string.IsNullOrWhiteSpace(_message)">Send</button>
+            <button class="btn-send" @onclick="Send" disabled="@(Disabled || string.IsNullOrWhiteSpace(_message))">Send</button>
         </div>
     </div>
 </div>
@@ -36,6 +36,7 @@
     [Parameter] public bool IsInvestigating { get; set; }
     [Parameter] public bool HasWorkingAgents { get; set; }
     [Parameter] public bool IsRemediation { get; set; }
+    [Parameter] public bool Disabled { get; set; }
 
     private ElementReference _textareaRef;
     private string _message = "";
@@ -59,7 +60,7 @@
 
     private async Task Send()
     {
-        if (string.IsNullOrWhiteSpace(_message)) return;
+        if (Disabled || string.IsNullOrWhiteSpace(_message)) return;
         var msg = _message;
         _message = "";
         await OnSend.InvokeAsync(msg);

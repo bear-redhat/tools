@@ -10,6 +10,11 @@ public sealed class TranscriptStore
         new UnboundedChannelOptions { SingleReader = true });
     private readonly object _lock = new();
 
+    public void SeedHistory(IEnumerable<RoomEvent> events)
+    {
+        lock (_lock) _events.AddRange(events);
+    }
+
     public void Append(RoomEvent evt)
     {
         lock (_lock) _events.Add(evt);

@@ -87,6 +87,8 @@ public static class ServiceCollectionExtensions
             return new GcsClientHolder(client);
         });
 
+        services.AddSingleton<OutputSummarizer>();
+
         services.AddSingleton<ToolRegistry>(sp =>
         {
             var logger = sp.GetRequiredService<ILogger<ToolRegistry>>();
@@ -104,6 +106,7 @@ public static class ServiceCollectionExtensions
                 typeof(ProwTool),
                 typeof(PrometheusTool),
                 typeof(DraftPatchTool),
+                typeof(ReadOutputTool),
             };
 
             var pluginOpts = sp.GetRequiredService<IOptions<PluginOptions>>().Value;
@@ -111,7 +114,8 @@ public static class ServiceCollectionExtensions
                 toolTypes.AddRange(PluginLoader.DiscoverToolTypes(pluginOpts.Directory, logger));
 
             return new ToolRegistry(sp, toolTypes, logger,
-                sp.GetRequiredService<IOptions<ToolOutputOptions>>());
+                sp.GetRequiredService<IOptions<ToolOutputOptions>>(),
+                sp.GetRequiredService<OutputSummarizer>());
         });
 
         return services;

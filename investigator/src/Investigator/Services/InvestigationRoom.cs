@@ -103,10 +103,10 @@ public sealed class InvestigationRoom : AgentRoom
     public override string LeadId => "little-bear";
     public override string LeadName => "Little Bear";
     protected override string RoomName => "Banyan Row";
-    protected override string SubAgentLabel => "operative";
-    protected override string SubAgentExitMessage => "An operative exited without reporting.";
+    protected override string SubAgentLabel => "Scout";
+    protected override string SubAgentExitMessage => "A Scout exited without reporting.";
     protected override string AllSubAgentsFinishedMessage =>
-        "All operatives have reported back. Conclude now with the evidence you have.";
+        "All Scouts have reported back. Conclude now with the evidence you have.";
 
     public InvestigationRoom(
         ILlmClientFactory llmFactory,
@@ -170,10 +170,40 @@ public sealed class InvestigationRoom : AgentRoom
                 && to.GetString() is "user" or "client");
 
         List<LlmMessage>? initialMessages = null;
+        List<AgentSlot>? resumedSlots = null;
         if (eventLog is { Count: > 0 })
+        {
+            var incomplete = EventLogScanner.FindIncompleteAgents(eventLog, LeadId);
+            if (incomplete.Count > 0)
+            {
+                var enricher = Pipeline.GetEnricher<ToolEffectEnricher>();
+                enricher?.PreloadDispatchers(incomplete.Select(a =>
+                    (a.Id, a.DispatcherId, a.CcTargets as List<string>)));
+
+                resumedSlots = [];
+                foreach (var agent in incomplete)
+                    resumedSlots.Add(ResumeSubAgent(agent, ct));
+            }
             initialMessages = LlmContextApplier.Replay(eventLog, LeadId);
+        }
+
+        if (resumedSlots is { Count: > 0 })
+            SetRoomPhase(RoomPhase.Recovering);
+        else
+            SetRoomPhase(RoomPhase.Active);
 
         leadSlot.RunTask = RunAgentWithRouting(leadSlot, runnerConfig, ct, initialMessages);
+
+        if (resumedSlots is { Count: > 0 })
+        {
+            foreach (var slot in resumedSlots)
+            {
+                await Pipeline.EmitAsync(new RoomEvent.TextMessage(0, "system", DateTimeOffset.UtcNow,
+                    "[System restart] Your previous operation was interrupted. Resume your assignment and report when done.")
+                    { To = slot.Id }, ct);
+            }
+            _ = MonitorRecoveryAsync(resumedSlots, ct);
+        }
 
         try
         {

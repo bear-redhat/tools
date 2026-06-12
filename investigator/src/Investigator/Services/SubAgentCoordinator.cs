@@ -266,6 +266,86 @@ internal sealed class SubAgentCoordinator
         }
         """).RootElement.Clone();
 
+    internal AgentRoom.AgentSlot ResumeAgent(IncompleteAgent agent, CancellationToken ct)
+    {
+        _usedAgentNames.Add(agent.Name);
+
+        var modelName = agent.Model;
+        if (agent.IsAnalyst && modelName is null)
+            modelName = _llmFactory.PrimaryProfileName;
+
+        ILlmClient subClient;
+        string resolvedModel;
+        try
+        {
+            _llmFactory.GetModelOptions(modelName);
+            subClient = _llmFactory.GetClient(modelName);
+            resolvedModel = modelName ?? _llmFactory.DefaultProfileName;
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Resumed agent '{Name}' model '{Model}' unavailable, falling back to default", agent.Name, modelName);
+            subClient = _llmFactory.GetClient();
+            resolvedModel = _llmFactory.DefaultProfileName;
+        }
+
+        var dispatcherName = _agents.Values.FirstOrDefault(s => s.Id == agent.DispatcherId)?.Name
+            ?? _config.LeadAgentName;
+
+        _logger.LogInformation("Resuming {Label} {Name} ({Role}) using {Model}: {Task}",
+            agent.IsAnalyst ? "Analyst" : _config.Label, agent.Name, agent.Role, resolvedModel, agent.Task);
+
+        var subSlot = new AgentRoom.AgentSlot
+        {
+            Id = agent.Id,
+            Name = agent.Name,
+            Role = agent.Role,
+            DispatcherId = agent.DispatcherId,
+            TaskDescription = agent.Task,
+            CcTargets = agent.CcTargets.ToList(),
+            CanDelegate = agent.IsAnalyst,
+            Inbox = _bus.Subscribe(agent.Id, evt => evt.To == agent.Id && evt is not RoomEvent.ToolResponse),
+        };
+        _agents[agent.Name] = subSlot;
+
+        var buildPrompt = agent.IsAnalyst && _config.BuildAnalystPrompt is not null
+            ? _config.BuildAnalystPrompt
+            : _config.BuildPrompt;
+        var tools = agent.IsAnalyst ? BuildAnalystTools(dispatcherName) : BuildSubAgentTools(dispatcherName);
+
+        var modelOptions = _llmFactory.GetModelOptions(resolvedModel);
+        var summarizerProfile = _llmFactory.DefaultProfileName;
+        var summarizerOptions = _llmFactory.GetModelOptions(summarizerProfile);
+        var subConfig = new AgentRunner.Config(
+            Id: subSlot.Id,
+            Name: agent.Name,
+            Role: agent.Role,
+            SystemPrompt: buildPrompt(agent.Name, agent.Role, agent.Task, WorkspacePath, _toolSections, ConversationId, ClientTimeZone),
+            LlmClient: subClient,
+            Tools: tools,
+            MaxToolCalls: agent.IsAnalyst ? _agentOptions.MaxToolCalls : _agentOptions.SubAgentMaxToolCalls,
+            MaxRetries: _agentOptions.LlmRetries,
+            WorkspacePath: WorkspacePath,
+            CompactionMaxTokens: agent.IsAnalyst ? modelOptions.MaxTokens * 4 : null,
+            ThinkingBudget: modelOptions.ThinkingBudget,
+            ContextWindowTokens: modelOptions.ContextWindowTokens,
+            ModelProfile: resolvedModel,
+            InputPricePerMToken: modelOptions.InputPricePerMToken,
+            OutputPricePerMToken: modelOptions.OutputPricePerMToken,
+            CacheReadPricePerMToken: modelOptions.CacheReadPricePerMToken,
+            CacheCreationPricePerMToken: modelOptions.CacheCreationPricePerMToken,
+            UserId: UserId,
+            ConversationId: ConversationId,
+            SummarizerClient: _llmFactory.GetClient(summarizerProfile),
+            SummarizerModelOptions: summarizerOptions,
+            TerminalToolNames: new HashSet<string> { "conclude", "message" },
+            ShouldSuppressNextTurn: () => subSlot.HasReported);
+
+        subSlot.RunTask = Task.Run(() => _runAgent(subSlot, subConfig, ct, agent.ReplayedMessages), ct);
+
+        return subSlot;
+    }
+
     private string GenerateAgentName()
     {
         for (var attempt = 0; attempt < 100; attempt++)

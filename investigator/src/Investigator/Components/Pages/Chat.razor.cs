@@ -349,6 +349,7 @@ public partial class Chat : IAsyncDisposable
     private async Task OnSendAsync(string message)
     {
         if (!_isOwner || _session is null || string.IsNullOrWhiteSpace(message)) return;
+        if (ActiveView.Phase == RoomPhase.Recovering) return;
 
         if (_activeRoom == "remediation")
         {

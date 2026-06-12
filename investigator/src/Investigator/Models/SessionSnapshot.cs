@@ -9,6 +9,8 @@ public sealed class SessionSnapshot
     public DateTimeOffset StartedAt { get; init; }
     public List<RoomEvent> Events { get; init; } = [];
     public List<RoomEvent> RemediationEvents { get; init; } = [];
+    public RoomPhase InvestigationPhase { get; init; } = RoomPhase.Idle;
+    public RoomPhase RemediationPhase { get; init; } = RoomPhase.Idle;
     public CaseFile? CaseFile { get; init; }
 
     public static SessionSnapshot FromSession(ConversationSession session)
@@ -24,6 +26,8 @@ public sealed class SessionSnapshot
             RemediationEvents = session.RemediationTranscriptStore?.Events.ToList()
                 ?? session.LoadedRemediationEvents?.ToList()
                 ?? [],
+            InvestigationPhase = session.Investigation.Phase,
+            RemediationPhase = session.Remediation?.Phase ?? RoomPhase.Idle,
             CaseFile = session.Remediation?.CaseFile,
         };
     }
@@ -35,11 +39,13 @@ public sealed class SessionSnapshot
         session.StartedAt = StartedAt;
 
         ReplayIntoRoom(Events, "little-bear", session.Investigation);
+        session.Investigation.Phase = InvestigationPhase;
 
         if (CaseFile is not null)
         {
             session.AddRemediationRoom(CaseFile);
             ReplayIntoRoom(RemediationEvents, "langur", session.Remediation!);
+            session.Remediation!.Phase = RemediationPhase;
         }
 
         session.LoadedInvestigationEvents = Events;

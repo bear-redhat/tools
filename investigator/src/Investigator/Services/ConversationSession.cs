@@ -26,6 +26,7 @@ public sealed class SessionView
     public IReadOnlyList<LogEntryModel> LogEntries { get; init; } = [];
     public bool IsInvestigating { get; init; }
     public bool HasWorkingAgents { get; init; }
+    public RoomPhase Phase { get; init; }
     public IReadOnlyDictionary<string, AgentUsage> UsageByAgent { get; init; }
         = new Dictionary<string, AgentUsage>();
     public decimal TotalCost { get; init; }
@@ -59,6 +60,7 @@ public sealed class RoomState
     public IReadOnlyDictionary<string, AgentUsage> UsageByAgent => _usageByAgent;
     public bool IsInvestigating { get; private set; }
     public bool HasWorkingAgents { get; private set; }
+    public RoomPhase Phase { get; internal set; } = RoomPhase.Idle;
     public RemediationPlan? RemediationPlan { get; private set; }
     public CaseFile? CaseFile { get; init; }
     public object Lock { get; } = new();
@@ -110,6 +112,7 @@ public sealed class RoomState
             LogEntries = _logEntries.ToArray(),
             IsInvestigating = IsInvestigating,
             HasWorkingAgents = HasWorkingAgents,
+            Phase = Phase,
             UsageByAgent = _usageByAgent.ToDictionary(
                 kvp => kvp.Key,
                 kvp => new AgentUsage

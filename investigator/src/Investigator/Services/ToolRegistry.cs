@@ -13,17 +13,20 @@ public sealed class ToolRegistry
     private readonly ToolOutputOptions _options;
     private readonly List<Type> _sorted;
     private readonly IServiceProvider _rootSp;
+    private readonly OutputSummarizer _summarizer;
 
     public ToolRegistry(
         IServiceProvider sp,
         IEnumerable<Type> toolTypes,
         ILogger<ToolRegistry> logger,
-        IOptions<ToolOutputOptions> toolOutputOptions)
+        IOptions<ToolOutputOptions> toolOutputOptions,
+        OutputSummarizer summarizer)
     {
         _logger = logger;
         _options = toolOutputOptions.Value;
         _sorted = TopologicalSort(toolTypes.ToList());
         _rootSp = sp;
+        _summarizer = summarizer;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -134,11 +137,18 @@ public sealed class ToolRegistry
                 _logger.LogError(ex, "Failed to write tool output file {File} for tool {Name}", fileName, toolName);
             }
 
+            lineCount = CountLines(result.Output);
+
             truncated = def.TruncateOutput
                 ? TruncateOutput(result, outputFilePath ?? fileName)
                 : ApplyHardCap(result.Output, _options.HardCapBytes);
 
-            lineCount = CountLines(result.Output);
+            if (def.TruncateOutput && lineCount > _options.HeadLines + _options.TailLines)
+            {
+                var summary = await _summarizer.SummarizeAsync(result.Output, ct);
+                if (summary is not null)
+                    truncated = OutputSummarizer.InsertSummary(truncated, summary);
+            }
         }
 
         _logger.LogInformation("Tool {Name} completed: exit={Exit}, timed_out={TimedOut}, output_lines={Lines}, output_file={File}",

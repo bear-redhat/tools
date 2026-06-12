@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Investigator.Contracts;
 using Investigator.Models;
+using Investigator.Services;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 
@@ -38,13 +39,19 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
     private readonly ConcurrentDictionary<string, CachedLogin> _loggedInContexts = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _loginLocks = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<OcExecutor> _logger;
+    private readonly int _headLines;
+    private readonly int _tailLines;
+    private readonly OutputSummarizer _summarizer;
 
     private string KubeconfigPath(string cluster) => Path.Combine(_kubeconfigDir, cluster);
 
-    public OcExecutor(IOptions<OcOptions> options, ILogger<OcExecutor> logger)
+    public OcExecutor(IOptions<OcOptions> options, IOptions<ToolOutputOptions> toolOutputOptions, ILogger<OcExecutor> logger, OutputSummarizer summarizer)
     {
         _logger = logger;
         _opts = options.Value;
+        _headLines = toolOutputOptions.Value.HeadLines;
+        _tailLines = toolOutputOptions.Value.TailLines;
+        _summarizer = summarizer;
     }
 
     private void ValidateClusterCredentials()
@@ -217,7 +224,7 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         foreach (var arg in args) psi.ArgumentList.Add(arg);
 
         var (outputPath, outputRelative) = context.AllocateOutputFile("run_oc");
-        var headTail = new HeadTailBuffer(headLines: 20, tailLines: 10);
+        var headTail = new HeadTailBuffer(headLines: 50, tailLines: 20);
         StreamWriter? fileWriter = null;
         Process? proc = null;
         try
@@ -263,6 +270,13 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
                 context.Logger.LogWarning("run_oc: '{Command}' on {Cluster} exited with code {Code}", command, cluster, proc.ExitCode);
 
             var truncated = headTail.Build(proc.ExitCode, outputRelative);
+            if (headTail.LineCount > _headLines + _tailLines)
+            {
+                var fullText = await ReadUpToAsync(outputPath, ct);
+                var summary = await _summarizer.SummarizeAsync(fullText, ct);
+                if (summary is not null)
+                    truncated = OutputSummarizer.InsertSummary(truncated, summary);
+            }
             return new ToolResult(truncated, ExitCode: proc.ExitCode, ReproCommand: reproCommand,
                 LineCount: headTail.LineCount, OutputFile: outputRelative);
         }
@@ -509,5 +523,13 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
         public string? Server { get; set; }
         public string? TokenFile { get; set; }
         public string? CaFile { get; set; }
+    }
+
+    private static async Task<string> ReadUpToAsync(string path, CancellationToken ct, int maxChars = 4000)
+    {
+        using var reader = new StreamReader(path, Encoding.UTF8);
+        var buffer = new char[maxChars];
+        var read = await reader.ReadBlockAsync(buffer, ct);
+        return new string(buffer, 0, read);
     }
 }

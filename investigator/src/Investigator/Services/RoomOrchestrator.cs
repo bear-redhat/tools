@@ -95,6 +95,8 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
             var initialLog = GetEventLog(session);
             var pipeline = new RoomEventPipeline(bus, [new ToolEffectEnricher(LeadId)]);
             var transcriptStore = new TranscriptStore();
+            if (initialLog is not null)
+                transcriptStore.SeedHistory(initialLog);
 
             var room = CreateRoom(pipeline, transcriptStore);
             WireSession(session, pipeline, transcriptStore);
@@ -174,6 +176,8 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
 
         var projector = new TranscriptProjector(LeadId, evt => run.Room.Pipeline.EmitAsync(evt));
         var projectionTask = Task.Run(() => projector.RunLiveAsync(run.Room.TranscriptStore.Reader, ct));
+
+        run.Room.RoomStateRef = GetRoomState(run.Session);
 
         try
         {

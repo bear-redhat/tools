@@ -33,6 +33,8 @@ internal static class RemediationPrompts
             Your working directory is: {{workspacePath}}
             The current date and time is: {{Now(clientTimeZone)}}
             Shell commands execute in this directory. Tool output files are saved to tool_outputs/ within it.
+            Long outputs are truncated (head + tail) with a [summary] and the file path shown in the header.
+            Use read_output to retrieve the full content of any tool output file by line range.
             Do NOT change directory (cd) -- always use absolute paths or paths relative to the workspace.
 
             {{InvestigationPrompts.FileLinksSection(conversationId)}}
@@ -195,7 +197,7 @@ internal static class RemediationPrompts
 
             WORKSPACE: {{workspacePath}}
             The current date and time is: {{Now(clientTimeZone)}}
-            Tool output files are in tool_outputs/ within the workspace. Do NOT change directory.
+            Tool output files are in tool_outputs/ within the workspace. Long outputs are truncated with a [summary]; use read_output to retrieve full content by line range. Do NOT change directory.
 
             {{InvestigationPrompts.FileLinksSection(conversationId)}}
 
@@ -255,7 +257,7 @@ internal static class RemediationPrompts
 
             WORKSPACE: {{workspacePath}}
             The current date and time is: {{Now(clientTimeZone)}}
-            Tool output files are in tool_outputs/ within the workspace. Do NOT change directory.
+            Tool output files are in tool_outputs/ within the workspace. Long outputs are truncated with a [summary]; use read_output to retrieve full content by line range. Do NOT change directory.
 
             {{InvestigationPrompts.FileLinksSection(conversationId)}}
 

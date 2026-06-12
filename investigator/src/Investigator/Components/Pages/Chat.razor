@@ -43,10 +43,15 @@
         @if (_interactive && _isOwner && _selectedMemberId is "all")
         {
             <div class="input-divider" @ref="_inputDividerRef"></div>
+            @if (ActiveView.Phase == RoomPhase.Recovering)
+            {
+                <div class="recovery-banner">Resuming interrupted field operatives...</div>
+            }
             <ChatInput OnSend="OnSendAsync" OnCancel="OnCancel"
                        IsInvestigating="_isInvestigating"
                        HasWorkingAgents="_hasWorkingAgents"
-                       IsRemediation="_isRemediation" />
+                       IsRemediation="_isRemediation"
+                       Disabled="ActiveView.Phase == RoomPhase.Recovering" />
         }
         else if (_interactive && _isOwner && _isScoutSelected)
         {

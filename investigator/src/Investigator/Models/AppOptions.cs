@@ -54,8 +54,8 @@ public sealed class WorkspaceOptions
 public sealed class ToolOutputOptions
 {
     public const string Section = "ToolOutput";
-    public int HeadLines { get; set; } = 20;
-    public int TailLines { get; set; } = 10;
+    public int HeadLines { get; set; } = 50;
+    public int TailLines { get; set; } = 20;
     public int HardCapBytes { get; set; } = 8192;
 }
 

@@ -200,4 +200,6 @@ public class GroupMember(string name, string id, MemberStatus status)
 
 public enum MemberStatus { Static, Idle, Active, Working }
 
+public enum RoomPhase { Idle, Recovering, Active }
+
 public record SignOffAction(string PlanStepId, string Summary);
