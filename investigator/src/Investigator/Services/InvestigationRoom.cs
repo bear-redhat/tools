@@ -227,13 +227,13 @@ public sealed class InvestigationRoom : AgentRoom
 
         tools.Add(new ToolDefinition(
             Name: "delegate",
-            Description: "Dispatch an operative -- a Scout (tier: field) for data gathering, or an Analyst (tier: analyst) for domain-level reasoning. Non-blocking -- returns immediately with their assigned name. Use cc to copy a Scout's report to an Analyst. Use briefing to hand off existing intelligence.",
+            Description: "Dispatch a Scout (tier: field) for data gathering, or an Analyst (tier: analyst) for domain-level reasoning. Non-blocking -- returns immediately with their assigned name. Use cc to copy a Scout's report to an Analyst. Use briefing to hand off existing intelligence.",
             ParameterSchema: _delegateSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: CheckAgentsToolName,
-            Description: "Review the registry of operatives in the field -- Scouts and Analysts, their tasks, who dispatched them, and CC targets. Consult before dispatching to avoid duplicate work. NOT a polling tool.",
+            Description: "Review the registry of Scouts and Analysts in the field -- their tasks, who dispatched them, and CC targets. Consult before dispatching to avoid duplicate work. NOT a polling tool.",
             ParameterSchema: s_emptySchema,
             DefaultTimeout: TimeSpan.Zero));
 
@@ -245,19 +245,19 @@ public sealed class InvestigationRoom : AgentRoom
 
         tools.Add(new ToolDefinition(
             Name: MessageToolName,
-            Description: "Send a message to an operative (Scout or Analyst), or to the user. When messaging an operative, they resume their work with your reply. When messaging the user, you will wait for their response.",
+            Description: "Send a message to a Scout, Analyst, or the user. When messaging a Scout or Analyst, they resume their work with your reply. When messaging the user, you will wait for their response.",
             ParameterSchema: s_messageSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: DismissToolName,
-            Description: "Dismiss an operative from the room once they have reported. They depart Banyan Row and cannot be contacted again. If they are still abroad, use recall first.",
+            Description: "Dismiss a Scout or Analyst from the room once they have reported. They depart Banyan Row and cannot be contacted again. If they are still abroad, use recall first.",
             ParameterSchema: s_dismissScoutSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: RecallToolName,
-            Description: "Recall an operative to Banyan Row. They will report back immediately with whatever they have uncovered. Use when you no longer require their work or need their interim findings now.",
+            Description: "Recall a Scout or Analyst to Banyan Row. They will report back immediately with whatever they have uncovered. Use when you no longer require their work or need their interim findings now.",
             ParameterSchema: s_recallScoutSchema,
             DefaultTimeout: TimeSpan.Zero));
 
@@ -276,7 +276,7 @@ public sealed class InvestigationRoom : AgentRoom
                 if (_roomToolHandlers.HasActiveScouts())
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), ct);
-                    response += "\n\nOperatives are still at work. You will be woken when one reports.";
+                    response += "\n\nScouts are still at work. You will be woken when one reports.";
                 }
                 return new AgentRunner.ToolExecutionResult(response);
             }

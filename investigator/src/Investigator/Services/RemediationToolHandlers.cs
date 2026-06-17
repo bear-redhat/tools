@@ -148,12 +148,12 @@ internal sealed class RemediationToolHandlers
     // ── Dismiss ranger ──────────────────────────────────────────────────
 
     internal AgentRunner.ToolExecutionResult HandleDismiss(AgentRoom.AgentSlot caller, JsonElement input) =>
-        SubAgentHelpers.Dismiss(_agents, LeadAgentId, caller.Id, input, "operative", LeadAgentName, _logger);
+        SubAgentHelpers.Dismiss(_agents, LeadAgentId, caller.Id, input, "Ranger", LeadAgentName, _logger);
 
-    // ── Recall operative ─────────────────────────────────────────────────
+    // ── Recall Ranger ────────────────────────────────────────────────────
 
     internal AgentRunner.ToolExecutionResult HandleRecall(AgentRoom.AgentSlot caller, JsonElement input) =>
-        SubAgentHelpers.Recall(_agents, LeadAgentId, caller.Id, input, "operative", "the Canopy Post", _logger, caller.Name);
+        SubAgentHelpers.Recall(_agents, LeadAgentId, caller.Id, input, "Ranger", "the Canopy Post", _logger, caller.Name);
 
     // ── Status queries ──────────────────────────────────────────────────
 
@@ -161,7 +161,7 @@ internal sealed class RemediationToolHandlers
         SubAgentHelpers.HasActiveSubAgents(_agents, LeadAgentId);
 
     internal string BuildCheckAgentsResponse() =>
-        SubAgentHelpers.BuildCheckAgentsResponse(_agents, LeadAgentId, "Agents afield", "operative");
+        SubAgentHelpers.BuildCheckAgentsResponse(_agents, LeadAgentId, "Agents afield", "Ranger");
 
     // ── Parsing helpers ─────────────────────────────────────────────────
 

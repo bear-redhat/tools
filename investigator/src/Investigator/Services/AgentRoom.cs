@@ -407,7 +407,7 @@ public abstract class AgentRoom
                 "role": { "type": "string", "description": "Brief role description" },
                 "task": { "type": "string", "description": "Specific task to perform. Be precise about what to investigate and what to report back." },
                 "model": { "type": "string", "description": "{{modelDesc}}" },
-                "tier": { "type": "string", "enum": ["field", "analyst"], "default": "field", "description": "Agent tier. 'field' for data-gathering operatives; 'analyst' for senior analytical agents who can delegate their own field agents and synthesize across reports." },
+                "tier": { "type": "string", "enum": ["field", "analyst"], "default": "field", "description": "Agent tier. 'field' for data-gathering {{subAgentLabel}}s; 'analyst' for senior analytical agents who can delegate their own field agents and synthesize across reports." },
                 "cc": { "type": "array", "items": { "type": "string" }, "description": "Agent names to receive a copy of this agent's conclude report. Use to keep an Analyst informed of field findings in their domain." },
                 "briefing": { "type": "array", "items": { "type": "object", "properties": { "title": { "type": "string" }, "content": { "type": "string" } }, "required": ["title", "content"] }, "description": "Documents to hand off as initial context -- field reports, case file excerpts, evidence, prior findings." }
             },

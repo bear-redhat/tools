@@ -378,31 +378,31 @@ public sealed class RemediationRoom : AgentRoom
 
         tools.Add(new ToolDefinition(
             Name: "delegate",
-            Description: "Dispatch an operative -- a Ranger (tier: field) for reconnaissance, or an Analyst (tier: analyst) for domain-level assessment. Non-blocking -- returns immediately with their assigned name. Use cc to copy a Ranger's report to an Analyst. Use briefing to hand off existing intelligence.",
+            Description: "Dispatch a Ranger (tier: field) for reconnaissance, or an Analyst (tier: analyst) for domain-level assessment. Non-blocking -- returns immediately with their assigned name. Use cc to copy a Ranger's report to an Analyst. Use briefing to hand off existing intelligence.",
             ParameterSchema: _delegateSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: CheckAgentsToolName,
-            Description: "Review the registry of operatives in the field -- Rangers and Analysts, their tasks, who dispatched them, and CC targets. Consult before dispatching to avoid duplicate work. NOT a polling tool.",
+            Description: "Review the registry of Rangers and Analysts in the field -- their tasks, who dispatched them, and CC targets. Consult before dispatching to avoid duplicate work. NOT a polling tool.",
             ParameterSchema: s_emptySchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: MessageToolName,
-            Description: "Send a message to an operative (Ranger or Analyst), or to the user. When messaging an operative, they resume their work with your reply. When messaging the user, you will wait for their response.",
+            Description: "Send a message to a Ranger, Analyst, or the user. When messaging a Ranger or Analyst, they resume their work with your reply. When messaging the user, you will wait for their response.",
             ParameterSchema: s_messageSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: DismissToolName,
-            Description: "Dismiss an operative from the post once they have reported. They depart The Canopy Post and cannot be contacted again. If they are still abroad, use recall first.",
+            Description: "Dismiss a Ranger or Analyst from the post once they have reported. They depart The Canopy Post and cannot be contacted again. If they are still abroad, use recall first.",
             ParameterSchema: s_dismissRangerSchema,
             DefaultTimeout: TimeSpan.Zero));
 
         tools.Add(new ToolDefinition(
             Name: RecallToolName,
-            Description: "Recall an operative to The Canopy Post. They will report back immediately with whatever they have uncovered. Use when you no longer require their work or need their interim findings now.",
+            Description: "Recall a Ranger or Analyst to The Canopy Post. They will report back immediately with whatever they have uncovered. Use when you no longer require their work or need their interim findings now.",
             ParameterSchema: s_recallRangerSchema,
             DefaultTimeout: TimeSpan.Zero));
 
@@ -421,7 +421,7 @@ public sealed class RemediationRoom : AgentRoom
                 if (_roomToolHandlers.HasActiveRangers())
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), ct);
-                    response += "\n\nOperatives are still at work. You will be woken when one reports.";
+                    response += "\n\nRangers are still at work. You will be woken when one reports.";
                 }
                 return new AgentRunner.ToolExecutionResult(response);
             }

@@ -27,6 +27,16 @@ spec:
               value: "/tmp"
             - name: AWS_WEB_IDENTITY_TOKEN_FILE
               value: "/var/run/secrets/aws/token"
+            - name: Authentication__ClientId
+              valueFrom:
+                secretKeyRef:
+                  name: investigator-dex-oidc
+                  key: client-id
+            - name: Authentication__ClientSecret
+              valueFrom:
+                secretKeyRef:
+                  name: investigator-dex-oidc
+                  key: client-secret
           envFrom:
             - configMapRef:
                 name: investigator-aws-irsa

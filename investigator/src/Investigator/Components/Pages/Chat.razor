@@ -45,7 +45,7 @@
             <div class="input-divider" @ref="_inputDividerRef"></div>
             @if (ActiveView.Phase == RoomPhase.Recovering)
             {
-                <div class="recovery-banner">Resuming interrupted field operatives...</div>
+                <div class="recovery-banner">Resuming interrupted @(_isRemediation ? "Rangers" : "Scouts")...</div>
             }
             <ChatInput OnSend="OnSendAsync" OnCancel="OnCancel"
                        IsInvestigating="_isInvestigating"

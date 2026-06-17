@@ -83,16 +83,16 @@ internal sealed class RoomToolHandlers
     }
 
     internal AgentRunner.ToolExecutionResult HandleDismiss(AgentRoom.AgentSlot caller, JsonElement input) =>
-        SubAgentHelpers.Dismiss(_agents, _leadId, caller.Id, input, "operative", "Little Bear", _logger);
+        SubAgentHelpers.Dismiss(_agents, _leadId, caller.Id, input, "Scout", "Little Bear", _logger);
 
     internal AgentRunner.ToolExecutionResult HandleRecall(AgentRoom.AgentSlot caller, JsonElement input) =>
-        SubAgentHelpers.Recall(_agents, _leadId, caller.Id, input, "operative", "Banyan Row", _logger, caller.Name);
+        SubAgentHelpers.Recall(_agents, _leadId, caller.Id, input, "Scout", "Banyan Row", _logger, caller.Name);
 
     internal bool HasActiveScouts() =>
         SubAgentHelpers.HasActiveSubAgents(_agents, _leadId);
 
     internal string BuildCheckAgentsResponse() =>
-        SubAgentHelpers.BuildCheckAgentsResponse(_agents, _leadId, "Agents afield", "operative");
+        SubAgentHelpers.BuildCheckAgentsResponse(_agents, _leadId, "Agents afield", "Scout");
 
     internal (EvidenceChain?, FixSuggestion?, string Summary) ParseConcludeParams(JsonElement input)
     {
