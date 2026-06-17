@@ -100,7 +100,8 @@ public abstract class AgentRoom
         _subAgentCoordinator = new SubAgentCoordinator(
             subAgentConfig, _agents, llmFactory, toolRegistry, agentOptions,
             _toolSections, logger,
-            RunAgentWithRouting, subAgentConcludeSchema, _delegateSchema, pipeline.Bus);
+            (slot, cfg, ct, msgs, resume) => RunAgentWithRouting(slot, cfg, ct, msgs, resume),
+            subAgentConcludeSchema, _delegateSchema, pipeline.Bus);
     }
 
     protected IReadOnlyList<ToolDefinition> GetRegistryToolDefinitions() =>
@@ -188,7 +189,7 @@ public abstract class AgentRoom
     }
 
     internal async Task RunAgentWithRouting(AgentSlot slot, AgentRunner.Config config, CancellationToken ct,
-        List<LlmMessage>? initialMessages = null)
+        List<LlmMessage>? initialMessages = null, bool autoResume = false)
     {
         var runner = new AgentRunner(_logger);
         var terminalTools = config.TerminalToolNames ?? new HashSet<string> { "conclude" };
@@ -215,7 +216,7 @@ public abstract class AgentRoom
 
         try
         {
-            await runner.RunAsync(config, slot.Inbox!, Store, ExecuteTool, ct, initialMessages);
+            await runner.RunAsync(config, slot.Inbox!, Store, ExecuteTool, ct, initialMessages, autoResume);
         }
         catch (OperationCanceledException) { _logger.LogDebug("Agent {Name} cancelled", config.Name); }
         finally

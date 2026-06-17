@@ -171,7 +171,8 @@ public sealed class InvestigationRoom : AgentRoom
 
         List<LlmMessage>? initialMessages = null;
         List<AgentSlot>? resumedSlots = null;
-        if (eventLog is { Count: > 0 })
+        var isResume = eventLog is { Count: > 0 };
+        if (isResume)
         {
             var incomplete = EventLogScanner.FindIncompleteAgents(eventLog, LeadId);
             if (incomplete.Count > 0)
@@ -185,6 +186,7 @@ public sealed class InvestigationRoom : AgentRoom
                     resumedSlots.Add(ResumeSubAgent(agent, ct));
             }
             initialMessages = LlmContextApplier.Replay(eventLog, LeadId);
+            EventLogScanner.PatchDanglingToolCalls(initialMessages);
         }
 
         if (resumedSlots is { Count: > 0 })
@@ -192,18 +194,11 @@ public sealed class InvestigationRoom : AgentRoom
         else
             SetRoomPhase(RoomPhase.Active);
 
-        leadSlot.RunTask = RunAgentWithRouting(leadSlot, runnerConfig, ct, initialMessages);
+        leadSlot.RunTask = RunAgentWithRouting(leadSlot, runnerConfig, ct, initialMessages,
+            autoResume: isResume);
 
         if (resumedSlots is { Count: > 0 })
-        {
-            foreach (var slot in resumedSlots)
-            {
-                await Pipeline.EmitAsync(new RoomEvent.TextMessage(0, "system", DateTimeOffset.UtcNow,
-                    "[System restart] Your previous operation was interrupted. Resume your assignment and report when done.")
-                    { To = slot.Id }, ct);
-            }
             _ = MonitorRecoveryAsync(resumedSlots, ct);
-        }
 
         try
         {

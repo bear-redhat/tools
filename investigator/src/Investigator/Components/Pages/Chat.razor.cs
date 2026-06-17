@@ -198,6 +198,15 @@ public partial class Chat : IAsyncDisposable
                         _wasWorking = true;
                     }
                 }
+                else if (_isOwner && !_started && _session.Investigation.HasWorkingAgents)
+                {
+                    _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
+                    var reader = Orchestrator.StartAsync(ConversationId, _session, _circuitId, BrowserTz.TimeZone);
+                    _eventLoopTask = RunRoomEventLoopAsync(reader, _session.Investigation);
+                    _started = true;
+                    _wasWorking = true;
+                }
+
                 if (_session.Remediation is not null && RemediationOrch.IsRunning(ConversationId))
                 {
                     var reader = RemediationOrch.Subscribe(ConversationId, _circuitId);
@@ -207,6 +216,16 @@ public partial class Chat : IAsyncDisposable
                         _remStarted = true;
                         _wasWorking = true;
                     }
+                }
+                else if (_isOwner && !_remStarted
+                    && _session.Remediation is not null
+                    && _session.Remediation.HasWorkingAgents)
+                {
+                    _session.WorkspacePath ??= WorkspaceMgr.CreateWorkspace(_session.Id);
+                    var reader = RemediationOrch.StartAsync(ConversationId, _session, _circuitId, BrowserTz.TimeZone);
+                    _remEventLoopTask = RunRoomEventLoopAsync(reader, _session.Remediation);
+                    _remStarted = true;
+                    _wasWorking = true;
                 }
             }
 

@@ -22,7 +22,7 @@ internal sealed class SubAgentCoordinator
     private readonly AgentOptions _agentOptions;
     private readonly IReadOnlyList<string> _toolSections;
     private readonly ILogger _logger;
-    private readonly Func<AgentRoom.AgentSlot, AgentRunner.Config, CancellationToken, List<LlmMessage>?, Task> _runAgent;
+    private readonly Func<AgentRoom.AgentSlot, AgentRunner.Config, CancellationToken, List<LlmMessage>?, bool, Task> _runAgent;
     private readonly JsonElement _concludeSchema;
     private readonly JsonElement _delegateSchema;
     private readonly RoomEventBus _bus;
@@ -43,7 +43,7 @@ internal sealed class SubAgentCoordinator
         AgentOptions agentOptions,
         IReadOnlyList<string> toolSections,
         ILogger logger,
-        Func<AgentRoom.AgentSlot, AgentRunner.Config, CancellationToken, List<LlmMessage>?, Task> runAgent,
+        Func<AgentRoom.AgentSlot, AgentRunner.Config, CancellationToken, List<LlmMessage>?, bool, Task> runAgent,
         JsonElement concludeSchema,
         JsonElement delegateSchema,
         RoomEventBus bus)
@@ -178,7 +178,7 @@ internal sealed class SubAgentCoordinator
             TerminalToolNames: new HashSet<string> { "conclude", "message" },
             ShouldSuppressNextTurn: () => subSlot.HasReported);
 
-        subSlot.RunTask = Task.Run(() => _runAgent(subSlot, subConfig, ct, initialMessages), ct);
+        subSlot.RunTask = Task.Run(() => _runAgent(subSlot, subConfig, ct, initialMessages, false), ct);
 
         return new AgentRunner.ToolExecutionResult(
             Output: $"Dispatched {agentName} ({role}) using {resolvedModel}. They will report when finished -- do not duplicate their task.");
@@ -341,7 +341,7 @@ internal sealed class SubAgentCoordinator
             TerminalToolNames: new HashSet<string> { "conclude", "message" },
             ShouldSuppressNextTurn: () => subSlot.HasReported);
 
-        subSlot.RunTask = Task.Run(() => _runAgent(subSlot, subConfig, ct, agent.ReplayedMessages), ct);
+        subSlot.RunTask = Task.Run(() => _runAgent(subSlot, subConfig, ct, agent.ReplayedMessages, true), ct);
 
         return subSlot;
     }

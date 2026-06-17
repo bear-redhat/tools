@@ -57,7 +57,8 @@ public sealed class AgentRunner
         Func<RoomEvent.LlmContext, ValueTask> store,
         Func<string, JsonElement, string, CancellationToken, Task<ToolExecutionResult>> executeTool,
         CancellationToken ct,
-        List<LlmMessage>? initialMessages = null)
+        List<LlmMessage>? initialMessages = null,
+        bool autoResume = false)
     {
         var toolCallCount = 0;
         var messages = initialMessages ?? [];
@@ -72,27 +73,34 @@ public sealed class AgentRunner
                 config.CacheReadPricePerMToken, config.CacheCreationPricePerMToken,
                 isInboxBatch, isConcluded);
 
-        _logger.LogInformation("Agent {Name} ({Role}) starting, maxToolCalls={Max}", config.Name, config.Role, config.MaxToolCalls);
+        _logger.LogInformation("Agent {Name} ({Role}) starting, maxToolCalls={Max}{AutoResume}",
+            config.Name, config.Role, config.MaxToolCalls, autoResume ? " [auto-resume]" : "");
+
+        var skipFirstWait = autoResume && messages.Count > 0;
 
         try
         {
-            while (await inbox.WaitToReadAsync(ct))
+            while (skipFirstWait || await inbox.WaitToReadAsync(ct))
             {
-                var inboxBatch = new List<LlmMessage>();
-                while (inbox.TryRead(out var evt))
+                if (!skipFirstWait)
                 {
-                    var msg = FormatEventAsLlmMessage(evt);
-                    if (msg is not null) { messages.Add(msg); inboxBatch.Add(msg); }
-                }
+                    var inboxBatch = new List<LlmMessage>();
+                    while (inbox.TryRead(out var evt))
+                    {
+                        var msg = FormatEventAsLlmMessage(evt);
+                        if (msg is not null) { messages.Add(msg); inboxBatch.Add(msg); }
+                    }
 
-                if (inboxBatch.Count > 0 && config.ShouldSuppressNextTurn?.Invoke() == true)
-                {
-                    messages.RemoveRange(messages.Count - inboxBatch.Count, inboxBatch.Count);
-                    continue;
-                }
+                    if (inboxBatch.Count > 0 && config.ShouldSuppressNextTurn?.Invoke() == true)
+                    {
+                        messages.RemoveRange(messages.Count - inboxBatch.Count, inboxBatch.Count);
+                        continue;
+                    }
 
-                if (inboxBatch.Count > 0)
-                    await store(MakeCtx(inboxBatch, isInboxBatch: true));
+                    if (inboxBatch.Count > 0)
+                        await store(MakeCtx(inboxBatch, isInboxBatch: true));
+                }
+                skipFirstWait = false;
 
                 toolCallCount = 0;
 

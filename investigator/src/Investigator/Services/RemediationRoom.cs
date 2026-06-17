@@ -280,7 +280,8 @@ public sealed class RemediationRoom : AgentRoom
 
         List<LlmMessage>? initialMessages = null;
         List<AgentSlot>? resumedSlots = null;
-        if (eventLog is { Count: > 0 })
+        var isResume = eventLog is { Count: > 0 };
+        if (isResume)
         {
             var incomplete = EventLogScanner.FindIncompleteAgents(eventLog, LeadId);
             if (incomplete.Count > 0)
@@ -294,6 +295,7 @@ public sealed class RemediationRoom : AgentRoom
                     resumedSlots.Add(ResumeSubAgent(agent, ct));
             }
             initialMessages = LlmContextApplier.Replay(eventLog, LeadId);
+            EventLogScanner.PatchDanglingToolCalls(initialMessages);
         }
         else
         {
@@ -313,24 +315,17 @@ public sealed class RemediationRoom : AgentRoom
         else
             SetRoomPhase(RoomPhase.Active);
 
-        langurSlot.RunTask = RunAgentWithRouting(langurSlot, runnerConfig, ct, initialMessages);
+        langurSlot.RunTask = RunAgentWithRouting(langurSlot, runnerConfig, ct, initialMessages,
+            autoResume: isResume);
 
-        if (eventLog is not { Count: > 0 })
+        if (!isResume)
         {
             TranscriptStore.Append(new RoomEvent.ExternalInput(0, "system", DateTimeOffset.UtcNow,
                 "Case file received. Begin assessment.") { To = LeadId });
         }
 
         if (resumedSlots is { Count: > 0 })
-        {
-            foreach (var slot in resumedSlots)
-            {
-                await Pipeline.EmitAsync(new RoomEvent.TextMessage(0, "system", DateTimeOffset.UtcNow,
-                    "[System restart] Your previous operation was interrupted. Resume your assignment and report when done.")
-                    { To = slot.Id }, ct);
-            }
             _ = MonitorRecoveryAsync(resumedSlots, ct);
-        }
 
         try
         {
