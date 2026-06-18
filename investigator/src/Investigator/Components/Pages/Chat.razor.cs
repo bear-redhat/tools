@@ -20,6 +20,8 @@ public partial class Chat : IAsyncDisposable
     [Inject] private AuthSettings AuthSettings { get; set; } = default!;
     [Inject] private CircuitAuthState CircuitAuth { get; set; } = default!;
     [Inject] private BrowserTimeZone BrowserTz { get; set; } = default!;
+    [Inject] private AuditLog AuditLog { get; set; } = default!;
+    [Inject] private IHttpContextAccessor HttpContextAccessor { get; set; } = default!;
 
     [Parameter] public string ConversationId { get; set; } = "";
 
@@ -184,6 +186,18 @@ public partial class Chat : IAsyncDisposable
                     return;
                 }
                 _isOwner = claim == ClaimResult.Success;
+
+                if (_isOwner)
+                {
+                    var ip = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+                    AuditLog.Record(ConversationId, "claimed", CircuitAuth.UserId, ip);
+                }
+            }
+
+            if (_forcedReadonly && _session is not null)
+            {
+                var ip = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+                AuditLog.Record(ConversationId, "viewed", CircuitAuth.UserId, ip);
             }
 
             if (_session is not null)

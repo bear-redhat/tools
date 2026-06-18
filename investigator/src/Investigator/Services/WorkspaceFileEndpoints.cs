@@ -95,6 +95,7 @@ public static class WorkspaceFileEndpoints
         string conversationId,
         string filePath,
         WorkspaceManager workspaceManager,
+        AuditLog auditLog,
         AuthSettings authSettings,
         IOptions<AuthOptions> authOptions,
         HttpContext httpContext,
@@ -127,6 +128,12 @@ public static class WorkspaceFileEndpoints
             logger.LogWarning("File not found: {FullPath} for conversation {ConversationId}", fullPath, conversationId);
             return Results.Json(new { error = "file_not_found", path = filePath }, statusCode: 404);
         }
+
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        var userId = httpContext.User.Identity?.IsAuthenticated == true
+            ? httpContext.User.Identity.Name
+            : "token";
+        auditLog.Record(conversationId, "file_accessed", userId, ip, new Dictionary<string, string> { ["path"] = filePath });
 
         var contentType = ResolveContentType(fullPath);
         var fileName = Path.GetFileName(fullPath);

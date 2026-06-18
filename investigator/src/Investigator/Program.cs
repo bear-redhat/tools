@@ -36,10 +36,12 @@ builder.Services.AddInvestigatorLlm(builder.Configuration);
 builder.Services.AddInvestigatorTools(builder.Configuration);
 builder.Services.AddInvestigatorAuth(builder.Configuration, builder.Environment);
 
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<BrowserTimeZone>();
 builder.Services.AddSingleton<ConversationStore>();
 builder.Services.AddSingleton<InvestigationOrchestrator>();
 builder.Services.AddSingleton<RemediationOrchestrator>();
+builder.Services.AddSingleton<AuditLog>();
 
 var app = builder.Build();
 
@@ -95,6 +97,7 @@ app.UseAntiforgery();
 
 app.MapHealthChecks("/health");
 app.MapWorkspaceFiles();
+app.MapInvestigateApi();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

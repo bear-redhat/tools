@@ -26,6 +26,7 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    margin-left: auto;
     font-size: 0.85rem;
     color: #9ca3af;
 }

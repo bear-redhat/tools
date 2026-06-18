@@ -45,7 +45,6 @@ pre.ascii-art {
 .header-brand {
     display: flex;
     align-items: center;
-    flex: 1;
     cursor: pointer;
     border-radius: 6px;
     padding: 0.2rem 0.4rem;

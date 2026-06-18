@@ -41,10 +41,13 @@ public sealed class InvestigatorAuthStateProvider : AuthenticationStateProvider
             if (user?.Identity?.IsAuthenticated == true)
             {
                 var sub = user.FindFirst("sub")?.Value;
-                var name = user.Identity.Name;
+                var name = user.Identity?.Name
+                    ?? user.FindFirst("name")?.Value
+                    ?? user.FindFirst("preferred_username")?.Value
+                    ?? user.FindFirst("email")?.Value;
                 _circuitAuth.IsAuthenticated = true;
                 _circuitAuth.UserId = sub;
-                _circuitAuth.DisplayName = !string.IsNullOrEmpty(name) ? name : sub;
+                _circuitAuth.DisplayName = !string.IsNullOrEmpty(name) ? name : sub ?? "Unknown";
                 _circuitAuth.AuthMethod = AuthMode.Oidc;
             }
         }
