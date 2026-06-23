@@ -53,7 +53,7 @@ public sealed class WebSearchTool : IInvestigatorTool
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {
-        var query = parameters.GetProperty("query").GetString() ?? "";
+        var query = parameters.GetProperty("query").GetString();
 
         if (string.IsNullOrWhiteSpace(query))
             return new ToolResult("Error: 'query' parameter is required and was empty.", ExitCode: 1);
@@ -106,8 +106,8 @@ public sealed class WebSearchTool : IInvestigatorTool
         foreach (var item in items.EnumerateArray())
         {
             var title = item.GetProperty("title").GetString() ?? "(no title)";
-            var link = item.GetProperty("link").GetString() ?? "";
-            var snippet = item.TryGetProperty("snippet", out var s) ? s.GetString() ?? "" : "";
+            var link = item.GetProperty("link").GetString();
+            var snippet = item.TryGetProperty("snippet", out var s) ? s.GetString() : null;
 
             sb.AppendLine($"[{index}] {title}");
             sb.AppendLine($"    {link}");

@@ -78,11 +78,11 @@ public sealed class InvestigationOrchestrator : RoomOrchestrator<InvestigationRo
     {
         if (run.Session.Remediation is not null) return;
 
-        var caseDesc = input.TryGetProperty("case_description", out var cd) ? cd.GetString() ?? "" : "";
-        var rootCause = input.TryGetProperty("root_cause", out var rc) ? rc.GetString() ?? "" : "";
+        var caseDesc = input.TryGetProperty("case_description", out var cd) ? cd.GetString() : null;
+        var rootCause = input.TryGetProperty("root_cause", out var rc) ? rc.GetString() : null;
         var fixDesc = input.TryGetProperty("fix_description", out var fd) ? fd.GetString() : null;
         var fixCmds = input.TryGetProperty("fix_commands", out var fc) && fc.ValueKind == JsonValueKind.Array
-            ? fc.EnumerateArray().Select(c => c.GetString() ?? "").ToList()
+            ? fc.EnumerateArray().Select(c => c.GetString()).Where(c => c is not null).ToList()!
             : new List<string>();
 
         var findings = room.Items.OfType<ConversationItem.Finding>()

@@ -82,12 +82,15 @@ internal sealed class RemediationToolHandlers
         if (plan is null)
             return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "No remediation plan has been presented yet."));
 
-        var stepId = input.TryGetProperty("id", out var sid) ? sid.GetString() ?? "" : "";
+        var stepId = input.TryGetProperty("id", out var sid) ? sid.GetString() : null;
+        if (stepId is null)
+            return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "'id' is required."));
+
         var step = plan.Steps.FirstOrDefault(s => s.Id == stepId);
         if (step is null)
             return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"No plan step with id '{stepId}' was found."));
 
-        var statusStr = input.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "";
+        var statusStr = input.TryGetProperty("status", out var st) ? st.GetString() : null;
         return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: $"Step {stepId} updated to {statusStr}."));
     }
 
@@ -126,7 +129,9 @@ internal sealed class RemediationToolHandlers
     internal Task<AgentRunner.ToolExecutionResult> HandleMessage(
         AgentRoom.AgentSlot callerSlot, JsonElement input)
     {
-        var to = input.TryGetProperty("to", out var toVal) ? toVal.GetString() ?? "" : "";
+        var to = input.TryGetProperty("to", out var toVal) ? toVal.GetString() : null;
+        if (to is null)
+            return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "'to' is required."));
 
         if (to is "user" or "client")
         {
@@ -165,7 +170,7 @@ internal sealed class RemediationToolHandlers
 
     // ── Parsing helpers ─────────────────────────────────────────────────
 
-    internal (EvidenceChain?, FixSuggestion?, string Summary) ParseConcludeParams(JsonElement input)
+    internal (EvidenceChain?, FixSuggestion?, string? Summary) ParseConcludeParams(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Object)
         {
@@ -173,7 +178,7 @@ internal sealed class RemediationToolHandlers
             return (null, null, "(No summary was provided.)");
         }
 
-        var summary = input.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "";
+        var summary = input.TryGetProperty("summary", out var s) ? s.GetString() : null;
 
         EvidenceChain? evidence = null;
         if (input.TryGetProperty("evidence", out var evidenceArray) && evidenceArray.ValueKind == JsonValueKind.Array)
@@ -183,11 +188,11 @@ internal sealed class RemediationToolHandlers
             {
                 steps.Add(new EvidenceStep(
                     Step: item.TryGetProperty("step", out var st) ? st.GetInt32() : steps.Count + 1,
-                    Reasoning: item.TryGetProperty("reasoning", out var r) ? r.GetString() ?? "" : "",
-                    Finding: item.TryGetProperty("finding", out var f) ? f.GetString() ?? "" : "",
+                    Reasoning: item.TryGetProperty("reasoning", out var r) ? r.GetString() : null,
+                    Finding: item.TryGetProperty("finding", out var f) ? f.GetString() : null,
                     Cluster: item.TryGetProperty("cluster", out var c) ? c.GetString() : null,
-                    Proof: item.TryGetProperty("proof", out var prf) ? prf.GetString() ?? ""
-                        : item.TryGetProperty("command", out var cmd) ? cmd.GetString() ?? "" : "",
+                    Proof: item.TryGetProperty("proof", out var prf) ? prf.GetString()
+                        : item.TryGetProperty("command", out var cmd) ? cmd.GetString() : null,
                     Source: item.TryGetProperty("source", out var src) ? src.GetString() : null));
             }
             evidence = new EvidenceChain(steps.OrderBy(s => s.Step).ToList());
@@ -199,8 +204,8 @@ internal sealed class RemediationToolHandlers
         if (hasFixDesc || hasFixCmds)
         {
             fix = new FixSuggestion(
-                Description: hasFixDesc ? fd.GetString() ?? "" : "",
-                Commands: hasFixCmds ? fc.EnumerateArray().Select(c => c.GetString() ?? "").ToList() : [],
+                Description: hasFixDesc ? fd.GetString() : null,
+                Commands: hasFixCmds ? fc.EnumerateArray().Select(c => c.GetString()).OfType<string>().ToList() : null,
                 Warning: input.TryGetProperty("fix_warning", out var fw) ? fw.GetString() : null);
         }
 
@@ -210,10 +215,10 @@ internal sealed class RemediationToolHandlers
     private static RemediationTarget ParseTarget(JsonElement step)
     {
         if (!step.TryGetProperty("target", out var t) || t.ValueKind != JsonValueKind.Object)
-            return new RemediationTarget("unknown");
+            return new RemediationTarget(null);
 
         return new RemediationTarget(
-            Type: t.TryGetProperty("type", out var ty) ? ty.GetString() ?? "unknown" : "unknown",
+            Type: t.TryGetProperty("type", out var ty) ? ty.GetString() : null,
             Cluster: t.TryGetProperty("cluster", out var c) ? c.GetString() : null,
             Resource: t.TryGetProperty("resource", out var r) ? r.GetString() : null,
             Namespace: t.TryGetProperty("namespace", out var ns) ? ns.GetString() : null,
@@ -225,15 +230,15 @@ internal sealed class RemediationToolHandlers
     private static RemediationChange ParseChange(JsonElement step)
     {
         if (!step.TryGetProperty("change", out var ch) || ch.ValueKind != JsonValueKind.Object)
-            return new RemediationChange { Type = "unknown" };
+            return new RemediationChange();
 
         return new RemediationChange
         {
-            Type = ch.TryGetProperty("type", out var ty) ? ty.GetString() ?? "unknown" : "unknown",
+            Type = ch.TryGetProperty("type", out var ty) ? ty.GetString() : null,
             CurrentValue = ch.TryGetProperty("current_value", out var cv) ? cv.GetString() : null,
             DesiredValue = ch.TryGetProperty("desired_value", out var dv) ? dv.GetString() : null,
             Commands = ch.TryGetProperty("commands", out var cmds) && cmds.ValueKind == JsonValueKind.Array
-                ? cmds.EnumerateArray().Select(c => c.GetString() ?? "").ToList()
+                ? cmds.EnumerateArray().Select(c => c.GetString()).OfType<string>().ToList()
                 : null,
             PatchFile = ch.TryGetProperty("patch_file", out var pf) ? pf.GetString() : null,
             Warnings = ch.TryGetProperty("warnings", out var w) ? w.GetString() : null,
@@ -243,21 +248,22 @@ internal sealed class RemediationToolHandlers
     private static RemediationValidation ParseValidation(JsonElement step)
     {
         if (!step.TryGetProperty("validation", out var v) || v.ValueKind != JsonValueKind.Object)
-            return new RemediationValidation("", []);
+            return new RemediationValidation(null, null);
 
         var commands = v.TryGetProperty("commands", out var cmds) && cmds.ValueKind == JsonValueKind.Array
-            ? cmds.EnumerateArray().Select(c => c.GetString() ?? "").ToList()
-            : [];
+            ? cmds.EnumerateArray().Select(c => c.GetString()).OfType<string>().ToList()
+            : (List<string>?)null;
 
         return new RemediationValidation(
-            Description: v.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "",
+            Description: v.TryGetProperty("description", out var d) ? d.GetString() : null,
             Commands: commands,
             Expected: v.TryGetProperty("expected", out var e) ? e.GetString() : null);
     }
 
     private static string FormatTarget(RemediationTarget target)
     {
-        var parts = new List<string> { target.Type };
+        var parts = new List<string>();
+        if (target.Type is not null) parts.Add(target.Type);
         if (!string.IsNullOrWhiteSpace(target.Cluster)) parts.Add($"cluster={target.Cluster}");
         if (!string.IsNullOrWhiteSpace(target.Resource)) parts.Add($"resource={target.Resource}");
         if (!string.IsNullOrWhiteSpace(target.Namespace)) parts.Add($"ns={target.Namespace}");

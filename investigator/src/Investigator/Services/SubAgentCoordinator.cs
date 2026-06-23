@@ -82,7 +82,9 @@ internal sealed class SubAgentCoordinator
     {
         var agentName = GenerateAgentName();
         var role = input.TryGetProperty("role", out var r) ? r.GetString() ?? _config.Label.ToLowerInvariant() : _config.Label.ToLowerInvariant();
-        var task = input.TryGetProperty("task", out var t) ? t.GetString() ?? "" : "";
+        var task = input.TryGetProperty("task", out var t) ? t.GetString() : null;
+        if (task is null)
+            return new AgentRunner.ToolExecutionResult("'task' is required for delegate.", ExitCode: 1);
         var modelName = input.TryGetProperty("model", out var m) ? m.GetString() : null;
         var tier = input.TryGetProperty("tier", out var ti) ? ti.GetString() ?? "field" : "field";
         var isAnalyst = tier == "analyst";
@@ -99,8 +101,8 @@ internal sealed class SubAgentCoordinator
             initialMessages = [];
             foreach (var item in briefArray.EnumerateArray())
             {
-                var title = item.TryGetProperty("title", out var bt) ? bt.GetString() ?? "" : "";
-                var content = item.TryGetProperty("content", out var bc) ? bc.GetString() ?? "" : "";
+                var title = item.TryGetProperty("title", out var bt) ? bt.GetString() : null;
+                var content = item.TryGetProperty("content", out var bc) ? bc.GetString() : null;
                 initialMessages.Add(new LlmMessage
                 {
                     Role = "user",

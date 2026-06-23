@@ -67,15 +67,17 @@ internal static class EventLogScanner
                         continue;
 
                     var input = block.TryGetProperty("input", out var inp) ? inp : default;
-                    var toolUseId = block.TryGetProperty("id", out var idVal) ? idVal.GetString() ?? "" : "";
+                    var toolUseId = block.TryGetProperty("id", out var idVal) ? idVal.GetString() : null;
 
                     var agentName = FindDelegateResult(ctx.Messages, msg, toolUseId);
                     if (agentName is null)
                         continue;
 
                     var agentId = agentName.ToLowerInvariant().Replace(" ", "-");
-                    var role = Prop(input, "role") ?? "scout";
-                    var task = Prop(input, "task") ?? "";
+                    var role = Prop(input, "role");
+                    var task = Prop(input, "task");
+                    if (role is null || task is null)
+                        continue;
                     var model = Prop(input, "model");
                     var tier = Prop(input, "tier") ?? "field";
                     var isAnalyst = tier == "analyst";
@@ -122,7 +124,9 @@ internal static class EventLogScanner
                     && block.TryGetProperty("tool_use_id", out var id) && id.GetString() == toolUseId
                     && block.TryGetProperty("content", out var content))
                 {
-                    return ExtractAgentName(content.GetString() ?? "");
+                    var contentStr = content.GetString();
+                    if (contentStr is null) return null;
+                    return ExtractAgentName(contentStr);
                 }
             }
         }
@@ -176,7 +180,9 @@ internal static class EventLogScanner
             if (block.TryGetProperty("type", out var t) && t.GetString() == "tool_use"
                 && block.TryGetProperty("id", out var id))
             {
-                toolUseIds.Add(id.GetString() ?? "");
+                var idStr = id.GetString();
+                if (idStr is not null)
+                    toolUseIds.Add(idStr);
             }
         }
 

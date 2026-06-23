@@ -91,7 +91,8 @@ public partial class Chat : IAsyncDisposable
         ConversationItem.ScoutReport or ConversationItem.ScoutQuestion or
         ConversationItem.Conclusion or ConversationItem.Error or
         ConversationItem.Dispatch or ConversationItem.Welcome or
-        ConversationItem.SignOffItem or ConversationItem.CaseReceived;
+        ConversationItem.SignOffItem or ConversationItem.CaseReceived or
+        ConversationItem.MemorySaved or ConversationItem.MemoryRecalled;
 
     private bool _showFindings => _selectedMemberId is "all";
 

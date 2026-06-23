@@ -68,8 +68,13 @@ public sealed class CiRepoTool : IInvestigatorTool, ISystemPromptContributor
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {
-        var repoKey = parameters.GetProperty("repo").GetString() ?? "";
-        var action = parameters.GetProperty("action").GetString() ?? "";
+        var repoKey = parameters.GetProperty("repo").GetString();
+        var action = parameters.GetProperty("action").GetString();
+
+        if (string.IsNullOrEmpty(repoKey))
+            return LogAndReturn(context, "'repo' is required.");
+        if (string.IsNullOrEmpty(action))
+            return LogAndReturn(context, "'action' is required.");
 
         if (!_repos.TryGetValue(repoKey, out var repo))
             return LogAndReturn(context, $"Unknown repo: {repoKey}. Available: {string.Join(", ", _repos.Keys)}.");

@@ -148,7 +148,7 @@ public sealed class GeminiClient : ILlmClient
 
         if (msg.Content.ValueKind == JsonValueKind.String)
         {
-            parts.Add(new { text = msg.Content.GetString() ?? "" });
+            parts.Add(new { text = msg.Content.GetString() ?? msg.Content.GetRawText() });
             return parts;
         }
 
@@ -160,13 +160,14 @@ public sealed class GeminiClient : ILlmClient
                 switch (type)
                 {
                     case "text":
-                        var text = item.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "";
-                        parts.Add(new { text });
+                        var text = item.TryGetProperty("text", out var tx) ? tx.GetString() : null;
+                        if (text is not null)
+                            parts.Add(new { text });
                         break;
 
                     case "tool_use":
                     {
-                        var name = item.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                        var name = item.TryGetProperty("name", out var n) ? n.GetString() : null;
                         var input = item.TryGetProperty("input", out var inp) ? inp : default;
                         parts.Add(new
                         {
@@ -177,8 +178,8 @@ public sealed class GeminiClient : ILlmClient
 
                     case "tool_result":
                     {
-                        var toolUseId = item.TryGetProperty("tool_use_id", out var tid) ? tid.GetString() ?? "" : "";
-                        var content = item.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
+                        var toolUseId = item.TryGetProperty("tool_use_id", out var tid) ? tid.GetString() : null;
+                        var content = item.TryGetProperty("content", out var c) ? c.GetString() : null;
                         parts.Add(new
                         {
                             functionResponse = new
@@ -191,8 +192,8 @@ public sealed class GeminiClient : ILlmClient
                     }
 
                     default:
-                        if (item.TryGetProperty("text", out var fallbackText))
-                            parts.Add(new { text = fallbackText.GetString() ?? "" });
+                        if (item.TryGetProperty("text", out var fallbackText) && fallbackText.GetString() is { } fbText)
+                            parts.Add(new { text = fbText });
                         break;
                 }
             }
@@ -261,7 +262,7 @@ public sealed class GeminiClient : ILlmClient
                     }
                     else if (part.TryGetProperty("functionCall", out var fc))
                     {
-                        var name = fc.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                        var name = fc.TryGetProperty("name", out var n) ? n.GetString() : null;
                         var args = fc.TryGetProperty("args", out var a) ? a.Clone() : default(JsonElement?);
 
                         yield return new ContentBlock

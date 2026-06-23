@@ -96,7 +96,9 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {
-        var action = parameters.TryGetProperty("action", out var a) ? a.GetString() ?? "" : "";
+        var action = parameters.TryGetProperty("action", out var a) ? a.GetString() : null;
+        if (string.IsNullOrEmpty(action))
+            return new ToolResult("'action' is required.", ExitCode: 1);
 
         return action switch
         {
@@ -234,30 +236,30 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
     }
 
     private static bool MatchesFilters(
-        JsonElement item, string jobName, string org, string repo,
-        int prNum, string stateFilter, string typeFilter)
+        JsonElement item, string? jobName, string? org, string? repo,
+        int prNum, string? stateFilter, string? typeFilter)
     {
         var spec = item.GetProperty("spec");
         var status = item.GetProperty("status");
 
         if (!string.IsNullOrEmpty(jobName))
         {
-            var name = spec.TryGetProperty("job", out var j) ? j.GetString() ?? "" : "";
-            if (!name.Contains(jobName, StringComparison.OrdinalIgnoreCase))
+            var name = spec.TryGetProperty("job", out var j) ? j.GetString() : null;
+            if (name is null || !name.Contains(jobName, StringComparison.OrdinalIgnoreCase))
                 return false;
         }
 
         if (!string.IsNullOrEmpty(stateFilter))
         {
-            var state = status.TryGetProperty("state", out var s) ? s.GetString() ?? "" : "";
-            if (!state.Equals(stateFilter, StringComparison.OrdinalIgnoreCase))
+            var state = status.TryGetProperty("state", out var s) ? s.GetString() : null;
+            if (state is null || !state.Equals(stateFilter, StringComparison.OrdinalIgnoreCase))
                 return false;
         }
 
         if (!string.IsNullOrEmpty(typeFilter))
         {
-            var jt = spec.TryGetProperty("type", out var t) ? t.GetString() ?? "" : "";
-            if (!jt.Equals(typeFilter, StringComparison.OrdinalIgnoreCase))
+            var jt = spec.TryGetProperty("type", out var t) ? t.GetString() : null;
+            if (jt is null || !jt.Equals(typeFilter, StringComparison.OrdinalIgnoreCase))
                 return false;
         }
 
@@ -268,15 +270,15 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
 
             if (!string.IsNullOrEmpty(org))
             {
-                var refOrg = refs.TryGetProperty("org", out var o) ? o.GetString() ?? "" : "";
-                if (!refOrg.Equals(org, StringComparison.OrdinalIgnoreCase))
+                var refOrg = refs.TryGetProperty("org", out var o) ? o.GetString() : null;
+                if (refOrg is null || !refOrg.Equals(org, StringComparison.OrdinalIgnoreCase))
                     return false;
             }
 
             if (!string.IsNullOrEmpty(repo))
             {
-                var refRepo = refs.TryGetProperty("repo", out var r) ? r.GetString() ?? "" : "";
-                if (!refRepo.Equals(repo, StringComparison.OrdinalIgnoreCase))
+                var refRepo = refs.TryGetProperty("repo", out var r) ? r.GetString() : null;
+                if (refRepo is null || !refRepo.Equals(repo, StringComparison.OrdinalIgnoreCase))
                     return false;
             }
 
@@ -300,14 +302,14 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         var spec = item.GetProperty("spec");
         var status = item.GetProperty("status");
 
-        var name = spec.TryGetProperty("job", out var j) ? j.GetString() ?? "" : "";
-        var state = status.TryGetProperty("state", out var s) ? s.GetString() ?? "" : "";
-        var jobType = spec.TryGetProperty("type", out var t) ? t.GetString() ?? "" : "";
-        var buildId = status.TryGetProperty("build_id", out var b) ? b.GetString() ?? "" : "";
-        var prowUrl = status.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
+        var name = spec.TryGetProperty("job", out var j) ? j.GetString() : null;
+        var state = status.TryGetProperty("state", out var s) ? s.GetString() : null;
+        var jobType = spec.TryGetProperty("type", out var t) ? t.GetString() : null;
+        var buildId = status.TryGetProperty("build_id", out var b) ? b.GetString() : null;
+        var prowUrl = status.TryGetProperty("url", out var u) ? u.GetString() : null;
 
-        var startTime = status.TryGetProperty("startTime", out var st) ? st.GetString() ?? "" : "";
-        var completionTime = status.TryGetProperty("completionTime", out var ct2) ? ct2.GetString() ?? "" : "";
+        var startTime = status.TryGetProperty("startTime", out var st) ? st.GetString() : null;
+        var completionTime = status.TryGetProperty("completionTime", out var ct2) ? ct2.GetString() : null;
 
         var duration = "";
         if (DateTimeOffset.TryParse(startTime, out var startDt))
@@ -321,8 +323,8 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         var orgRepo = "";
         if (spec.TryGetProperty("refs", out var refs))
         {
-            var org = refs.TryGetProperty("org", out var o) ? o.GetString() ?? "" : "";
-            var repo = refs.TryGetProperty("repo", out var r) ? r.GetString() ?? "" : "";
+            var org = refs.TryGetProperty("org", out var o) ? o.GetString() : null;
+            var repo = refs.TryGetProperty("repo", out var r) ? r.GetString() : null;
             if (!string.IsNullOrEmpty(org)) orgRepo = $"{org}/{repo}";
 
             if (refs.TryGetProperty("pulls", out var pulls))
@@ -546,7 +548,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         if (err is not null)
             return new ToolResult(err, ExitCode: 1);
 
-        var subPath = Str(p, "path").TrimStart('/');
+        var subPath = Str(p, "path")?.TrimStart('/');
         var fullPath = string.IsNullOrEmpty(subPath) ? storagePath! : $"{storagePath}/{subPath}";
 
         ctx.Logger.LogInformation("prow: artifacts bucket={Bucket} path={Path}", bucket, fullPath);
@@ -765,7 +767,8 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
                 {
                     foreach (var repoEntry in repos.EnumerateArray())
                     {
-                        var repoStr = repoEntry.GetString() ?? "";
+                        var repoStr = repoEntry.GetString();
+                        if (repoStr is null) continue;
                         if (!string.IsNullOrEmpty(org) && !string.IsNullOrEmpty(repo))
                             matchesFilter = repoStr.Equals($"{org}/{repo}", StringComparison.OrdinalIgnoreCase);
                         else if (!string.IsNullOrEmpty(repo))
@@ -794,16 +797,16 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             var poolCount = 0;
             foreach (var pool in pools.EnumerateArray())
             {
-                var poolOrg = pool.TryGetProperty("Org", out var po) ? po.GetString() ?? "" : "";
-                var poolRepo = pool.TryGetProperty("Repo", out var pr) ? pr.GetString() ?? "" : "";
+                var poolOrg = pool.TryGetProperty("Org", out var po) ? po.GetString() : null;
+                var poolRepo = pool.TryGetProperty("Repo", out var pr) ? pr.GetString() : null;
 
-                if (!string.IsNullOrEmpty(org) && !poolOrg.Equals(org, StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(org) && (poolOrg is null || !poolOrg.Equals(org, StringComparison.OrdinalIgnoreCase)))
                     continue;
-                if (!string.IsNullOrEmpty(repo) && !poolRepo.Equals(repo, StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(repo) && (poolRepo is null || !poolRepo.Equals(repo, StringComparison.OrdinalIgnoreCase)))
                     continue;
 
                 poolCount++;
-                var branch = pool.TryGetProperty("Branch", out var pb) ? pb.GetString() ?? "" : "";
+                var branch = pool.TryGetProperty("Branch", out var pb) ? pb.GetString() : null;
                 sb.AppendLine($"  {poolOrg}/{poolRepo} ({branch}):");
 
                 AppendTidePoolSection(sb, pool, "SuccessPRs", "Ready to merge");
@@ -829,7 +832,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         foreach (var pr in arr.EnumerateArray())
         {
             var num = pr.TryGetProperty("Number", out var n) ? n.GetInt32() : 0;
-            var title = pr.TryGetProperty("Title", out var t) ? t.GetString() ?? "" : "";
+            var title = pr.TryGetProperty("Title", out var t) ? t.GetString() : null;
             sb.AppendLine($"      PR#{num}: {Truncate(title, 80)}");
         }
     }
@@ -963,14 +966,14 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
 
     // ------------------------------------------------------------------ helpers: formatting
 
-    private static string Str(JsonElement el, string prop) =>
-        el.TryGetProperty(prop, out var v) ? v.GetString() ?? "" : "";
+    private static string? Str(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) ? v.GetString() : null;
 
     private static string JsonStr(JsonElement el, string prop) =>
         el.TryGetProperty(prop, out var v) ? v.ToString() : "";
 
-    private static string Truncate(string s, int max) =>
-        s.Length <= max ? s : s[..max] + "...";
+    private static string? Truncate(string? s, int max) =>
+        s is null || s.Length <= max ? s : s[..max] + "...";
 
     private static string SanitizePath(string path) =>
         Regex.Replace(path, @"[^\w\-/.]", "_");
@@ -984,7 +987,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         return string.Join(", ", items);
     }
 
-    private static string StateIcon(string state) => state switch
+    private static string StateIcon(string? state) => state switch
     {
         "success" => "[pass]",
         "failure" => "[FAIL]",

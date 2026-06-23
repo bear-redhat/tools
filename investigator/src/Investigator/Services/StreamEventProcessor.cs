@@ -33,9 +33,9 @@ internal sealed class StreamEventProcessor
                 if (_blocks.TryGetValue(deltaIdx, out var block))
                 {
                     if (evt.Delta.Type == "text_delta" && evt.Delta.Text is not null)
-                        block.Text = (block.Text ?? "") + evt.Delta.Text;
+                        block.Text = string.Concat(block.Text, evt.Delta.Text);
                     else if (evt.Delta.Type == "thinking_delta" && evt.Delta.Thinking is not null)
-                        block.Text = (block.Text ?? "") + evt.Delta.Thinking;
+                        block.Text = string.Concat(block.Text, evt.Delta.Thinking);
                     else if (evt.Delta.Type == "input_json_delta" && evt.Delta.PartialJson is not null)
                         if (_jsonAccumulators.TryGetValue(deltaIdx, out var acc))
                             acc.Append(evt.Delta.PartialJson);

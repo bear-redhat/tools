@@ -56,11 +56,13 @@ public sealed partial class DraftPatchTool : IInvestigatorTool, ISystemPromptCon
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {
-        var repoPath = parameters.TryGetProperty("repo_path", out var rp) ? rp.GetString() ?? "" : "";
-        var description = parameters.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "";
+        var repoPath = parameters.TryGetProperty("repo_path", out var rp) ? rp.GetString() : null;
+        var description = parameters.TryGetProperty("description", out var desc) ? desc.GetString() : null;
 
         if (string.IsNullOrWhiteSpace(repoPath))
             return new ToolResult("repo_path is required.", ExitCode: 1);
+        if (string.IsNullOrWhiteSpace(description))
+            return new ToolResult("'description' is required.", ExitCode: 1);
 
         if (!Path.IsPathRooted(repoPath))
             repoPath = Path.Combine(context.WorkspacePath, repoPath);

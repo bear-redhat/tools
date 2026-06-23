@@ -149,8 +149,8 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {
-        var cluster = parameters.GetProperty("cluster").GetString() ?? "";
-        var command = parameters.GetProperty("command").GetString() ?? "";
+        var cluster = parameters.GetProperty("cluster").GetString();
+        var command = parameters.GetProperty("command").GetString();
 
         if (string.IsNullOrWhiteSpace(cluster))
         {
@@ -269,8 +269,10 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
             if (proc.ExitCode != 0)
                 context.Logger.LogWarning("run_oc: '{Command}' on {Cluster} exited with code {Code}", command, cluster, proc.ExitCode);
 
-            var truncated = headTail.Build(proc.ExitCode, outputRelative);
-            if (headTail.LineCount > _headLines + _tailLines)
+            var truncated = context.RawOutput
+                ? headTail.BuildRaw()
+                : headTail.Build(proc.ExitCode, outputRelative);
+            if (!context.RawOutput && headTail.LineCount > _headLines + _tailLines)
             {
                 var fullText = await ReadUpToAsync(outputPath, ct);
                 var summary = await _summarizer.SummarizeAsync(fullText, ct);
@@ -290,7 +292,9 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
                 await fileWriter.FlushAsync();
             }
             headTail.Add("[timed out]");
-            var truncated = headTail.Build(-1, outputRelative);
+            var truncated = context.RawOutput
+                ? headTail.BuildRaw()
+                : headTail.Build(-1, outputRelative);
             return new ToolResult(truncated, ExitCode: -1, TimedOut: true, ReproCommand: reproCommand,
                 LineCount: headTail.LineCount, OutputFile: outputRelative);
         }
@@ -516,8 +520,8 @@ public sealed class OcExecutor : IInvestigatorTool, ISystemPromptContributor
 
     private sealed class ClusterEntry
     {
-        public string Name { get; set; } = "";
-        public string Type { get; set; } = "";
+        public string? Name { get; set; }
+        public string? Type { get; set; }
         public string? Kubeconfig { get; set; }
         public string? Context { get; set; }
         public string? Server { get; set; }

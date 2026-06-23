@@ -179,7 +179,7 @@ public sealed class AgentRunner
                             thinkingParts.Add(block.Text);
                         else if (block.Type == "text" && !string.IsNullOrEmpty(block.Text))
                             textParts.Add(block.Text);
-                        else if (block.Type == "tool_use" && terminalTools.Contains(block.Name ?? ""))
+                        else if (block.Type == "tool_use" && block.Name is not null && terminalTools.Contains(block.Name))
                             terminalCall = block;
                         else if (block.Type == "tool_use")
                             toolUses.Add(block);
@@ -194,7 +194,7 @@ public sealed class AgentRunner
                     // Case 0: output was truncated
                     if (truncatedTools.Count > 0)
                     {
-                        var truncatedNames = string.Join(", ", truncatedTools.Select(t => t.Name ?? "unknown"));
+                        var truncatedNames = string.Join(", ", truncatedTools.Select(t => t.Name));
                         _logger.LogWarning("Agent {Name} response truncated, lost tool calls: {Tools}", config.Name, truncatedNames);
 
                         var successfulTools = toolUses.Where(t => !t.Truncated).ToList();
@@ -222,13 +222,14 @@ public sealed class AgentRunner
                                     continue;
                                 }
 
+                                if (tu.Name is null || tu.Id is null) { _logger.LogError("Tool use block missing name or id, skipping"); continue; }
                                 toolCallCount++;
-                                var toolName = tu.Name ?? "unknown";
+                                var toolName = tu.Name;
                                 var toolInput = tu.Input ?? default;
 
                                 _logger.LogInformation("Agent {Agent} executing tool {Tool}: {Command}", config.Name, toolName, FormatDisplayCommand(toolName, toolInput));
 
-                                var result = await executeTool(toolName, toolInput, tu.Id ?? "", ct);
+                                var result = await executeTool(toolName, toolInput, tu.Id, ct);
                                 toolResults.Add(new { type = "tool_result", tool_use_id = tu.Id, content = result.Output });
                                 while (inbox.TryRead(out var inboxEvt)) { var m = FormatEventAsLlmMessage(inboxEvt); if (m is not null) bufferedInbox.Add(m); }
                             }
@@ -297,7 +298,7 @@ public sealed class AgentRunner
 
                         _logger.LogInformation("Agent {Agent} executing terminal tool {Tool}", config.Name, terminalName);
 
-                        var result = await executeTool(terminalName, terminalCall.Input ?? default, terminalCall.Id ?? "", ct);
+                        var result = await executeTool(terminalName, terminalCall.Input ?? default, terminalCall.Id!, ct);
 
                         var terminalContent = new List<object>();
                         foreach (var tp in textParts) terminalContent.Add(new { type = "text", text = tp });
@@ -306,7 +307,7 @@ public sealed class AgentRunner
                         var aMsg = new LlmMessage { Role = "assistant", Content = JsonSerializer.SerializeToElement(terminalContent) };
                         var toolResultContent = JsonSerializer.SerializeToElement(new[] { new { type = "tool_result", tool_use_id = terminalCall.Id, content = result.Output } });
                         LlmMessage tMsg = result.Summary is not null
-                            ? new LlmToolResultMessage { Role = "user", Content = toolResultContent, ToolMeta = [new ToolCallMeta { ToolUseId = terminalCall.Id ?? "", Summary = result.Summary, ExitCode = result.ExitCode, OutputFile = result.OutputFile, TimedOut = result.TimedOut }] }
+                            ? new LlmToolResultMessage { Role = "user", Content = toolResultContent, ToolMeta = [new ToolCallMeta { ToolUseId = terminalCall.Id!, Summary = result.Summary, ExitCode = result.ExitCode, OutputFile = result.OutputFile, TimedOut = result.TimedOut }] }
                             : new LlmMessage { Role = "user", Content = toolResultContent };
                         messages.Add(aMsg);
                         messages.Add(tMsg);
@@ -337,13 +338,14 @@ public sealed class AgentRunner
                         foreach (var tu in toolUses)
                         {
                             ct.ThrowIfCancellationRequested();
+                            if (tu.Name is null || tu.Id is null) { _logger.LogError("Tool use block missing name or id, skipping"); continue; }
                             toolCallCount++;
-                            var toolName = tu.Name ?? "unknown";
+                            var toolName = tu.Name;
                             var toolInput = tu.Input ?? default;
 
                             _logger.LogInformation("Agent {Agent} executing tool {Tool}: {Command}", config.Name, toolName, FormatDisplayCommand(toolName, toolInput));
 
-                            var result = await executeTool(toolName, toolInput, tu.Id ?? "", ct);
+                            var result = await executeTool(toolName, toolInput, tu.Id, ct);
 
                             toolResults.Add(new { type = "tool_result", tool_use_id = tu.Id, content = result.Output });
                             if (config.IsConditionallyTerminal?.Invoke(toolName, toolInput) == true)
@@ -492,7 +494,7 @@ public sealed class AgentRunner
             for (var i = 0; i < compactEnd; i++)
             {
                 var msg = messages[i];
-                var contentStr = msg.Content.ValueKind == JsonValueKind.String ? msg.Content.GetString() ?? "" : msg.Content.GetRawText();
+                var contentStr = msg.Content.ValueKind == JsonValueKind.String ? msg.Content.GetString() ?? msg.Content.GetRawText() : msg.Content.GetRawText();
                 historyParts.Add($"[{msg.Role}]: {contentStr}");
             }
 
@@ -514,7 +516,7 @@ public sealed class AgentRunner
             for (var i = 0; i < compactEnd; i++)
             {
                 var msg = messages[i];
-                var contentStr = msg.Content.ValueKind == JsonValueKind.String ? msg.Content.GetString() ?? "" : msg.Content.GetRawText();
+                var contentStr = msg.Content.ValueKind == JsonValueKind.String ? msg.Content.GetString() ?? msg.Content.GetRawText() : msg.Content.GetRawText();
                 if (contentStr.Length > 200) contentStr = contentStr[..200] + "...";
                 summaryParts.Add($"[{msg.Role}]: {contentStr}");
             }
@@ -621,7 +623,7 @@ public sealed class AgentRunner
         };
     }
 
-    internal static string FormatDisplayCommand(string toolName, JsonElement input)
+    internal static string? FormatDisplayCommand(string toolName, JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Object) return toolName;
         return toolName switch
@@ -638,6 +640,7 @@ public sealed class AgentRunner
             "message" => $"message {Prop(input, "to")}",
             "dismiss" => $"dismiss {Prop(input, "agent_name")}",
             "recall" => $"recall {Prop(input, "agent_name")}",
+            "memory" => FormatMemoryCommand(input),
             _ => FormatGenericTool(toolName, input),
         };
     }
@@ -653,11 +656,26 @@ public sealed class AgentRunner
             case "run_aws": Add("cluster", Prop(input, "cluster")); Add("account", Prop(input, "account")); break;
             case "delegate": Add("model", Prop(input, "model")); break;
             case "skills": Add("action", Prop(input, "action")); break;
+            case "memory": Add("action", Prop(input, "action")); Add("category", Prop(input, "category")); break;
         }
         return ctx;
     }
 
-    private static string Prop(JsonElement input, string name) => input.TryGetProperty(name, out var v) ? v.GetString() ?? "" : "";
+    private static string FormatMemoryCommand(JsonElement input)
+    {
+        var action = Prop(input, "action");
+        if (action is null) return "memory";
+        var detail = action switch
+        {
+            "save" => Prop(input, "title") is { } t ? $" \"{Truncate(t, 60)}\"" : null,
+            "search" => Prop(input, "query") is { } q ? $" \"{Truncate(q, 60)}\"" : null,
+            "read" or "delete" => Prop(input, "id") is { } id ? $" {id}" : null,
+            _ => null,
+        };
+        return $"memory {action}{detail}";
+    }
+
+    private static string? Prop(JsonElement input, string name) => input.TryGetProperty(name, out var v) ? v.GetString() : null;
     private static string OptProp(JsonElement input, string name, string prefix) => input.TryGetProperty(name, out var v) && !string.IsNullOrEmpty(v.GetString()) ? prefix + v.GetString() : "";
     private static string Truncate(string value, int maxLength) => value.Length <= maxLength ? value : value[..(maxLength - 1)] + "\u2026";
 
@@ -666,7 +684,7 @@ public sealed class AgentRunner
         var parts = new List<string> { toolName };
         foreach (var prop in input.EnumerateObject())
         {
-            if (prop.Value.ValueKind == JsonValueKind.String) { var val = prop.Value.GetString() ?? ""; if (val.Length > 40) val = val[..39] + "\u2026"; parts.Add($"{prop.Name}={val}"); if (parts.Count >= 4) break; }
+            if (prop.Value.ValueKind == JsonValueKind.String) { var val = prop.Value.GetString(); if (val is null) continue; if (val.Length > 40) val = val[..39] + "\u2026"; parts.Add($"{prop.Name}={val}"); if (parts.Count >= 4) break; }
         }
         return string.Join(" ", parts);
     }

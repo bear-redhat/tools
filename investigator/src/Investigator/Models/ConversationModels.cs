@@ -16,6 +16,8 @@ namespace Investigator.Models;
 [JsonDerivedType(typeof(ConversationItem.PlanItem), "plan")]
 [JsonDerivedType(typeof(ConversationItem.SignOffItem), "sign_off")]
 [JsonDerivedType(typeof(ConversationItem.CaseReceived), "case_received")]
+[JsonDerivedType(typeof(ConversationItem.MemorySaved), "memory_saved")]
+[JsonDerivedType(typeof(ConversationItem.MemoryRecalled), "memory_recalled")]
 public abstract record ConversationItem
 {
     public required DateTimeOffset Timestamp { get; init; }
@@ -60,7 +62,7 @@ public abstract record ConversationItem
         public override string SenderId => LeadId;
         public required string LeadId { get; init; }
         public required string StepId { get; init; }
-        public required string Content { get; init; }
+        public string? Content { get; init; }
         public string? Headline { get; init; }
         public EvidenceChain? Evidence { get; init; }
         public FixSuggestion? Fix { get; init; }
@@ -80,8 +82,8 @@ public abstract record ConversationItem
         public override string SenderId => LeadId;
         public required string LeadId { get; init; }
         public required string StepId { get; init; }
-        public required string Title { get; init; }
-        public required string Description { get; init; }
+        public string? Title { get; init; }
+        public string? Description { get; init; }
         public string? Summary { get; init; }
     }
 
@@ -125,8 +127,8 @@ public abstract record ConversationItem
         public override string? RecipientId { get => ScoutId; init { } }
         public required string ScoutId { get; init; }
         public required string StepId { get; init; }
-        public required string Task { get; init; }
-        public required string Role { get; init; }
+        public string? Task { get; init; }
+        public string? Role { get; init; }
         public string? ModelProfile { get; init; }
     }
 
@@ -143,7 +145,7 @@ public abstract record ConversationItem
         public override string SenderId => LeadId;
         public string LeadId { get; init; } = "langur";
         public required string StepId { get; init; }
-        public required string Outcome { get; init; }
+        public string? Outcome { get; init; }
         public required IReadOnlyList<SignOffAction> ActionsTaken { get; init; }
         public string? Verification { get; init; }
         public string? Remaining { get; init; }
@@ -160,14 +162,36 @@ public abstract record ConversationItem
         public required string Summary { get; init; }
         public IReadOnlyList<CaseFinding> Findings { get; init; } = [];
     }
+
+    public sealed record MemorySaved : ConversationItem
+    {
+        public override string SenderId => LeadId;
+        public required string LeadId { get; init; }
+        public required string StepId { get; init; }
+        public string? Title { get; init; }
+        public string? Category { get; init; }
+        public string[]? Tags { get; init; }
+        public string? MemoryId { get; init; }
+        public string? Content { get; init; }
+    }
+
+    public sealed record MemoryRecalled : ConversationItem
+    {
+        public override string SenderId => LeadId;
+        public required string LeadId { get; init; }
+        public required string StepId { get; init; }
+        public string? Query { get; init; }
+        public int? ResultCount { get; init; }
+        public string? ResultSummary { get; init; }
+    }
 }
 
 public class LogEntryModel
 {
-    public string Sender { get; set; } = "";
-    public string StepId { get; set; } = "";
-    public string Tool { get; set; } = "";
-    public string DisplayCommand { get; set; } = "";
+    public string? Sender { get; set; }
+    public string? StepId { get; set; }
+    public string? Tool { get; set; }
+    public string? DisplayCommand { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public LogEntryStatus Status { get; set; }
     public string? Output { get; set; }
@@ -202,4 +226,4 @@ public enum MemberStatus { Static, Idle, Active, Working }
 
 public enum RoomPhase { Idle, Recovering, Active }
 
-public record SignOffAction(string PlanStepId, string Summary);
+public record SignOffAction(string? PlanStepId, string? Summary);

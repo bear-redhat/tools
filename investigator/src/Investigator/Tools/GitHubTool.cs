@@ -103,7 +103,9 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {
-        var action = parameters.TryGetProperty("action", out var a) ? a.GetString() ?? "" : "";
+        var action = parameters.TryGetProperty("action", out var a) ? a.GetString() : null;
+        if (string.IsNullOrEmpty(action))
+            return new ToolResult("'action' is required.", ExitCode: 1);
 
         return action switch
         {
@@ -136,7 +138,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         using var prDoc = JsonDocument.Parse(prJson);
         var pr = prDoc.RootElement;
 
-        var sha = pr.GetProperty("head").GetProperty("sha").GetString() ?? "";
+        var sha = pr.GetProperty("head").GetProperty("sha").GetString();
         var sb = new StringBuilder();
 
         sb.AppendLine($"# PR {owner}/{repo}#{number}");
@@ -154,7 +156,11 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         {
             var labelNames = new List<string>();
             foreach (var lbl in labels.EnumerateArray())
-                labelNames.Add(lbl.GetProperty("name").GetString() ?? "");
+            {
+                var labelName = lbl.GetProperty("name").GetString();
+                if (labelName is not null)
+                    labelNames.Add(labelName);
+            }
             if (labelNames.Count > 0)
                 sb.AppendLine($"Labels:    {string.Join(", ", labelNames)}");
         }
@@ -267,12 +273,12 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             sb.AppendLine($"## Issue Comments ({comments.GetArrayLength()})");
             foreach (var c in comments.EnumerateArray())
             {
-                var author = c.GetProperty("user").GetProperty("login").GetString() ?? "";
+                var author = c.GetProperty("user").GetProperty("login").GetString();
                 var created = Str(c, "created_at");
                 var body = Str(c, "body");
-                if (body.Length > 500) body = body[..500] + "...";
+                if (body is not null && body.Length > 500) body = body[..500] + "...";
                 sb.AppendLine($"  [{created}] {author}:");
-                sb.AppendLine($"    {body.Replace("\n", "\n    ")}");
+                sb.AppendLine($"    {body?.Replace("\n", "\n    ")}");
                 sb.AppendLine();
             }
         }
@@ -285,12 +291,12 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             sb.AppendLine($"## Review Comments ({comments.GetArrayLength()})");
             foreach (var c in comments.EnumerateArray())
             {
-                var author = c.GetProperty("user").GetProperty("login").GetString() ?? "";
+                var author = c.GetProperty("user").GetProperty("login").GetString();
                 var path = Str(c, "path");
                 var body = Str(c, "body");
-                if (body.Length > 500) body = body[..500] + "...";
+                if (body is not null && body.Length > 500) body = body[..500] + "...";
                 sb.AppendLine($"  {author} on {path}:");
-                sb.AppendLine($"    {body.Replace("\n", "\n    ")}");
+                sb.AppendLine($"    {body?.Replace("\n", "\n    ")}");
                 sb.AppendLine();
             }
         }
@@ -446,7 +452,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
     // ------------------------------------------------------------------ search
     private async Task<ToolResult> Search(JsonElement p, ToolContext ctx, CancellationToken ct)
     {
-        var query = p.TryGetProperty("query", out var q) ? q.GetString() ?? "" : "";
+        var query = p.TryGetProperty("query", out var q) ? q.GetString() : null;
         if (string.IsNullOrWhiteSpace(query))
             return new ToolResult("search requires a 'query' parameter.", ExitCode: 1);
 
@@ -472,7 +478,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             var title = Str(item, "title");
             var htmlUrl = Str(item, "html_url");
             var state = Str(item, "state");
-            var user = item.GetProperty("user").GetProperty("login").GetString() ?? "";
+            var user = item.GetProperty("user").GetProperty("login").GetString();
             var isPr = item.TryGetProperty("pull_request", out _);
 
             sb.AppendLine($"  [{(isPr ? "PR" : "Issue")}] {title}");
@@ -488,7 +494,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         if (!TryGetRepoParams(p, out var owner, out var repo, out var error))
             return new ToolResult(error, ExitCode: 1);
 
-        var path = p.TryGetProperty("path", out var pathEl) ? pathEl.GetString() ?? "" : "";
+        var path = p.TryGetProperty("path", out var pathEl) ? pathEl.GetString() : null;
         if (string.IsNullOrEmpty(path))
             return new ToolResult("get_file requires 'path'.", ExitCode: 1);
 
@@ -514,14 +520,16 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
 
         var sha = Str(root, "sha");
         var size = root.TryGetProperty("size", out var sizeEl) ? sizeEl.GetInt64() : 0;
-        var refLabel = gitRef ?? sha[..Math.Min(sha.Length, 12)];
+        var refLabel = gitRef ?? (sha is not null ? sha[..Math.Min(sha.Length, 12)] : null);
 
         byte[] content;
         var encoding = Str(root, "encoding");
         if (encoding == "base64")
         {
-            var base64 = Str(root, "content").Replace("\n", "");
-            content = Convert.FromBase64String(base64);
+            var contentStr = Str(root, "content")?.Replace("\n", "");
+            if (contentStr is null)
+                return new ToolResult($"File content is missing for {owner}/{repo}/{path}", ExitCode: 1);
+            content = Convert.FromBase64String(contentStr);
         }
         else
         {
@@ -557,11 +565,11 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         if (!TryGetRepoParams(p, out var owner, out var repo, out var error))
             return new ToolResult(error, ExitCode: 1);
 
-        var path = p.TryGetProperty("path", out var pathEl) ? pathEl.GetString() ?? "" : "";
+        var path = p.TryGetProperty("path", out var pathEl) ? pathEl.GetString() : null;
         var gitRef = p.TryGetProperty("ref", out var refEl) ? refEl.GetString() : null;
         ctx.Logger.LogInformation("github: list_directory {Owner}/{Repo}/{Path} ref={Ref}", owner, repo, path, gitRef ?? "(default)");
 
-        var url = $"{ApiBase}/repos/{owner}/{repo}/contents/{path.TrimStart('/')}";
+        var url = $"{ApiBase}/repos/{owner}/{repo}/contents/{path?.TrimStart('/')}";
         if (!string.IsNullOrEmpty(gitRef)) url += $"?ref={Uri.EscapeDataString(gitRef)}";
 
         var json = await GetAsync(url, ct);
@@ -599,7 +607,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         if (!TryGetRepoParams(p, out var owner, out var repo, out var error))
             return new ToolResult(error, ExitCode: 1);
 
-        var gitRef = p.TryGetProperty("ref", out var refEl) ? refEl.GetString() ?? "" : "";
+        var gitRef = p.TryGetProperty("ref", out var refEl) ? refEl.GetString() : null;
         if (string.IsNullOrEmpty(gitRef))
             gitRef = "HEAD";
 
@@ -810,12 +818,12 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
 
     // ------------------------------------------------------------------ parameter helpers
 
-    private static bool TryGetPrParams(JsonElement p, out string owner, out string repo, out int number, out string error)
+    private static bool TryGetPrParams(JsonElement p, out string? owner, out string? repo, out int number, out string? error)
     {
-        owner = p.TryGetProperty("owner", out var o) ? o.GetString() ?? "" : "";
-        repo = p.TryGetProperty("repo", out var r) ? r.GetString() ?? "" : "";
+        owner = p.TryGetProperty("owner", out var o) ? o.GetString() : null;
+        repo = p.TryGetProperty("repo", out var r) ? r.GetString() : null;
         number = p.TryGetProperty("number", out var n) ? n.GetInt32() : 0;
-        error = "";
+        error = null;
 
         if (string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo))
         { error = "owner and repo are required."; return false; }
@@ -824,21 +832,21 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         return true;
     }
 
-    private static bool TryGetRepoParams(JsonElement p, out string owner, out string repo, out string error)
+    private static bool TryGetRepoParams(JsonElement p, out string? owner, out string? repo, out string? error)
     {
-        owner = p.TryGetProperty("owner", out var o) ? o.GetString() ?? "" : "";
-        repo = p.TryGetProperty("repo", out var r) ? r.GetString() ?? "" : "";
-        error = "";
+        owner = p.TryGetProperty("owner", out var o) ? o.GetString() : null;
+        repo = p.TryGetProperty("repo", out var r) ? r.GetString() : null;
+        error = null;
 
         if (string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo))
         { error = "owner and repo are required."; return false; }
         return true;
     }
 
-    private static string Str(JsonElement el, string prop) =>
-        el.TryGetProperty(prop, out var v) ? v.GetString() ?? "" : "";
+    private static string? Str(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) ? v.GetString() : null;
 
-    private static string StatusIcon(string conclusion, string status) => conclusion switch
+    private static string StatusIcon(string? conclusion, string? status) => conclusion switch
     {
         "success" => "[pass]",
         "failure" => "[FAIL]",

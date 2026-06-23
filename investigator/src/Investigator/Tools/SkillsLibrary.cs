@@ -27,6 +27,7 @@ public sealed class SkillsLibrary : IInvestigatorTool
     private readonly IEmbeddingClient _embedder;
     private readonly ILogger<SkillsLibrary> _logger;
     private string _skillsDir = "skills";
+    private string? _learnedDir;
     private readonly List<SkillEntry> _skills = [];
     private bool _indexed;
 
@@ -37,6 +38,18 @@ public sealed class SkillsLibrary : IInvestigatorTool
         var path = options.Value.Path;
         if (!string.IsNullOrEmpty(path))
             _skillsDir = path;
+        _learnedDir = options.Value.LearnedPath;
+    }
+
+    /// <summary>
+    /// Resets the index so the next operation re-scans both directories and re-embeds.
+    /// Called by MemoryConsolidator after writing learned skill files.
+    /// </summary>
+    public void InvalidateIndex()
+    {
+        _indexed = false;
+        _skills.Clear();
+        _logger.LogInformation("Skills index invalidated, will re-scan on next access");
     }
 
     public Task RegisterAsync(CancellationToken ct = default) => Task.CompletedTask;
@@ -52,7 +65,9 @@ public sealed class SkillsLibrary : IInvestigatorTool
     {
         await EnsureIndexed(ct);
 
-        var action = parameters.GetProperty("action").GetString() ?? "";
+        var action = parameters.GetProperty("action").GetString();
+        if (string.IsNullOrEmpty(action))
+            return LogError(context, "'action' is required.");
 
         return action switch
         {
@@ -67,14 +82,26 @@ public sealed class SkillsLibrary : IInvestigatorTool
     {
         if (_indexed) return;
 
-        if (!Directory.Exists(_skillsDir))
+        _skills.Clear();
+        await IndexDirectory(_skillsDir, ct);
+
+        if (!string.IsNullOrEmpty(_learnedDir) && Directory.Exists(_learnedDir))
+            await IndexDirectory(_learnedDir, ct);
+
+        _logger.LogInformation("Skills library indexed: {Count} skills (static: {Dir}, learned: {Learned})",
+            _skills.Count, _skillsDir, _learnedDir ?? "(none)");
+        _indexed = true;
+    }
+
+    private async Task IndexDirectory(string dir, CancellationToken ct)
+    {
+        if (!Directory.Exists(dir))
         {
-            _logger.LogWarning("Skills directory not found: {Dir}", _skillsDir);
-            _indexed = true;
+            _logger.LogWarning("Skills directory not found: {Dir}", dir);
             return;
         }
 
-        foreach (var file in Directory.GetFiles(_skillsDir, "*.md"))
+        foreach (var file in Directory.GetFiles(dir, "*.md"))
         {
             try
             {
@@ -103,14 +130,11 @@ public sealed class SkillsLibrary : IInvestigatorTool
                 _logger.LogError(ex, "Failed to load skill from {File}", file);
             }
         }
-
-        _logger.LogInformation("Skills library indexed: {Count} skills from {Dir}", _skills.Count, _skillsDir);
-        _indexed = true;
     }
 
     private async Task<ToolResult> Search(JsonElement parameters, ToolContext context, CancellationToken ct)
     {
-        var query = parameters.TryGetProperty("query", out var q) ? q.GetString() ?? "" : "";
+        var query = parameters.TryGetProperty("query", out var q) ? q.GetString() : null;
         if (string.IsNullOrWhiteSpace(query))
             return LogError(context, "search requires a 'query' parameter");
 
@@ -163,7 +187,7 @@ public sealed class SkillsLibrary : IInvestigatorTool
 
     private ToolResult Read(JsonElement parameters, ToolContext context)
     {
-        var name = parameters.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+        var name = parameters.TryGetProperty("name", out var n) ? n.GetString() : null;
         if (string.IsNullOrWhiteSpace(name))
             return LogError(context, "read requires a 'name' parameter");
 

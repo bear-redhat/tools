@@ -51,7 +51,9 @@ public sealed class ToolEffectEnricher : IEventEnricher
 
     private List<RoomEvent> DeriveFromConclude(RoomEvent.ToolRequest req)
     {
-        var summary = Prop(req.Input, "summary") ?? "";
+        var summary = Prop(req.Input, "summary");
+        if (summary is null) return [];
+
         var targetId = _dispatcherOf.GetValueOrDefault(req.From, _leadId);
 
         var events = new List<RoomEvent>
@@ -73,8 +75,9 @@ public sealed class ToolEffectEnricher : IEventEnricher
     {
         if (req is null) return null;
 
-        var to = Prop(req.Input, "to") ?? "";
-        var text = Prop(req.Input, "text") ?? "";
+        var to = Prop(req.Input, "to");
+        var text = Prop(req.Input, "text");
+        if (to is null || text is null) return null;
 
         if (req.From == _leadId)
         {
@@ -96,7 +99,9 @@ public sealed class ToolEffectEnricher : IEventEnricher
     {
         if (req is null) return null;
 
-        var name = Prop(req.Input, "agent_name") ?? "";
+        var name = Prop(req.Input, "agent_name");
+        if (name is null) return null;
+
         var scoutId = NameToId(name);
         const string recallMessage = "You have been recalled. Report back immediately with whatever "
             + "you have uncovered thus far. Call conclude now.";
@@ -107,7 +112,9 @@ public sealed class ToolEffectEnricher : IEventEnricher
     {
         if (req is null) return null;
 
-        var task = Prop(req.Input, "task") ?? "";
+        var task = Prop(req.Input, "task");
+        if (task is null) return null;
+
         var agentName = ExtractAgentName(tres.Output);
         var agentId = NameToId(agentName);
 

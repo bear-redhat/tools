@@ -10,7 +10,9 @@ internal static class SubAgentHelpers
         ConcurrentDictionary<string, AgentRoom.AgentSlot> agents,
         string leadId, string callerId, JsonElement input, string subAgentLabel, string leadName, ILogger logger)
     {
-        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
+        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() : null;
+        if (name is null)
+            return new AgentRunner.ToolExecutionResult("'agent_name' is required.");
 
         if (!agents.TryGetValue(name, out var slot) || slot.Id == leadId)
             return new AgentRunner.ToolExecutionResult($"No {subAgentLabel} by the name of '{name}' is present.");
@@ -32,7 +34,9 @@ internal static class SubAgentHelpers
         ConcurrentDictionary<string, AgentRoom.AgentSlot> agents,
         string leadId, string callerId, JsonElement input, string subAgentLabel, string locationName, ILogger logger, string callerName)
     {
-        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() ?? "" : "";
+        var name = input.TryGetProperty("agent_name", out var an) ? an.GetString() : null;
+        if (name is null)
+            return new AgentRunner.ToolExecutionResult("'agent_name' is required.");
 
         if (!agents.TryGetValue(name, out var slot) || slot.Id == leadId)
             return new AgentRunner.ToolExecutionResult(

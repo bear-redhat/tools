@@ -63,7 +63,9 @@ internal sealed class RoomToolHandlers
     internal Task<AgentRunner.ToolExecutionResult> HandleMessage(
         AgentRoom.AgentSlot callerSlot, JsonElement input)
     {
-        var to = input.TryGetProperty("to", out var toVal) ? toVal.GetString() ?? "" : "";
+        var to = input.TryGetProperty("to", out var toVal) ? toVal.GetString() : null;
+        if (to is null)
+            return Task.FromResult(new AgentRunner.ToolExecutionResult(Output: "'to' is required."));
 
         if (to is "user" or "client")
         {
@@ -94,7 +96,7 @@ internal sealed class RoomToolHandlers
     internal string BuildCheckAgentsResponse() =>
         SubAgentHelpers.BuildCheckAgentsResponse(_agents, _leadId, "Agents afield", "Scout");
 
-    internal (EvidenceChain?, FixSuggestion?, string Summary) ParseConcludeParams(JsonElement input)
+    internal (EvidenceChain?, FixSuggestion?, string? Summary) ParseConcludeParams(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Object)
         {
@@ -102,7 +104,7 @@ internal sealed class RoomToolHandlers
             return (null, null, "(No summary was provided.)");
         }
 
-        var summary = input.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "";
+        var summary = input.TryGetProperty("summary", out var s) ? s.GetString() : null;
 
         EvidenceChain? evidence = null;
         if (input.TryGetProperty("evidence", out var evidenceArray) && evidenceArray.ValueKind == JsonValueKind.Array)
@@ -112,11 +114,11 @@ internal sealed class RoomToolHandlers
             {
                 steps.Add(new EvidenceStep(
                     Step: item.TryGetProperty("step", out var st) ? st.GetInt32() : steps.Count + 1,
-                    Reasoning: item.TryGetProperty("reasoning", out var r) ? r.GetString() ?? "" : "",
-                    Finding: item.TryGetProperty("finding", out var f) ? f.GetString() ?? "" : "",
+                    Reasoning: item.TryGetProperty("reasoning", out var r) ? r.GetString() : null,
+                    Finding: item.TryGetProperty("finding", out var f) ? f.GetString() : null,
                     Cluster: item.TryGetProperty("cluster", out var c) ? c.GetString() : null,
-                    Proof: item.TryGetProperty("proof", out var prf) ? prf.GetString() ?? ""
-                        : item.TryGetProperty("command", out var cmd) ? cmd.GetString() ?? "" : "",
+                    Proof: item.TryGetProperty("proof", out var prf) ? prf.GetString()
+                        : item.TryGetProperty("command", out var cmd) ? cmd.GetString() : null,
                     Source: item.TryGetProperty("source", out var src) ? src.GetString() : null));
             }
             evidence = new EvidenceChain(steps.OrderBy(s => s.Step).ToList());
@@ -128,8 +130,8 @@ internal sealed class RoomToolHandlers
         if (hasFixDesc || hasFixCmds)
         {
             fix = new FixSuggestion(
-                Description: hasFixDesc ? fd.GetString() ?? "" : "",
-                Commands: hasFixCmds ? fc.EnumerateArray().Select(c => c.GetString() ?? "").ToList() : [],
+                Description: hasFixDesc ? fd.GetString() : null,
+                Commands: hasFixCmds ? fc.EnumerateArray().Select(c => c.GetString()).OfType<string>().ToList() : null,
                 Warning: input.TryGetProperty("fix_warning", out var fw) ? fw.GetString() : null);
         }
 

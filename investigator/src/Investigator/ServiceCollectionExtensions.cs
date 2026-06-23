@@ -23,6 +23,7 @@ public static class ServiceCollectionExtensions
         services.Configure<GitHubOptions>(config.GetSection("Tools:github"));
         services.Configure<ProwOptions>(config.GetSection("Tools:prow"));
         services.Configure<PrometheusOptions>(config.GetSection("Tools:prometheus"));
+        services.Configure<MemoryOptions>(config.GetSection("Tools:memory"));
         services.Configure<ToolOutputOptions>(config.GetSection(ToolOutputOptions.Section));
         services.Configure<PluginOptions>(config.GetSection(PluginOptions.Section));
         services.Configure<WorkspaceOptions>(config.GetSection(WorkspaceOptions.Section));
@@ -88,6 +89,8 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<OutputSummarizer>();
+        services.AddSingleton<MemoryConsolidator>();
+        services.AddHostedService<MemoryConsolidationService>();
 
         services.AddSingleton<ToolRegistry>(sp =>
         {
@@ -107,6 +110,7 @@ public static class ServiceCollectionExtensions
                 typeof(PrometheusTool),
                 typeof(DraftPatchTool),
                 typeof(ReadOutputTool),
+                typeof(MemoryTool),
             };
 
             var pluginOpts = sp.GetRequiredService<IOptions<PluginOptions>>().Value;
@@ -133,7 +137,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ILoggerFactory>()));
 
         var llmSection = config.GetSection(LlmOptions.Section);
-        var primaryName = llmSection["Primary"] ?? "";
+        var primaryName = llmSection["Primary"];
         var primaryProvider = llmSection.GetSection($"Models:{primaryName}")["Provider"]?.ToLowerInvariant();
         switch (primaryProvider)
         {

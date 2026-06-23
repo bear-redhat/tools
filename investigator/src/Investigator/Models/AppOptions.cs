@@ -3,8 +3,8 @@ namespace Investigator.Models;
 public sealed class LlmOptions
 {
     public const string Section = "Llm";
-    public string Primary { get; set; } = "";
-    public string Default { get; set; } = "";
+    public string? Primary { get; set; }
+    public string? Default { get; set; }
     public string? Summarizer { get; set; }
     public Dictionary<string, ProviderCredentials> Providers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ModelOptions> Models { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -22,15 +22,15 @@ public sealed class ProviderCredentials
 
 public sealed class ModelOptions
 {
-    public string Provider { get; set; } = "";
-    public string Model { get; set; } = "";
+    public string? Provider { get; set; }
+    public string? Model { get; set; }
     public string? Region { get; set; }
     public string? ProjectId { get; set; }
     public string? EmbeddingModel { get; set; }
     public int MaxTokens { get; set; } = 16000;
     public int ThinkingBudget { get; set; } = 10000;
     public int ContextWindowTokens { get; set; } = 1_000_000;
-    public string Strengths { get; set; } = "";
+    public string? Strengths { get; set; }
     public decimal InputPricePerMToken { get; set; }
     public decimal OutputPricePerMToken { get; set; }
     public decimal CacheReadPricePerMToken { get; set; }
@@ -48,7 +48,7 @@ public sealed class AgentOptions
 public sealed class WorkspaceOptions
 {
     public const string Section = "Workspace";
-    public string RootPath { get; set; } = "";
+    public string? RootPath { get; set; }
 }
 
 public sealed class ToolOutputOptions
@@ -83,8 +83,8 @@ public sealed class OcOptions
 
 public sealed class ClusterOptions
 {
-    public string Name { get; set; } = "";
-    public string Type { get; set; } = "";
+    public string? Name { get; set; }
+    public string? Type { get; set; }
     public string? Kubeconfig { get; set; }
     public string? Context { get; set; }
     public string? Server { get; set; }
@@ -101,7 +101,7 @@ public sealed class AwsOptions
 
 public sealed class AwsEntry
 {
-    public string Name { get; set; } = "";
+    public string? Name { get; set; }
     public string? RoleArn { get; set; }
     public string? Region { get; set; }
     public string? Description { get; set; }
@@ -127,7 +127,7 @@ public sealed class CiRepoOptions
 
 public sealed class RepoConfig
 {
-    public string Url { get; set; } = "";
+    public string? Url { get; set; }
     public string? LocalPath { get; set; }
     public bool ShallowClone { get; set; } = true;
     /// <summary>
@@ -139,6 +139,25 @@ public sealed class RepoConfig
 public sealed class SkillsOptions
 {
     public string Path { get; set; } = "skills";
+    public string? LearnedPath { get; set; }
+}
+
+public sealed class MemoryOptions
+{
+    public string? Path { get; set; }
+    public int MaxEntries { get; set; } = 500;
+    public int SearchResults { get; set; } = 5;
+    public int ListDefault { get; set; } = 20;
+    public DreamingOptions Dreaming { get; set; } = new();
+}
+
+public sealed class DreamingOptions
+{
+    public bool Enabled { get; set; } = true;
+    public TimeSpan Interval { get; set; } = TimeSpan.FromDays(7);
+    public int MinMemories { get; set; } = 5;
+    public int ContextBatchSize { get; set; } = 100;
+    public string? ModelProfile { get; set; }
 }
 
 public sealed class WebSearchOptions

@@ -110,10 +110,85 @@
         <div class="message-role">@DisplayName(finding.LeadId) -- Finding</div>
         <div class="message-body @CollapseClass()" @ref="_contentRef">
             <div class="message-content finding">
-                <MarkdownRenderer Content="@($"**{finding.Title}**\n{finding.Description}")" />
+                <MarkdownRenderer Content="@($"{(finding.Title is not null ? $"**{finding.Title}**\n" : "")}{finding.Description}")" />
             </div>
         </div>
         @if (_isOverflowing) { <button class="btn-collapse-toggle" @onclick="ToggleCollapse">@(_isCollapsed ? "Show more" : "Show less")</button> }
+    }
+    else if (Item is ConversationItem.MemorySaved memorySaved)
+    {
+        <div class="message-role">
+            @DisplayName(memorySaved.LeadId)
+            <span class="memory-label">Memory saved</span>
+        </div>
+        <div class="message-content memory-saved">
+            <div class="memory-summary">
+                @if (memorySaved.Title is not null)
+                {
+                    <span class="memory-title">@memorySaved.Title</span>
+                }
+                @if (memorySaved.Category is not null)
+                {
+                    <span class="memory-category-badge">@memorySaved.Category</span>
+                }
+                @if (memorySaved.Tags is not null)
+                {
+                    @foreach (var tag in memorySaved.Tags)
+                    {
+                        <span class="memory-tag-pill">@tag</span>
+                    }
+                }
+            </div>
+            <button class="panel-toggle report-toggle" @onclick="ToggleReport">
+                <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Content
+            </button>
+            @if (_reportExpanded)
+            {
+                <div class="memory-expand-body">
+                    @if (memorySaved.Content is not null)
+                    {
+                        <MarkdownRenderer Content="@memorySaved.Content" />
+                    }
+                    @if (memorySaved.MemoryId is not null)
+                    {
+                        <div class="memory-id-muted">id: @memorySaved.MemoryId</div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else if (Item is ConversationItem.MemoryRecalled memoryRecalled)
+    {
+        <div class="message-role">
+            @DisplayName(memoryRecalled.LeadId)
+            <span class="memory-label">Memory search</span>
+        </div>
+        <div class="message-content memory-recalled">
+            <div class="memory-summary">
+                @if (memoryRecalled.Query is not null)
+                {
+                    <span class="memory-query">"@memoryRecalled.Query"</span>
+                }
+                @if (memoryRecalled.ResultCount is not null)
+                {
+                    <span class="memory-result-badge @(memoryRecalled.ResultCount == 0 ? "no-matches" : "")">
+                        @(memoryRecalled.ResultCount == 0 ? "no matches" : $"{memoryRecalled.ResultCount} found")
+                    </span>
+                }
+            </div>
+            @if (memoryRecalled.ResultSummary is not null && memoryRecalled.ResultCount is not 0)
+            {
+                <button class="panel-toggle report-toggle" @onclick="ToggleReport">
+                    <span class="toggle-arrow">@(_reportExpanded ? "▼" : "▶")</span> Results
+                </button>
+                @if (_reportExpanded)
+                {
+                    <div class="memory-expand-body">
+                        <MarkdownRenderer Content="@memoryRecalled.ResultSummary" />
+                    </div>
+                }
+            }
+        </div>
     }
     else if (Item is ConversationItem.ScoutQuestion question)
     {
@@ -151,7 +226,7 @@
     }
     else if (Item is ConversationItem.Welcome welcome)
     {
-        <div class="message-role">@(welcome.RoomName ?? "221B Banyan Row")</div>
+        <div class="message-role">@(welcome.RoomName)</div>
         <div class="message-body @CollapseClass()" @ref="_contentRef">
             <div class="message-content welcome-content">
                 <pre class="ascii-art welcome-room">@FormatWelcomeContent(welcome.Content)</pre>
@@ -288,7 +363,9 @@
 
     private bool IsCollapsible => Item is not ConversationItem.Conclusion
         and not ConversationItem.Welcome
-        and not ConversationItem.CaseReceived;
+        and not ConversationItem.CaseReceived
+        and not ConversationItem.MemorySaved
+        and not ConversationItem.MemoryRecalled;
 
     private string CollapseClass() =>
         IsCollapsible && _isCollapsed && _isOverflowing ? "collapsed" : "";
@@ -334,6 +411,8 @@
             ConversationItem.Finding => "finding",
             ConversationItem.ScoutQuestion => "scout-question",
             ConversationItem.Dispatch => "dispatch",
+            ConversationItem.MemorySaved => "memory-saved",
+            ConversationItem.MemoryRecalled => "memory-recalled",
             ConversationItem.Welcome => "welcome",
             ConversationItem.CaseReceived => "case-received",
             ConversationItem.SignOffItem => "sign-off",

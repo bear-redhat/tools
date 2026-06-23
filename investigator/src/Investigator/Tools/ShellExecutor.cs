@@ -138,7 +138,7 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {
-        var command = parameters.GetProperty("command").GetString() ?? "";
+        var command = parameters.GetProperty("command").GetString();
 
         if (string.IsNullOrWhiteSpace(command))
         {

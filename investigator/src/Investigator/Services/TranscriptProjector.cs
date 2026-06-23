@@ -103,8 +103,9 @@ public sealed class TranscriptProjector
 
             if (type == "tool_use")
             {
-                var id = block.TryGetProperty("id", out var idVal) ? idVal.GetString() ?? "" : "";
-                var name = block.TryGetProperty("name", out var nameVal) ? nameVal.GetString() ?? "" : "";
+                var id = block.TryGetProperty("id", out var idVal) ? idVal.GetString() : null;
+                var name = block.TryGetProperty("name", out var nameVal) ? nameVal.GetString() : null;
+                if (id is null || name is null) continue;
                 var input = block.TryGetProperty("input", out var inputVal) ? inputVal : default;
                 var displayCmd = AgentRunner.FormatDisplayCommand(name, input);
 
@@ -126,8 +127,8 @@ public sealed class TranscriptProjector
     {
         if (msg.Content.ValueKind == JsonValueKind.String)
         {
-            var text = msg.Content.GetString() ?? "";
-            if (text.StartsWith("[system error]"))
+            var text = msg.Content.GetString();
+            if (text is not null && text.StartsWith("[system error]"))
                 await _emit(new RoomEvent.TextMessage(0, "system", ctx.Timestamp, text));
             return;
         }
@@ -142,14 +143,16 @@ public sealed class TranscriptProjector
 
             if (type == "tool_result")
             {
-                var toolUseId = block.TryGetProperty("tool_use_id", out var idVal) ? idVal.GetString() ?? "" : "";
-                var content = block.TryGetProperty("content", out var cVal) ? cVal.GetString() ?? "" : "";
+                var toolUseId = block.TryGetProperty("tool_use_id", out var idVal) ? idVal.GetString() : null;
+                var content = block.TryGetProperty("content", out var cVal) ? cVal.GetString() : null;
+                if (toolUseId is null) continue;
                 var meta = toolMeta?.FirstOrDefault(m => m.ToolUseId == toolUseId);
 
                 var requestSeq = _toolSeqMap.TryGetValue((ctx.From, toolUseId), out var rs) ? rs : 0;
                 _toolSeqMap.Remove((ctx.From, toolUseId));
 
                 var toolName = ResolveToolName(requestSeq);
+                if (toolName is null || content is null) continue;
 
                 await _emit(new RoomEvent.ToolResponse(0, $"tool:{toolName}", ctx.Timestamp,
                     toolName, content, requestSeq,
@@ -161,9 +164,9 @@ public sealed class TranscriptProjector
         }
     }
 
-    private string ResolveToolName(int requestSeq)
+    private string? ResolveToolName(int requestSeq)
     {
         _seqToToolName.Remove(requestSeq, out var name);
-        return name ?? "unknown";
+        return name;
     }
 }

@@ -144,8 +144,8 @@ public sealed class UxProjector
 
         if (tres.Tool == "delegate" && req is not null)
         {
-            var role = Prop(req.Input, "role") ?? "scout";
-            var task = Prop(req.Input, "task") ?? "";
+            var role = Prop(req.Input, "role");
+            var task = Prop(req.Input, "task");
             var model = Prop(req.Input, "model");
             var agentName = ExtractAgentName(tres.Output);
             var agentId = agentName.ToLowerInvariant().Replace(" ", "-");
@@ -176,7 +176,7 @@ public sealed class UxProjector
             {
                 LeadId = _leadId,
                 StepId = tres.Seq.ToString(),
-                Content = summary ?? "",
+                Content = summary,
                 Headline = tres.Summary,
                 Evidence = evidence,
                 Fix = fix,
@@ -199,8 +199,8 @@ public sealed class UxProjector
 
         if (tres.Tool == "present_finding" && req is not null)
         {
-            var title = Prop(req.Input, "title") ?? "";
-            var desc = Prop(req.Input, "description") ?? "";
+            var title = Prop(req.Input, "title");
+            var desc = Prop(req.Input, "description");
             yield return new AddConversationItem(new ConversationItem.Finding
             {
                 LeadId = _leadId,
@@ -216,8 +216,8 @@ public sealed class UxProjector
 
         if (tres.Tool == "report_progress" && req is not null)
         {
-            var title = Prop(req.Input, "title") ?? "";
-            var desc = Prop(req.Input, "description") ?? "";
+            var title = Prop(req.Input, "title");
+            var desc = Prop(req.Input, "description");
             yield return new AddConversationItem(new ConversationItem.Finding
             {
                 LeadId = _leadId,
@@ -251,9 +251,9 @@ public sealed class UxProjector
 
         if (tres.Tool == "update_step" && req is not null)
         {
-            var stepId = Prop(req.Input, "id") ?? "";
-            var statusStr = Prop(req.Input, "status") ?? "";
-            if (Enum.TryParse<StepStatus>(statusStr, true, out var status))
+            var stepId = Prop(req.Input, "id");
+            var statusStr = Prop(req.Input, "status");
+            if (stepId is not null && Enum.TryParse<StepStatus>(statusStr, true, out var status))
                 yield return new UpdatePlanStep(stepId, status,
                     Prop(req.Input, "note"), Prop(req.Input, "patch_file"));
             yield return new UpdateLogEntry(tres.RequestSeq, LogEntryStatus.Completed, tres.Output);
@@ -282,7 +282,7 @@ public sealed class UxProjector
 
         if (tres.Tool == "message" && req is not null)
         {
-            var to = Prop(req.Input, "to") ?? "";
+            var to = Prop(req.Input, "to");
             var isBlocking = req.From != _leadId || to is "user" or "client";
             if (isBlocking)
             {
@@ -296,9 +296,45 @@ public sealed class UxProjector
 
         if (tres.Tool == "dismiss" && req is not null)
         {
-            var name = Prop(req.Input, "agent_name") ?? "";
-            var scoutId = name.ToLowerInvariant().Replace(" ", "-");
-            yield return new SetMemberStatus(scoutId, MemberStatus.Idle);
+            var name = Prop(req.Input, "agent_name");
+            if (name is not null)
+            {
+                var scoutId = name.ToLowerInvariant().Replace(" ", "-");
+                yield return new SetMemberStatus(scoutId, MemberStatus.Idle);
+            }
+            yield return new UpdateLogEntry(tres.RequestSeq, LogEntryStatus.Completed, tres.Output);
+            yield break;
+        }
+
+        if (tres.Tool == "memory" && req is not null)
+        {
+            var action = Prop(req.Input, "action");
+            if (action == "save")
+            {
+                yield return new AddConversationItem(new ConversationItem.MemorySaved
+                {
+                    LeadId = _leadId,
+                    StepId = tres.Seq.ToString(),
+                    Title = Prop(req.Input, "title"),
+                    Category = Prop(req.Input, "category"),
+                    Tags = ParseTags(req.Input),
+                    MemoryId = ExtractMemoryId(tres.Output),
+                    Content = Prop(req.Input, "content"),
+                    Timestamp = tres.Timestamp,
+                });
+            }
+            else if (action == "search")
+            {
+                yield return new AddConversationItem(new ConversationItem.MemoryRecalled
+                {
+                    LeadId = _leadId,
+                    StepId = tres.Seq.ToString(),
+                    Query = Prop(req.Input, "query"),
+                    ResultCount = ExtractResultCount(tres.Output),
+                    ResultSummary = tres.Output,
+                    Timestamp = tres.Timestamp,
+                });
+            }
             yield return new UpdateLogEntry(tres.RequestSeq, LogEntryStatus.Completed, tres.Output);
             yield break;
         }
@@ -413,6 +449,39 @@ public sealed class UxProjector
         return idx > 0 ? rest[..idx] : output;
     }
 
+    private static string[]? ParseTags(JsonElement input)
+    {
+        if (!input.TryGetProperty("tags", out var tagsEl) || tagsEl.ValueKind != JsonValueKind.Array)
+            return null;
+        var tags = tagsEl.EnumerateArray()
+            .Select(e => e.GetString())
+            .Where(s => !string.IsNullOrEmpty(s))
+            .ToArray();
+        return tags.Length > 0 ? tags! : null;
+    }
+
+    private static string? ExtractMemoryId(string output)
+    {
+        const string prefix = "Memory saved (id: ";
+        var start = output.IndexOf(prefix, StringComparison.Ordinal);
+        if (start < 0) return null;
+        start += prefix.Length;
+        var end = output.IndexOf(',', start);
+        if (end < 0) end = output.IndexOf(')', start);
+        return end > start ? output[start..end] : null;
+    }
+
+    private static int? ExtractResultCount(string output)
+    {
+        const string prefix = "Found ";
+        var start = output.IndexOf(prefix, StringComparison.Ordinal);
+        if (start < 0)
+            return output.Contains("Memory is empty") || output.Contains("No matching") ? 0 : null;
+        start += prefix.Length;
+        var end = output.IndexOf(' ', start);
+        return end > start && int.TryParse(output[start..end], out var count) ? count : null;
+    }
+
     internal static (EvidenceChain?, FixSuggestion?, string?) ParseConcludeInput(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Object) return (null, null, null);
@@ -427,10 +496,10 @@ public sealed class UxProjector
             {
                 steps.Add(new EvidenceStep(
                     Step: item.TryGetProperty("step", out var st) ? st.GetInt32() : steps.Count + 1,
-                    Reasoning: Prop(item, "reasoning") ?? "",
-                    Finding: Prop(item, "finding") ?? "",
+                    Reasoning: Prop(item, "reasoning"),
+                    Finding: Prop(item, "finding"),
                     Cluster: Prop(item, "cluster"),
-                    Proof: Prop(item, "proof") ?? Prop(item, "command") ?? "",
+                    Proof: Prop(item, "proof") ?? Prop(item, "command"),
                     Source: Prop(item, "source")));
             }
             evidence = new EvidenceChain(steps.OrderBy(s => s.Step).ToList());
@@ -442,21 +511,21 @@ public sealed class UxProjector
         if (hasFd || hasFc)
         {
             fix = new FixSuggestion(
-                Description: hasFd ? fd.GetString() ?? "" : "",
-                Commands: hasFc ? fc.EnumerateArray().Select(c => c.GetString() ?? "").ToList() : [],
+                Description: hasFd ? fd.GetString() : null,
+                Commands: hasFc ? fc.EnumerateArray().Select(c => c.GetString()).Where(c => c is not null).ToList()! : null,
                 Warning: Prop(input, "fix_warning"));
         }
 
         return (evidence, fix, summary);
     }
 
-    private static (string, IReadOnlyList<SignOffAction>, string?, string?, string?) ParseSignOffInput(JsonElement input)
+    private static (string?, IReadOnlyList<SignOffAction>, string?, string?, string?) ParseSignOffInput(JsonElement input)
     {
-        var outcome = Prop(input, "outcome") ?? "";
+        var outcome = Prop(input, "outcome");
         var actions = new List<SignOffAction>();
         if (input.TryGetProperty("actions_taken", out var at) && at.ValueKind == JsonValueKind.Array)
             foreach (var item in at.EnumerateArray())
-                actions.Add(new SignOffAction(Prop(item, "plan_step_id") ?? "", Prop(item, "summary") ?? ""));
+                actions.Add(new SignOffAction(Prop(item, "plan_step_id"), Prop(item, "summary")));
         return (outcome, actions, Prop(input, "verification"), Prop(input, "remaining"), Prop(input, "warnings"));
     }
 
@@ -468,9 +537,9 @@ public sealed class UxProjector
         {
             steps.Add(new RemediationStep
             {
-                Id = Prop(s, "id") ?? "",
-                Title = Prop(s, "title") ?? "",
-                Rationale = Prop(s, "rationale") ?? "",
+                Id = Prop(s, "id"),
+                Title = Prop(s, "title"),
+                Rationale = Prop(s, "rationale"),
                 Target = ParseTarget(s),
                 Change = ParseChange(s),
                 Validation = ParseValidation(s),
@@ -481,29 +550,29 @@ public sealed class UxProjector
 
     private static RemediationTarget ParseTarget(JsonElement s) =>
         s.TryGetProperty("target", out var t) && t.ValueKind == JsonValueKind.Object
-            ? new(Prop(t, "type") ?? "unknown", Prop(t, "cluster"), Prop(t, "resource"),
+            ? new(Prop(t, "type"), Prop(t, "cluster"), Prop(t, "resource"),
                   Prop(t, "namespace"), Prop(t, "repo"), Prop(t, "path"), Prop(t, "line_range"))
-            : new("unknown");
+            : new(Type: null);
 
     private static RemediationChange ParseChange(JsonElement s) =>
         s.TryGetProperty("change", out var c) && c.ValueKind == JsonValueKind.Object
             ? new()
             {
-                Type = Prop(c, "type") ?? "unknown",
+                Type = Prop(c, "type"),
                 CurrentValue = Prop(c, "current_value"),
                 DesiredValue = Prop(c, "desired_value"),
                 Commands = c.TryGetProperty("commands", out var cmds) && cmds.ValueKind == JsonValueKind.Array
-                    ? cmds.EnumerateArray().Select(x => x.GetString() ?? "").ToList() : null,
+                    ? cmds.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).ToList()! : null,
                 PatchFile = Prop(c, "patch_file"),
                 Warnings = Prop(c, "warnings"),
             }
-            : new() { Type = "unknown" };
+            : new();
 
     private static RemediationValidation ParseValidation(JsonElement s) =>
         s.TryGetProperty("validation", out var v) && v.ValueKind == JsonValueKind.Object
-            ? new(Prop(v, "description") ?? "",
+            ? new(Prop(v, "description"),
                   v.TryGetProperty("commands", out var cmds) && cmds.ValueKind == JsonValueKind.Array
-                      ? cmds.EnumerateArray().Select(x => x.GetString() ?? "").ToList() : [],
+                      ? cmds.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).ToList()! : null,
                   Prop(v, "expected"))
-            : new("", []);
+            : new(null, null);
 }

@@ -83,9 +83,12 @@ RUN groupadd -g 1001 investigator \
     && useradd -u 1001 -g investigator -m agent
 
 # Create data directories
-RUN mkdir -p /data/investigator/workspaces /data/release-repo /data/ci-tools-repo /secrets \
+RUN mkdir -p /data/investigator/workspaces /data/investigator/memory /data/investigator/skills \
+    /data/release-repo /data/ci-tools-repo /secrets \
     && chown root:investigator /data/investigator/workspaces \
+       /data/investigator/memory /data/investigator/skills \
     && chmod 2775 /data/investigator/workspaces \
+       /data/investigator/memory /data/investigator/skills \
     && chmod 0600 /secrets
 
 COPY --from=build /app .

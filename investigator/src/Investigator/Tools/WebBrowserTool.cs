@@ -78,7 +78,10 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {
-        var action = parameters.GetProperty("action").GetString() ?? "";
+        var action = parameters.GetProperty("action").GetString();
+        if (string.IsNullOrEmpty(action))
+            return new ToolResult("'action' is required.", ExitCode: 1);
+
         var sessionKey = $"{context.WorkspacePath}::{context.CallerId}";
 
         _logger.LogInformation("web_browse: action={Action}, session={Session}", action, sessionKey);
@@ -317,9 +320,9 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
     private static async Task<string> DescribeLink(ILocator loc)
     {
         var text = (await loc.InnerTextAsync()).Trim();
-        var href = await loc.GetAttributeAsync("href") ?? "";
+        var href = await loc.GetAttributeAsync("href");
         if (text.Length > 60) text = text[..57] + "...";
-        return $"link \"{text}\" -> {href}";
+        return href is not null ? $"link \"{text}\" -> {href}" : $"link \"{text}\"";
     }
 
     private static async Task<string> DescribeButton(ILocator loc)
@@ -333,24 +336,25 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
 
     private static async Task<string> DescribeInput(ILocator loc)
     {
-        var type = await loc.GetAttributeAsync("type") ?? "text";
-        var placeholder = await loc.GetAttributeAsync("placeholder") ?? "";
-        var name = await loc.GetAttributeAsync("name") ?? "";
+        var type = await loc.GetAttributeAsync("type");
+        var placeholder = await loc.GetAttributeAsync("placeholder");
+        var name = await loc.GetAttributeAsync("name");
         var label = !string.IsNullOrEmpty(placeholder) ? placeholder : name;
-        return $"input[type={type}] \"{label}\"";
+        var typeDesc = type is not null ? $"[type={type}]" : "";
+        return $"input{typeDesc} \"{label}\"";
     }
 
     private static async Task<string> DescribeTextarea(ILocator loc)
     {
-        var placeholder = await loc.GetAttributeAsync("placeholder") ?? "";
-        var name = await loc.GetAttributeAsync("name") ?? "";
+        var placeholder = await loc.GetAttributeAsync("placeholder");
+        var name = await loc.GetAttributeAsync("name");
         var label = !string.IsNullOrEmpty(placeholder) ? placeholder : name;
         return $"textarea \"{label}\"";
     }
 
     private static async Task<string> DescribeSelect(ILocator loc)
     {
-        var name = await loc.GetAttributeAsync("name") ?? "";
+        var name = await loc.GetAttributeAsync("name");
         var label = await loc.GetAttributeAsync("aria-label") ?? name;
         return $"select \"{label}\"";
     }

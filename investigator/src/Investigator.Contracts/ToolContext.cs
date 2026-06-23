@@ -9,7 +9,9 @@ public record ToolContext(
     Func<int> NextOutputNumber,
     string CallerId,
     Func<string, string, string>? StartChildCall = null,
-    Action<string, string, string, int, bool>? CompleteChildCall = null)
+    Action<string, string, string, int, bool>? CompleteChildCall = null,
+    string? ConversationId = null,
+    bool RawOutput = false)
 {
     /// <summary>
     /// Allocates a numbered output file path under the workspace tool_outputs directory.

@@ -54,11 +54,12 @@ public sealed class InvestigatorAuthStateProvider : AuthenticationStateProvider
 
         if (_circuitAuth.IsAuthenticated)
         {
-            var identity = new ClaimsIdentity(
-            [
-                new Claim("sub", _circuitAuth.UserId ?? ""),
-                new Claim(ClaimTypes.Name, _circuitAuth.DisplayName ?? ""),
-            ], _circuitAuth.AuthMethod.ToString());
+            var claims = new List<Claim>();
+            if (_circuitAuth.UserId is not null)
+                claims.Add(new Claim("sub", _circuitAuth.UserId));
+            if (_circuitAuth.DisplayName is not null)
+                claims.Add(new Claim(ClaimTypes.Name, _circuitAuth.DisplayName));
+            var identity = new ClaimsIdentity(claims, _circuitAuth.AuthMethod.ToString());
 
             return Task.FromResult(new AuthenticationState(new ClaimsPrincipal(identity)));
         }

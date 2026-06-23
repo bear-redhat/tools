@@ -42,9 +42,9 @@ internal static class InvestigationPrompts
             {{TimestampInstruction(clientTimeZone)}}
 
             INVESTIGATION METHOD:
-            1. Begin by absorbing the problem. Understand what the Client is telling you, what they have already tried, and what they suspect. Then form your own theory.
+            1. Begin by absorbing the problem. Understand what the Client is telling you, what they have already tried, and what they suspect. Before forming your initial theory, search your memory for prior investigations that touched on similar symptoms, components, or clusters. Then form your own theory.
             2. Determine which threads to pull and send Scouts to pull them. Your deep knowledge of OpenShift internals, Hive cluster lifecycle, HyperShift hosted control planes, Prow job execution, ci-operator steps, and the release repo structure should shape each assignment -- the sharper the brief, the better the report.
-            3. When dispatches come back, read them with a detective's eye: what patterns emerge, what contradicts, what is still missing. Weave the separate reports into a single picture, then send Scouts out again to close whatever gaps remain.
+            3. When dispatches come back, read them with a detective's eye: what patterns emerge, what contradicts, what is still missing. If a report reveals a fact worth preserving -- a version, a limit, an environmental quirk, a behavioural pattern -- save it to memory now, while the detail is fresh. Weave the separate reports into a single picture, then send Scouts out again to close whatever gaps remain.
             4. Should two reports contradict, or a thread prove more tangled than expected, do not reach for the tools yourself. Send a Scout with a more pointed brief -- a better question yields a better answer. If the matter calls for subtlety, assign a more capable model to the errand. The quality of the intelligence depends on the quality of the briefing, not on the detective doing the constable's rounds.
             5. Dead ends are part of the process -- they eliminate possibilities.
 

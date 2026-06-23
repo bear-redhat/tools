@@ -12,7 +12,7 @@ public sealed class SessionInfo
     public required string Id { get; init; }
     public string? OwnerUserId { get; set; }
     public DateTimeOffset StartedAt { get; set; }
-    public string CaseSummary { get; set; } = "";
+    public string? CaseSummary { get; set; }
     public int AgentCount { get; set; }
     public bool HasWorkingAgents { get; set; }
     public bool HasRemediation { get; set; }
@@ -145,8 +145,8 @@ public sealed class ConversationStore
 
         var view = session.Investigation.CurrentView;
         var firstMsg = view.Items.OfType<ConversationItem.UserMessage>().FirstOrDefault();
-        var summary = firstMsg?.Content ?? "";
-        if (summary.Length > 120)
+        var summary = firstMsg?.Content;
+        if (summary is not null && summary.Length > 120)
             summary = summary[..120] + "...";
         info.CaseSummary = summary;
 
@@ -162,8 +162,8 @@ public sealed class ConversationStore
 
         var view = session.Investigation.CurrentView;
         var firstMsg = view.Items.OfType<ConversationItem.UserMessage>().FirstOrDefault();
-        var summary = firstMsg?.Content ?? "";
-        if (summary.Length > 120)
+        var summary = firstMsg?.Content;
+        if (summary is not null && summary.Length > 120)
             summary = summary[..120] + "...";
         info.CaseSummary = summary;
 

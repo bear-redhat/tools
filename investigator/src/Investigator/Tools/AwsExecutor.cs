@@ -112,79 +112,20 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
             }
         }
 
-        var tasks = allClusters
+        var probes = allClusters
             .Where(c => !skipSet.Contains(c))
-            .Select(async cluster =>
-            {
-                try
-                {
-                    clusterEntries.TryGetValue(cluster, out var entry);
-                    string? region;
+            .Select(c => (Cluster: c, Task: ProbeClusterAsync(c, clusterEntries)))
+            .ToList();
 
-                    if (entry is not null && !string.IsNullOrEmpty(entry.RoleArn))
-                    {
-                        region = entry.Region;
-                        if (string.IsNullOrEmpty(region))
-                            region = await DiscoverRegion(cluster);
-                        if (string.IsNullOrEmpty(region))
-                        {
-                            _logger.LogWarning("AWS cluster {Cluster}: region unavailable, skipping", cluster);
-                            return;
-                        }
-                        lock (_discoveredClusters)
-                            _discoveredClusters[cluster] = new(
-                                entry.RoleArn!, region,
-                                entry.IntermediaryRoleArn, entry.IntermediaryRegion);
-                        _logger.LogInformation("AWS cluster {Cluster}: configured via override (role={RoleArn})",
-                            cluster, entry.RoleArn);
-                        return;
-                    }
+        await Task.WhenAll(probes.Select(p => p.Task))
+            .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
-                    var platformResult = await RunOcQuiet(cluster,
-                        "get infrastructure cluster -o jsonpath='{.status.platformStatus.type}'",
-                        callerContext: null);
-                    var platform = platformResult.ExitCode == 0
-                        ? platformResult.Output.Trim().Trim('\'')
-                        : null;
-
-                    if (string.Equals(platform, "GCP", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _logger.LogInformation("GCP cluster detected: {Cluster} (support pending)", cluster);
-                        return;
-                    }
-
-                    if (!string.Equals(platform, "AWS", StringComparison.OrdinalIgnoreCase))
-                        return;
-
-                    var accountId = await DiscoverAwsAccountId(cluster);
-                    if (accountId is null)
-                    {
-                        _logger.LogWarning("AWS cluster {Cluster}: could not discover account ID from CCO secret", cluster);
-                        return;
-                    }
-
-                    region = await DiscoverRegion(cluster);
-                    if (region is null)
-                    {
-                        _logger.LogWarning("AWS cluster {Cluster}: could not discover region", cluster);
-                        return;
-                    }
-
-                    var roleArn = $"arn:aws:iam::{accountId}:role/investigator";
-                    lock (_discoveredClusters)
-                        _discoveredClusters[cluster] = new(
-                            roleArn, region,
-                            entry?.IntermediaryRoleArn, entry?.IntermediaryRegion);
-                    _logger.LogInformation("AWS cluster {Cluster}: discovered (account={AccountId}, region={Region})",
-                        cluster, accountId, region);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "AWS probe failed for cluster {Cluster}", cluster);
-                }
-            });
-
-        await Task.WhenAll(tasks);
+        foreach (var (cluster, task) in probes)
+        {
+            if (task.IsFaulted)
+                _logger.LogWarning(task.Exception!.InnerException,
+                    "AWS probe failed for cluster {Cluster}", cluster);
+        }
 
         List<string> discovered;
         lock (_discoveredClusters)
@@ -194,6 +135,76 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
             discovered.Count > 0 ? string.Join(", ", discovered) : "(none)");
 
         GenerateAwsConfig();
+    }
+
+    private async Task ProbeClusterAsync(string cluster, Dictionary<string, AwsEntry> clusterEntries)
+    {
+        clusterEntries.TryGetValue(cluster, out var entry);
+        string? region;
+
+        if (entry is not null && !string.IsNullOrEmpty(entry.RoleArn))
+        {
+            region = entry.Region;
+            if (string.IsNullOrEmpty(region))
+                region = await DiscoverRegion(cluster);
+            if (string.IsNullOrEmpty(region))
+            {
+                _logger.LogWarning("AWS cluster {Cluster}: region unavailable, skipping", cluster);
+                return;
+            }
+            lock (_discoveredClusters)
+                _discoveredClusters[cluster] = new(
+                    entry.RoleArn!, region,
+                    entry.IntermediaryRoleArn, entry.IntermediaryRegion);
+            _logger.LogInformation("AWS cluster {Cluster}: configured via override (role={RoleArn})",
+                cluster, entry.RoleArn);
+            return;
+        }
+
+        var platformResult = await RunOcQuiet(cluster,
+            "get infrastructure cluster -o jsonpath='{.status.platformStatus.type}'",
+            callerContext: null);
+        var platform = platformResult.ExitCode == 0
+            ? platformResult.Output.Trim().Trim('\'')
+            : null;
+
+        if (string.Equals(platform, "GCP", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("GCP cluster detected: {Cluster} (support pending)", cluster);
+            return;
+        }
+
+        if (!string.Equals(platform, "AWS", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.IsNullOrEmpty(platform))
+                _logger.LogInformation("Cluster {Cluster}: platform={Platform}, skipping AWS probe", cluster, platform);
+            else
+                _logger.LogDebug("Cluster {Cluster}: platform unknown (exit={ExitCode}), skipping AWS probe",
+                    cluster, platformResult.ExitCode);
+            return;
+        }
+
+        var accountId = await DiscoverAwsAccountId(cluster);
+        if (accountId is null)
+        {
+            _logger.LogWarning("AWS cluster {Cluster}: could not discover account ID from CCO secret", cluster);
+            return;
+        }
+
+        region = await DiscoverRegion(cluster);
+        if (region is null)
+        {
+            _logger.LogWarning("AWS cluster {Cluster}: could not discover region", cluster);
+            return;
+        }
+
+        var roleArn = $"arn:aws:iam::{accountId}:role/investigator";
+        lock (_discoveredClusters)
+            _discoveredClusters[cluster] = new(
+                roleArn, region,
+                entry?.IntermediaryRoleArn, entry?.IntermediaryRegion);
+        _logger.LogInformation("AWS cluster {Cluster}: discovered (account={AccountId}, region={Region})",
+            cluster, accountId, region);
     }
 
     public ToolDefinition Definition => new(
@@ -462,10 +473,11 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
         var json = JsonDocument.Parse(JsonSerializer.Serialize(new { cluster, command })).RootElement;
         var quietContext = new ToolContext(
             Logger: _logger,
-            WorkspacePath: string.Empty,
+            WorkspacePath: Path.GetTempPath(),
             OnOutputLine: null,
             NextOutputNumber: () => 0,
-            CallerId: "aws-executor");
+            CallerId: "aws-executor",
+            RawOutput: true);
         return await _ocExecutor.InvokeAsync(json, quietContext, CancellationToken.None);
     }
 
@@ -489,7 +501,7 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
         }
         catch (FormatException ex)
         {
-            _logger.LogDebug(ex, "Failed to decode credentials for AWS account discovery");
+            _logger.LogWarning(ex, "AWS cluster credential secret contained invalid base64");
             return null;
         }
     }
@@ -511,11 +523,10 @@ public sealed class AwsExecutor : IInvestigatorTool, ISystemPromptContributor
         try
         {
             proc.Kill(entireProcessTree: true);
-            logger.LogDebug("run_aws: killed process tree for '{Command}'", command);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException)
         {
-            logger.LogWarning(ex, "run_aws: failed to kill process for '{Command}'", command);
+            // Process exited between HasExited check and Kill() — harmless race.
         }
     }
 

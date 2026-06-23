@@ -64,7 +64,7 @@ public abstract class AgentRoom
             foreach (var block in msg.Content.EnumerateArray())
             {
                 if (block.TryGetProperty("type", out var t) && t.GetString() == "tool_use"
-                    && block.TryGetProperty("name", out var n) && terminalTools.Contains(n.GetString() ?? ""))
+                    && block.TryGetProperty("name", out var n) && n.GetString() is { } toolName && terminalTools.Contains(toolName))
                     return true;
             }
         }
@@ -365,7 +365,8 @@ public abstract class AgentRoom
             () => Interlocked.Increment(ref _outputCounter),
             callerConfig.Name,
             StartChild,
-            CompleteChild);
+            CompleteChild,
+            _conversationId);
 
         var (result, outFile, truncated) = await _toolRegistry.InvokeAsync(toolName, input, context, ct);
 

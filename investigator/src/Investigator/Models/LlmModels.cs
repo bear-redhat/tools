@@ -53,7 +53,7 @@ public class ThinkingConfig
 public class LlmMessage
 {
     [JsonPropertyName("role")]
-    public string Role { get; set; } = "";
+    public string? Role { get; set; }
 
     [JsonPropertyName("content")]
     public JsonElement Content { get; set; }
@@ -95,10 +95,10 @@ public sealed class ToolCallMeta
 public class LlmTool
 {
     [JsonPropertyName("name")]
-    public string Name { get; set; } = "";
+    public string? Name { get; set; }
 
     [JsonPropertyName("description")]
-    public string Description { get; set; } = "";
+    public string? Description { get; set; }
 
     [JsonPropertyName("input_schema")]
     public JsonElement InputSchema { get; set; }
@@ -107,7 +107,7 @@ public class LlmTool
 public class ContentBlock
 {
     [JsonPropertyName("type")]
-    public string Type { get; set; } = "";
+    public string? Type { get; set; }
 
     [JsonPropertyName("text")]
     public string? Text { get; set; }
@@ -131,7 +131,7 @@ public class ContentBlock
 public class StreamEvent
 {
     [JsonPropertyName("type")]
-    public string Type { get; set; } = "";
+    public string? Type { get; set; }
 
     [JsonPropertyName("index")]
     public int? Index { get; set; }
@@ -152,7 +152,7 @@ public class StreamEvent
 public class StreamDelta
 {
     [JsonPropertyName("type")]
-    public string Type { get; set; } = "";
+    public string? Type { get; set; }
 
     [JsonPropertyName("text")]
     public string? Text { get; set; }
@@ -170,7 +170,7 @@ public class StreamDelta
 public class StreamMessage
 {
     [JsonPropertyName("id")]
-    public string Id { get; set; } = "";
+    public string? Id { get; set; }
 
     [JsonPropertyName("usage")]
     public UsageInfo? Usage { get; set; }

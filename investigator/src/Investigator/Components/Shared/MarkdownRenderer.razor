@@ -32,7 +32,7 @@ else
     {
         if (string.Equals(Content, _lastContent, StringComparison.Ordinal) && Inline == _lastInline)
             return;
-        _lastContent = Content ?? "";
+        _lastContent = Content;
         _lastInline = Inline;
         try
         {

@@ -14,9 +14,9 @@ public sealed class RemediationPlan
 
 public sealed class RemediationStep
 {
-    public required string Id { get; set; }
-    public required string Title { get; set; }
-    public required string Rationale { get; set; }
+    public string? Id { get; set; }
+    public string? Title { get; set; }
+    public string? Rationale { get; set; }
     public required RemediationTarget Target { get; set; }
     public required RemediationChange Change { get; set; }
     public required RemediationValidation Validation { get; set; }
@@ -37,7 +37,7 @@ public sealed class RemediationStep
 }
 
 public record RemediationTarget(
-    string Type,
+    string? Type,
     string? Cluster = null,
     string? Resource = null,
     string? Namespace = null,
@@ -47,7 +47,7 @@ public record RemediationTarget(
 
 public record RemediationChange
 {
-    public required string Type { get; init; }
+    public string? Type { get; init; }
     public string? CurrentValue { get; init; }
     public string? DesiredValue { get; init; }
     public IReadOnlyList<string>? Commands { get; init; }
@@ -56,8 +56,8 @@ public record RemediationChange
 }
 
 public record RemediationValidation(
-    string Description,
-    IReadOnlyList<string> Commands,
+    string? Description,
+    IReadOnlyList<string>? Commands,
     string? Expected = null);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
