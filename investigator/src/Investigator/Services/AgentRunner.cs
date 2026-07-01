@@ -134,11 +134,11 @@ public sealed class AgentRunner
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
                     {
-                        if (!promptTooLongRetried && ex.Message.Contains("prompt is too long", StringComparison.OrdinalIgnoreCase))
+                        if (!promptTooLongRetried)
                         {
                             promptTooLongRetried = true;
                             var emergencyBudget = (int)(config.ContextWindowTokens * 0.5);
-                            _logger.LogWarning("Agent {Name} prompt too long, emergency compaction to {Budget} tokens",
+                            _logger.LogWarning("Agent {Name} LLM rejected with HTTP 400, emergency compaction to {Budget} tokens",
                                 config.Name, emergencyBudget);
                             await CompactMessagesIfNeededAsync(messages, emergencyBudget, config, store, ct);
                             continue;

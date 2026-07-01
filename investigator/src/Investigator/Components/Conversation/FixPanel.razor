@@ -16,15 +16,18 @@
                 <div class="fix-warning">⚠ @Fix.Warning</div>
             }
 
-            <div class="fix-commands">
-                @foreach (var cmd in Fix.Commands)
-                {
-                    <div class="fix-command">
-                        <code>@cmd</code>
-                        <CopyButton Text="@cmd" />
-                    </div>
-                }
-            </div>
+            @if (Fix.Commands is not null)
+            {
+                <div class="fix-commands">
+                    @foreach (var cmd in Fix.Commands)
+                    {
+                        <div class="fix-command">
+                            <code>@cmd</code>
+                            <CopyButton Text="@cmd" />
+                        </div>
+                    }
+                </div>
+            }
         </div>
     }
 </div>

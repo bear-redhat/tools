@@ -761,6 +761,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             var queryIdx = 0;
             foreach (var q in queries.EnumerateArray())
             {
+                if (q.ValueKind != JsonValueKind.Object) continue;
                 var repos = q.TryGetProperty("repos", out var r) ? r : default;
                 var matchesFilter = string.IsNullOrEmpty(org) && string.IsNullOrEmpty(repo);
                 if (!matchesFilter && repos.ValueKind == JsonValueKind.Array)
