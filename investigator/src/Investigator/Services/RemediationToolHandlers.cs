@@ -160,6 +160,37 @@ internal sealed class RemediationToolHandlers
     internal AgentRunner.ToolExecutionResult HandleRecall(AgentRoom.AgentSlot caller, JsonElement input) =>
         SubAgentHelpers.Recall(_agents, LeadAgentId, caller.Id, input, "Ranger", "the Canopy Post", _logger, caller.Name);
 
+    // ── Refer back ────────────────────────────────────────────────────────
+
+    internal Task<AgentRunner.ToolExecutionResult> HandleReferBack(
+        AgentRoom.AgentSlot callerSlot, AgentRunner.Config callerConfig,
+        JsonElement input)
+    {
+        if (callerSlot.Id != LeadAgentId)
+            return Task.FromResult(new AgentRunner.ToolExecutionResult(
+                Output: "Only Intendant Langur may refer a case back to Banyan Row."));
+
+        var runningRangers = _agents
+            .Where(kv => kv.Value.Id != LeadAgentId)
+            .Where(kv => !kv.Value.Dismissed)
+            .Where(kv => !kv.Value.Idle)
+            .ToList();
+        if (runningRangers.Count > 0)
+        {
+            var names = string.Join(", ", runningRangers.Select(kv => kv.Key));
+            return Task.FromResult(new AgentRunner.ToolExecutionResult(
+                Output: $"You cannot refer back yet -- {runningRangers.Count} Rangers are still in the field ({names}). Recall or await their reports first."));
+        }
+
+        var reason = input.TryGetProperty("reason", out var r) ? r.GetString() : null;
+        if (string.IsNullOrWhiteSpace(reason))
+            return Task.FromResult(new AgentRunner.ToolExecutionResult(
+                Output: "'reason' is required -- explain why the case file's diagnosis is incorrect.", ExitCode: 1));
+
+        return Task.FromResult(new AgentRunner.ToolExecutionResult(
+            Output: "The case has been referred back to Little Bear at Banyan Row."));
+    }
+
     // ── Status queries ──────────────────────────────────────────────────
 
     internal bool HasActiveRangers() =>

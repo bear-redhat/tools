@@ -109,8 +109,8 @@ public abstract class AgentRoom
             ? _toolRegistry.GetToolDefinitions(_scope.Value)
             : _toolRegistry.GetToolDefinitions();
 
-    protected AgentSlot ResumeSubAgent(IncompleteAgent agent, CancellationToken ct) =>
-        _subAgentCoordinator.ResumeAgent(agent, ct);
+    protected AgentSlot ResumeSubAgent(IncompleteAgent agent, CancellationToken ct, bool autoResume = true) =>
+        _subAgentCoordinator.ResumeAgent(agent, ct, autoResume);
 
     protected void SetRoomPhase(RoomPhase phase)
     {
@@ -228,6 +228,7 @@ public abstract class AgentRoom
 
                 if (removed && !slot.Idle)
                 {
+                    RoomStateRef?.ForceAgentIdle(slot.Id);
                     TranscriptStore.Append(new RoomEvent.ExternalInput(0, config.Id, DateTimeOffset.UtcNow,
                         SubAgentExitMessage) { To = LeadId });
                 }

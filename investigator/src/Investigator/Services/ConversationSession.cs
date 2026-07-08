@@ -103,6 +103,25 @@ public sealed class RoomState
         return null;
     }
 
+    internal void ForceAgentIdle(string agentId)
+    {
+        lock (Lock)
+        {
+            var member = _members.FirstOrDefault(m => m.Id == agentId);
+            if (member is not null && member.Status is MemberStatus.Working or MemberStatus.Active)
+            {
+                member.Status = MemberStatus.Idle;
+                HasWorkingAgents = _members.Any(m =>
+                    m.Status is MemberStatus.Working or MemberStatus.Active
+                    && m.Id is not "all");
+                var roomMember = _members.FirstOrDefault(m => m.Id == "all");
+                if (roomMember is not null)
+                    roomMember.Status = HasWorkingAgents ? MemberStatus.Active : MemberStatus.Static;
+                PublishView();
+            }
+        }
+    }
+
     private void PublishView()
     {
         _currentView = new SessionView
@@ -353,6 +372,8 @@ Intendant G. Langur. The case file from Banyan Row is on my desk. I shall assess
     public IReadOnlyList<RoomEvent>? LoadedRemediationEvents { get; set; }
 
     public decimal TotalCost => Investigation.TotalCost + (Remediation?.TotalCost ?? 0m);
+
+    public CaseReferral? PendingReferral { get; set; }
 
     public void AddRemediationRoom(CaseFile caseFile)
     {

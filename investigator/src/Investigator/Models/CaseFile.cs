@@ -9,3 +9,8 @@ public record CaseFile(
     FixSuggestion? Fix);
 
 public record CaseFinding(string Title, string Description);
+
+public record CaseReferral(
+    string? Reason,
+    EvidenceChain? DisprovalEvidence,
+    string? SuggestedDirection);

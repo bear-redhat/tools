@@ -5,8 +5,6 @@ using Investigator.Services;
 using Investigator.Tools;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CS0618 // GoogleCredential.FromFile -- CredentialFactory not yet available in all target environments
-
 namespace Investigator;
 
 public static class ServiceCollectionExtensions
@@ -57,7 +55,7 @@ public static class ServiceCollectionExtensions
             {
                 try
                 {
-                    var credential = GoogleCredential.FromFile(credFile);
+                    var credential = CredentialFactory.FromFile(credFile, JsonCredentialParameters.ServiceAccountCredentialType);
                     client = StorageClient.Create(credential);
                     logger.LogInformation("GCS StorageClient created from {CredFile}", credFile);
                 }

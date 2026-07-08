@@ -82,6 +82,7 @@
         LogEntryStatus.Running => "running",
         LogEntryStatus.Completed => Entry.ExitCode == 0 ? "success" : "failed",
         LogEntryStatus.TimedOut => "timed-out",
+        LogEntryStatus.Aborted => "aborted",
         _ => "",
     };
 
@@ -90,6 +91,7 @@
         LogEntryStatus.Running => "⏳",
         LogEntryStatus.Completed => Entry.ExitCode == 0 ? "✓" : "✗",
         LogEntryStatus.TimedOut => "⏰",
+        LogEntryStatus.Aborted => "⊘",
         _ => "",
     };
 

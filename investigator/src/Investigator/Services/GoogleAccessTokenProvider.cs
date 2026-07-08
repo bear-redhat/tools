@@ -31,10 +31,8 @@ public sealed class GoogleAccessTokenProvider
                         $"Service account key file not found: {_serviceAccountKeyPath}",
                         _serviceAccountKeyPath);
 
-#pragma warning disable CS0618
-                await using var stream = File.OpenRead(_serviceAccountKeyPath);
-                _credential = await GoogleCredential.FromStreamAsync(stream, ct);
-#pragma warning restore CS0618
+                _credential = await CredentialFactory.FromFileAsync(
+                    _serviceAccountKeyPath, JsonCredentialParameters.ServiceAccountCredentialType, ct);
             }
 
             _credential = _credential.CreateScoped("https://www.googleapis.com/auth/cloud-platform");

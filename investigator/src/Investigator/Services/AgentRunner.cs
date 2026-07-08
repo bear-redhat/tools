@@ -80,6 +80,9 @@ public sealed class AgentRunner
 
         try
         {
+            if (skipFirstWait)
+                await store(MakeCtx([], isInboxBatch: true));
+
             while (skipFirstWait || await inbox.WaitToReadAsync(ct))
             {
                 if (!skipFirstWait)
@@ -424,7 +427,14 @@ public sealed class AgentRunner
                 if (concluded)
                 {
                     toolCallCount = 0;
+                    autoResume = false;
                     continue;
+                }
+
+                if (autoResume)
+                {
+                    _logger.LogWarning("Agent {Name} auto-resume turn ended without concluding (LLM error), exiting", config.Name);
+                    break;
                 }
             }
         }

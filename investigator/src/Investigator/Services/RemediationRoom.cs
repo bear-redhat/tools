@@ -17,6 +17,7 @@ public sealed class RemediationRoom : AgentRoom
     private const string UpdateStepToolName = "update_step";
     private const string ReviewPlanToolName = "review_plan";
     private const string ConcludeToolName = "conclude";
+    private const string ReferBackToolName = "refer_back";
 
     private static readonly JsonElement s_signOffSchema = JsonDocument.Parse("""
     {
@@ -189,6 +190,31 @@ public sealed class RemediationRoom : AgentRoom
     }
     """).RootElement.Clone();
 
+    private static readonly JsonElement s_referBackSchema = JsonDocument.Parse("""
+    {
+        "type": "object",
+        "properties": {
+            "reason": { "type": "string", "description": "Why the case file's diagnosis is incorrect or inapplicable -- what contradicts it" },
+            "evidence": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "step": { "type": "integer", "description": "Position in the disproval chain" },
+                        "reasoning": { "type": "string", "description": "Why this observation contradicts the case file" },
+                        "finding": { "type": "string", "description": "What was discovered" },
+                        "proof": { "type": "string", "description": "Raw evidence -- paste verbatim" }
+                    },
+                    "required": ["step", "reasoning", "finding", "proof"]
+                },
+                "description": "Evidence chain showing why the original diagnosis is incorrect"
+            },
+            "suggested_direction": { "type": "string", "description": "Where Little Bear should look next -- what the evidence actually points to" }
+        },
+        "required": ["reason"]
+    }
+    """).RootElement.Clone();
+
     private static readonly SubAgentConfig s_rangerConfig = new(
         Label: "Ranger",
         Adjectives: ["Stalwart", "Vigilant", "Trusted", "Reliable", "Seasoned",
@@ -273,7 +299,7 @@ public sealed class RemediationRoom : AgentRoom
             ConversationId: conversationId,
             SummarizerClient: _llmFactory.GetClient(summarizerProfile),
             SummarizerModelOptions: summarizerOptions,
-            TerminalToolNames: new HashSet<string> { SignOffToolName },
+            TerminalToolNames: new HashSet<string> { SignOffToolName, ReferBackToolName },
             IsConditionallyTerminal: (tool, input) =>
                 tool == "message" && input.TryGetProperty("to", out var to)
                 && to.GetString() is "user" or "client");
@@ -292,10 +318,13 @@ public sealed class RemediationRoom : AgentRoom
 
                 resumedSlots = [];
                 foreach (var agent in incomplete)
-                    resumedSlots.Add(ResumeSubAgent(agent, ct));
+                {
+                    var scoutIsBusy = RoomStateRef?.Members
+                        .Any(m => m.Id == agent.Id && m.Status is MemberStatus.Working) == true;
+                    resumedSlots.Add(ResumeSubAgent(agent, ct, autoResume: scoutIsBusy));
+                }
             }
             initialMessages = LlmContextApplier.Replay(eventLog, LeadId);
-            EventLogScanner.PatchDanglingToolCalls(initialMessages);
         }
         else
         {
@@ -315,8 +344,10 @@ public sealed class RemediationRoom : AgentRoom
         else
             SetRoomPhase(RoomPhase.Active);
 
+        var leadIsBusy = isResume && RoomStateRef?.Members
+            .Any(m => m.Id == LeadId && m.Status is MemberStatus.Active) == true;
         langurSlot.RunTask = RunAgentWithRouting(langurSlot, runnerConfig, ct, initialMessages,
-            autoResume: isResume);
+            autoResume: leadIsBusy);
 
         if (!isResume)
         {
@@ -401,6 +432,12 @@ public sealed class RemediationRoom : AgentRoom
             ParameterSchema: s_recallRangerSchema,
             DefaultTimeout: TimeSpan.Zero));
 
+        tools.Add(new ToolDefinition(
+            Name: ReferBackToolName,
+            Description: "Refer the case back to Little Bear at Banyan Row. Call this when assessment reveals the case file's diagnosis is incorrect or inapplicable -- the root cause is different from what was concluded, or conditions have changed so materially that the original analysis no longer holds. Provide the reason, disproval evidence, and a suggested direction for re-investigation. This closes The Canopy Post and returns the matter to Little Bear.",
+            ParameterSchema: s_referBackSchema,
+            DefaultTimeout: TimeSpan.Zero));
+
         return tools;
     }
 
@@ -438,13 +475,15 @@ public sealed class RemediationRoom : AgentRoom
                 return _roomToolHandlers.HandleDismiss(caller, input);
             case RecallToolName:
                 return _roomToolHandlers.HandleRecall(caller, input);
+            case ReferBackToolName:
+                return await _roomToolHandlers.HandleReferBack(caller, config, input);
             default:
                 return null;
         }
     }
 
     protected override bool IsAllowedWhenStoodDown(string toolName) =>
-        toolName is SignOffToolName or ConcludeToolName;
+        toolName is SignOffToolName or ConcludeToolName or ReferBackToolName;
 
     protected override string? GetSummaryText(string toolName, JsonElement input)
     {
@@ -453,6 +492,7 @@ public sealed class RemediationRoom : AgentRoom
         {
             "conclude" => input.TryGetProperty("summary", out var s) ? s.GetString() : null,
             "sign_off" => input.TryGetProperty("outcome", out var o) ? o.GetString() : null,
+            "refer_back" => input.TryGetProperty("reason", out var rb) ? rb.GetString() : null,
             "report_progress" =>
                 $"{(input.TryGetProperty("title", out var t) ? t.GetString() : "")}: {(input.TryGetProperty("description", out var d) ? d.GetString() : "")}",
             _ => null,

@@ -1045,6 +1045,7 @@ pre.ascii-art {
 .log-entry.success { border-left-color: #4ade80; }
 .log-entry.failed { border-left-color: #ef4444; }
 .log-entry.timed-out { border-left-color: #f97316; }
+.log-entry.aborted { border-left-color: #a78bfa; }
 .log-entry.highlighted { background: #1a2a3e; box-shadow: 0 0 0 1px #4a7dff; }
 
 .log-entry-header {

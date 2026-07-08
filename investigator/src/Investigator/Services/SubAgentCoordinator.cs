@@ -268,7 +268,7 @@ internal sealed class SubAgentCoordinator
         }
         """).RootElement.Clone();
 
-    internal AgentRoom.AgentSlot ResumeAgent(IncompleteAgent agent, CancellationToken ct)
+    internal AgentRoom.AgentSlot ResumeAgent(IncompleteAgent agent, CancellationToken ct, bool autoResume = true)
     {
         _usedAgentNames.Add(agent.Name);
 
@@ -343,7 +343,7 @@ internal sealed class SubAgentCoordinator
             TerminalToolNames: new HashSet<string> { "conclude", "message" },
             ShouldSuppressNextTurn: () => subSlot.HasReported);
 
-        subSlot.RunTask = Task.Run(() => _runAgent(subSlot, subConfig, ct, agent.ReplayedMessages, true), ct);
+        subSlot.RunTask = Task.Run(() => _runAgent(subSlot, subConfig, ct, agent.ReplayedMessages, autoResume), ct);
 
         return subSlot;
     }

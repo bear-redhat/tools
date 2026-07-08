@@ -12,6 +12,7 @@ public sealed class SessionSnapshot
     public RoomPhase InvestigationPhase { get; init; } = RoomPhase.Idle;
     public RoomPhase RemediationPhase { get; init; } = RoomPhase.Idle;
     public CaseFile? CaseFile { get; init; }
+    public CaseReferral? PendingReferral { get; init; }
 
     public static SessionSnapshot FromSession(ConversationSession session)
     {
@@ -29,6 +30,7 @@ public sealed class SessionSnapshot
             InvestigationPhase = session.Investigation.Phase,
             RemediationPhase = session.Remediation?.Phase ?? RoomPhase.Idle,
             CaseFile = session.Remediation?.CaseFile,
+            PendingReferral = session.PendingReferral,
         };
     }
 
@@ -38,18 +40,25 @@ public sealed class SessionSnapshot
         session.OwnerUserId = OwnerUserId;
         session.StartedAt = StartedAt;
 
-        ReplayIntoRoom(Events, "little-bear", session.Investigation);
+        var closedEvents = EventLogScanner.CloseDanglingToolCalls(Events);
+        ReplayIntoRoom(closedEvents, "little-bear", session.Investigation);
         session.Investigation.Phase = InvestigationPhase;
 
         if (CaseFile is not null)
         {
             session.AddRemediationRoom(CaseFile);
-            ReplayIntoRoom(RemediationEvents, "langur", session.Remediation!);
+            var closedRemediation = EventLogScanner.CloseDanglingToolCalls(RemediationEvents);
+            ReplayIntoRoom(closedRemediation, "langur", session.Remediation!);
             session.Remediation!.Phase = RemediationPhase;
+            session.LoadedRemediationEvents = closedRemediation;
+        }
+        else
+        {
+            session.LoadedRemediationEvents = RemediationEvents;
         }
 
-        session.LoadedInvestigationEvents = Events;
-        session.LoadedRemediationEvents = RemediationEvents;
+        session.LoadedInvestigationEvents = closedEvents;
+        session.PendingReferral = PendingReferral;
         return session;
     }
 

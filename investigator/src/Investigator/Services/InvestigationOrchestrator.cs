@@ -81,6 +81,7 @@ public sealed class InvestigationOrchestrator : RoomOrchestrator<InvestigationRo
         var caseDesc = input.TryGetProperty("case_description", out var cd) ? cd.GetString() : null;
         var rootCause = input.TryGetProperty("root_cause", out var rc) ? rc.GetString() : null;
         var fixDesc = input.TryGetProperty("fix_description", out var fd) ? fd.GetString() : null;
+        var fixWarning = input.TryGetProperty("fix_warning", out var fw) ? fw.GetString() : null;
         var fixCmds = input.TryGetProperty("fix_commands", out var fc) && fc.ValueKind == JsonValueKind.Array
             ? fc.EnumerateArray().Select(c => c.GetString()).Where(c => c is not null).ToList()!
             : new List<string>();
@@ -89,15 +90,32 @@ public sealed class InvestigationOrchestrator : RoomOrchestrator<InvestigationRo
             .Select(f => new CaseFinding(f.Title, f.Description)).ToList();
 
         FixSuggestion? fix = !string.IsNullOrWhiteSpace(fixDesc)
-            ? new FixSuggestion(fixDesc, fixCmds)
+            ? new FixSuggestion(fixDesc, fixCmds, fixWarning)
             : null;
+
+        EvidenceChain? evidence = null;
+        if (input.TryGetProperty("evidence", out var evidenceArray) && evidenceArray.ValueKind == JsonValueKind.Array)
+        {
+            var steps = new List<EvidenceStep>();
+            foreach (var item in evidenceArray.EnumerateArray())
+            {
+                steps.Add(new EvidenceStep(
+                    Step: item.TryGetProperty("step", out var st) ? st.GetInt32() : steps.Count + 1,
+                    Reasoning: item.TryGetProperty("reasoning", out var r) ? r.GetString() : null,
+                    Finding: item.TryGetProperty("finding", out var f) ? f.GetString() : null,
+                    Cluster: item.TryGetProperty("cluster", out var c) ? c.GetString() : null,
+                    Proof: item.TryGetProperty("proof", out var prf) ? prf.GetString() : null,
+                    Source: item.TryGetProperty("source", out var src) ? src.GetString() : null));
+            }
+            evidence = new EvidenceChain(steps.OrderBy(s => s.Step).ToList());
+        }
 
         var caseFile = new CaseFile(
             ParentConversationId: run.Session.Id,
             CaseStatement: caseDesc,
             Findings: findings,
             Summary: rootCause,
-            Evidence: null,
+            Evidence: evidence,
             Fix: fix);
 
         run.Session.AddRemediationRoom(caseFile);

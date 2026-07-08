@@ -123,7 +123,7 @@
                                 <span class="finding-label conclusion-label">Conclusion</span>
                             }
                             <span class="finding-summary"><MarkdownRenderer Content="@summaryText" Inline="true" /></span>
-                            @if (isConclusion && _interactive && _isOwner && !_isInvestigating && !_isRemediation && _session?.Remediation is null)
+                            @if (isConclusion && _interactive && _isOwner && !_isInvestigating && !_isRemediation && (_session?.Remediation is null || _session?.PendingReferral is not null))
                             {
                                 var c = (ConversationItem.Conclusion)item;
                                 <button class="btn-transfer-new"

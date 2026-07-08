@@ -339,15 +339,17 @@ public sealed class UxProjector
             yield break;
         }
 
-        if (tres.Tool is "check_agents" or "recall" or "review_plan" or "commission_remedy")
+        if (tres.Tool is "check_agents" or "recall" or "review_plan" or "commission_remedy" or "refer_back")
         {
             yield return new UpdateLogEntry(tres.RequestSeq, LogEntryStatus.Completed, tres.Output);
             yield break;
         }
 
+        var entryStatus = tres.ExitCode == -2 ? LogEntryStatus.Aborted
+                        : tres.TimedOut ? LogEntryStatus.TimedOut
+                        : LogEntryStatus.Completed;
         yield return new UpdateLogEntry(
-            tres.RequestSeq,
-            tres.TimedOut ? LogEntryStatus.TimedOut : LogEntryStatus.Completed,
+            tres.RequestSeq, entryStatus,
             tres.Output, tres.OutputFile, tres.ExitCode);
     }
 

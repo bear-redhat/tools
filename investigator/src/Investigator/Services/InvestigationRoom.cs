@@ -77,9 +77,9 @@ public sealed class InvestigationRoom : AgentRoom
                 },
                 "description": "Ordered chain of proof. Each step must logically connect to the next -- forward (observation to cause) or reverse (symptom to origin). Do NOT submit unrelated findings as a flat list."
             },
-            "fix_description": { "type": "string" },
-            "fix_commands": { "type": "array", "items": { "type": "string" } },
-            "fix_warning": { "type": "string" }
+            "fix_description": { "type": "string", "description": "How to reproduce the problem and which component is at fault" },
+            "fix_commands": { "type": "array", "items": { "type": "string" }, "description": "Commands to reproduce the issue (read-only diagnostic commands, not remediation)" },
+            "fix_warning": { "type": "string", "description": "Caveats about the diagnosis or reproduction -- conditions, timing, environment specifics" }
         },
         "required": ["summary", "evidence"]
     }
@@ -116,7 +116,7 @@ public sealed class InvestigationRoom : AgentRoom
         TranscriptStore transcriptStore,
         ILogger<InvestigationRoom> logger)
         : base(llmFactory, toolRegistry, agentOptions, pipeline, transcriptStore, logger,
-            scope: null, subAgentConfig: s_scoutConfig, subAgentConcludeSchema: s_concludeSchema)
+            scope: ToolScope.Investigation, subAgentConfig: s_scoutConfig, subAgentConcludeSchema: s_concludeSchema)
     {
         _roomToolHandlers = new RoomToolHandlers(_agents, LeadId, _logger);
     }
@@ -183,10 +183,13 @@ public sealed class InvestigationRoom : AgentRoom
 
                 resumedSlots = [];
                 foreach (var agent in incomplete)
-                    resumedSlots.Add(ResumeSubAgent(agent, ct));
+                {
+                    var scoutIsBusy = RoomStateRef?.Members
+                        .Any(m => m.Id == agent.Id && m.Status is MemberStatus.Working) == true;
+                    resumedSlots.Add(ResumeSubAgent(agent, ct, autoResume: scoutIsBusy));
+                }
             }
             initialMessages = LlmContextApplier.Replay(eventLog, LeadId);
-            EventLogScanner.PatchDanglingToolCalls(initialMessages);
         }
 
         if (resumedSlots is { Count: > 0 })
@@ -194,8 +197,10 @@ public sealed class InvestigationRoom : AgentRoom
         else
             SetRoomPhase(RoomPhase.Active);
 
+        var leadIsBusy = isResume && RoomStateRef?.Members
+            .Any(m => m.Id == LeadId && m.Status is MemberStatus.Active) == true;
         leadSlot.RunTask = RunAgentWithRouting(leadSlot, runnerConfig, ct, initialMessages,
-            autoResume: isResume);
+            autoResume: leadIsBusy);
 
         if (resumedSlots is { Count: > 0 })
             _ = MonitorRecoveryAsync(resumedSlots, ct);

@@ -29,7 +29,6 @@ internal static class EventLogScanner
                 continue;
 
             var replayed = LlmContextApplier.Replay(events, id);
-            PatchDanglingToolCalls(replayed);
             incomplete.Add(meta with { ReplayedMessages = replayed });
         }
 
@@ -165,42 +164,85 @@ internal static class EventLogScanner
         return concluded;
     }
 
-    internal static void PatchDanglingToolCalls(List<LlmMessage> messages)
+    /// <summary>
+    /// Scans the event log for tool_use blocks in LlmContext messages that lack
+    /// matching tool_result blocks. Appends abort LlmContext events so that both
+    /// the UX replay (via TranscriptProjector) and the LLM context replay (via
+    /// LlmContextApplier) see proper abort results.
+    /// </summary>
+    public static List<RoomEvent> CloseDanglingToolCalls(IReadOnlyList<RoomEvent> events)
     {
-        if (messages.Count == 0)
-            return;
+        var startIndex = FindCurrentRunStart(events);
+        var dangling = FindDanglingToolUseIds(events, startIndex);
+        if (dangling.Count == 0)
+            return events as List<RoomEvent> ?? events.ToList();
 
-        var last = messages[^1];
-        if (last.Role != "assistant" || last.Content.ValueKind != JsonValueKind.Array)
-            return;
+        var closed = new List<RoomEvent>(events);
+        var now = DateTimeOffset.UtcNow;
 
-        var toolUseIds = new List<string>();
-        foreach (var block in last.Content.EnumerateArray())
+        foreach (var (agentId, toolUseIds) in dangling)
         {
-            if (block.TryGetProperty("type", out var t) && t.GetString() == "tool_use"
-                && block.TryGetProperty("id", out var id))
+            var results = toolUseIds.Select(id => new
             {
-                var idStr = id.GetString();
-                if (idStr is not null)
-                    toolUseIds.Add(idStr);
+                type = "tool_result",
+                tool_use_id = id,
+                content = "[aborted] Pod restarted while tool was executing. You may retry if needed."
+            }).ToArray();
+
+            closed.Add(new RoomEvent.LlmContext(0, agentId, now,
+                [new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(results) }]));
+        }
+
+        return closed;
+    }
+
+    private static Dictionary<string, List<string>> FindDanglingToolUseIds(
+        IReadOnlyList<RoomEvent> events, int startIndex)
+    {
+        var pending = new Dictionary<string, Dictionary<string, bool>>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = startIndex; i < events.Count; i++)
+        {
+            if (events[i] is not RoomEvent.LlmContext ctx)
+                continue;
+
+            foreach (var msg in ctx.Messages)
+            {
+                if (msg.Role == "assistant" && msg.Content.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var block in msg.Content.EnumerateArray())
+                    {
+                        if (block.TryGetProperty("type", out var t) && t.GetString() == "tool_use"
+                            && block.TryGetProperty("id", out var id) && id.GetString() is { } idStr)
+                        {
+                            if (!pending.ContainsKey(ctx.From))
+                                pending[ctx.From] = new Dictionary<string, bool>();
+                            pending[ctx.From][idStr] = true;
+                        }
+                    }
+                }
+                else if (msg.Role == "user" && msg.Content.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var block in msg.Content.EnumerateArray())
+                    {
+                        if (block.TryGetProperty("type", out var tp) && tp.GetString() == "tool_result"
+                            && block.TryGetProperty("tool_use_id", out var tuid) && tuid.GetString() is { } resolvedId)
+                        {
+                            if (pending.TryGetValue(ctx.From, out var agentPending))
+                                agentPending.Remove(resolvedId);
+                        }
+                    }
+                }
             }
         }
 
-        if (toolUseIds.Count == 0)
-            return;
-
-        var results = toolUseIds.Select(id => new
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (agentId, ids) in pending)
         {
-            type = "tool_result",
-            tool_use_id = id,
-            content = "[system] Tool execution was interrupted by a pod restart. You may retry if needed."
-        }).ToArray();
-
-        messages.Add(new LlmMessage
-        {
-            Role = "user",
-            Content = JsonSerializer.SerializeToElement(results)
-        });
+            if (ids.Count > 0)
+                result[agentId] = ids.Keys.ToList();
+        }
+        return result;
     }
 
     private static bool IsToolUse(JsonElement block, string toolName)

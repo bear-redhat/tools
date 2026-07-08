@@ -18,6 +18,7 @@ namespace Investigator.Models;
 [JsonDerivedType(typeof(ConversationItem.CaseReceived), "case_received")]
 [JsonDerivedType(typeof(ConversationItem.MemorySaved), "memory_saved")]
 [JsonDerivedType(typeof(ConversationItem.MemoryRecalled), "memory_recalled")]
+[JsonDerivedType(typeof(ConversationItem.CaseReferred), "case_referred")]
 public abstract record ConversationItem
 {
     public required DateTimeOffset Timestamp { get; init; }
@@ -184,6 +185,14 @@ public abstract record ConversationItem
         public int? ResultCount { get; init; }
         public string? ResultSummary { get; init; }
     }
+
+    public sealed record CaseReferred : ConversationItem
+    {
+        public override string SenderId => "langur";
+        public required string Reason { get; init; }
+        public string? SuggestedDirection { get; init; }
+        public EvidenceChain? DisprovalEvidence { get; init; }
+    }
 }
 
 public class LogEntryModel
@@ -213,7 +222,7 @@ public class TurnUsage
     public int? CompactionAfter { get; set; }
 }
 
-public enum LogEntryStatus { Running, Completed, TimedOut }
+public enum LogEntryStatus { Running, Completed, TimedOut, Aborted }
 
 public class GroupMember(string name, string id, MemberStatus status)
 {

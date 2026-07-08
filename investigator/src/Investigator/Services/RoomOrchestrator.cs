@@ -174,10 +174,10 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
         var applierReader = run.Room.Bus.Subscribe("state-applier");
         var fanOutTask = Task.Run(() => ConsumeAndFanOutAsync(run, applierReader));
 
+        run.Room.RoomStateRef = GetRoomState(run.Session);
+
         var projector = new TranscriptProjector(LeadId, evt => run.Room.Pipeline.EmitAsync(evt));
         var projectionTask = Task.Run(() => projector.RunLiveAsync(run.Room.TranscriptStore.Reader, ct));
-
-        run.Room.RoomStateRef = GetRoomState(run.Session);
 
         try
         {

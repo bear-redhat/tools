@@ -365,6 +365,16 @@ public partial class Chat : IAsyncDisposable
             root_cause = conclusion.Content,
             fix_description = conclusion.Fix?.Description,
             fix_commands = conclusion.Fix?.Commands,
+            fix_warning = conclusion.Fix?.Warning,
+            evidence = conclusion.Evidence?.Steps.Select(s => new
+            {
+                step = s.Step,
+                reasoning = s.Reasoning,
+                finding = s.Finding,
+                cluster = s.Cluster,
+                proof = s.Proof,
+                source = s.Source,
+            }),
         });
 
         var syntheticId = $"toolu_ui_{Guid.NewGuid():N}";
@@ -378,6 +388,29 @@ public partial class Chat : IAsyncDisposable
 
         var ctx = new RoomEvent.LlmContext(0, "little-bear", DateTimeOffset.UtcNow, [assistantMsg, resultMsg]);
         _session.InvestigationTranscriptStore?.Append(ctx);
+    }
+
+    private void HandleReferralBack()
+    {
+        if (_session?.PendingReferral is not { } referral) return;
+
+        var message = $"[Case referred back from The Canopy Post]\n\n"
+            + $"**Reason:** {referral.Reason}\n";
+        if (referral.SuggestedDirection is not null)
+            message += $"\n**Suggested direction:** {referral.SuggestedDirection}\n";
+        if (referral.DisprovalEvidence is { Steps.Count: > 0 })
+        {
+            message += "\n**Disproval evidence:**\n";
+            foreach (var step in referral.DisprovalEvidence.Steps)
+                message += $"- {step.Finding}\n";
+        }
+
+        _session.InvestigationTranscriptStore?.Append(
+            new RoomEvent.ExternalInput(0, "system", DateTimeOffset.UtcNow, message)
+                { To = "little-bear" });
+
+        _session.PendingReferral = null;
+        _activeRoom = "investigation";
     }
 
     private async Task OnSendAsync(string message)
@@ -426,6 +459,8 @@ public partial class Chat : IAsyncDisposable
                     || (_remView is not null && (_remView.IsInvestigating || _remView.HasWorkingAgents)))
                     _wasWorking = true;
                 TryStartRemediation();
+                if (_session?.PendingReferral is not null)
+                    HandleReferralBack();
                 TryPlayCaseClosedSound();
                 _scrollAfterRender = IsRoomActive(room);
                 await InvokeAsync(StateHasChanged);
