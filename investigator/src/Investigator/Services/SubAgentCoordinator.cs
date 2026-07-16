@@ -155,11 +155,12 @@ internal sealed class SubAgentCoordinator
         var modelOptions = _llmFactory.GetModelOptions(resolvedModel);
         var summarizerProfile = _llmFactory.DefaultProfileName;
         var summarizerOptions = _llmFactory.GetModelOptions(summarizerProfile);
+        var subSystemPrompt = buildPrompt(agentName, role, task, WorkspacePath, _toolSections, ConversationId, ClientTimeZone);
         var subConfig = new AgentRunner.Config(
             Id: subSlot.Id,
             Name: agentName,
             Role: role,
-            SystemPrompt: buildPrompt(agentName, role, task, WorkspacePath, _toolSections, ConversationId, ClientTimeZone),
+            SystemPrompt: subSystemPrompt,
             LlmClient: subClient,
             Tools: tools,
             MaxToolCalls: isAnalyst ? _agentOptions.MaxToolCalls : _agentOptions.SubAgentMaxToolCalls,
@@ -168,6 +169,7 @@ internal sealed class SubAgentCoordinator
             CompactionMaxTokens: modelOptions.MaxTokens * 4,
             ThinkingBudget: modelOptions.ThinkingBudget,
             ContextWindowTokens: modelOptions.ContextWindowTokens,
+            ContextOverheadTokens: AgentRunner.EstimateOverheadTokens(subSystemPrompt, tools),
             ModelProfile: resolvedModel,
             InputPricePerMToken: modelOptions.InputPricePerMToken,
             OutputPricePerMToken: modelOptions.OutputPricePerMToken,
@@ -318,11 +320,12 @@ internal sealed class SubAgentCoordinator
         var modelOptions = _llmFactory.GetModelOptions(resolvedModel);
         var summarizerProfile = _llmFactory.DefaultProfileName;
         var summarizerOptions = _llmFactory.GetModelOptions(summarizerProfile);
+        var subSystemPrompt = buildPrompt(agent.Name, agent.Role, agent.Task, WorkspacePath, _toolSections, ConversationId, ClientTimeZone);
         var subConfig = new AgentRunner.Config(
             Id: subSlot.Id,
             Name: agent.Name,
             Role: agent.Role,
-            SystemPrompt: buildPrompt(agent.Name, agent.Role, agent.Task, WorkspacePath, _toolSections, ConversationId, ClientTimeZone),
+            SystemPrompt: subSystemPrompt,
             LlmClient: subClient,
             Tools: tools,
             MaxToolCalls: agent.IsAnalyst ? _agentOptions.MaxToolCalls : _agentOptions.SubAgentMaxToolCalls,
@@ -331,6 +334,7 @@ internal sealed class SubAgentCoordinator
             CompactionMaxTokens: modelOptions.MaxTokens * 4,
             ThinkingBudget: modelOptions.ThinkingBudget,
             ContextWindowTokens: modelOptions.ContextWindowTokens,
+            ContextOverheadTokens: AgentRunner.EstimateOverheadTokens(subSystemPrompt, tools),
             ModelProfile: resolvedModel,
             InputPricePerMToken: modelOptions.InputPricePerMToken,
             OutputPricePerMToken: modelOptions.OutputPricePerMToken,

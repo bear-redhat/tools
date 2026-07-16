@@ -139,22 +139,25 @@ public sealed class InvestigationRoom : AgentRoom
         var primaryOptions = _llmFactory.GetModelOptions(_llmFactory.PrimaryProfileName);
         var summarizerProfile = _llmFactory.DefaultProfileName;
         var summarizerOptions = _llmFactory.GetModelOptions(summarizerProfile);
+        var leadSystemPrompt = InvestigationPrompts.BuildSystemPrompt(
+            _toolSections, workspacePath,
+            _llmFactory.Models, _llmFactory.DefaultProfileName,
+            conversationId, clientTimeZone);
+        var leadTools = BuildLeadTools();
         var runnerConfig = new AgentRunner.Config(
             Id: LeadId,
             Name: LeadName,
             Role: "lead detective",
-            SystemPrompt: InvestigationPrompts.BuildSystemPrompt(
-                _toolSections, workspacePath,
-                _llmFactory.Models, _llmFactory.DefaultProfileName,
-                conversationId, clientTimeZone),
+            SystemPrompt: leadSystemPrompt,
             LlmClient: _llmFactory.GetClient(_llmFactory.PrimaryProfileName),
-            Tools: BuildLeadTools(),
+            Tools: leadTools,
             MaxToolCalls: _agentOptions.MaxToolCalls,
             MaxRetries: _agentOptions.LlmRetries,
             WorkspacePath: workspacePath,
             CompactionMaxTokens: primaryOptions.MaxTokens * 4,
             ThinkingBudget: primaryOptions.ThinkingBudget,
             ContextWindowTokens: primaryOptions.ContextWindowTokens,
+            ContextOverheadTokens: AgentRunner.EstimateOverheadTokens(leadSystemPrompt, leadTools),
             ModelProfile: _llmFactory.PrimaryProfileName,
             InputPricePerMToken: primaryOptions.InputPricePerMToken,
             OutputPricePerMToken: primaryOptions.OutputPricePerMToken,

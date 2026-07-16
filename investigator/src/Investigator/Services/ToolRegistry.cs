@@ -151,6 +151,8 @@ public sealed class ToolRegistry
             }
         }
 
+        truncated = ApplyCharCap(truncated, _options.MaxChars, outputFilePath);
+
         _logger.LogInformation("Tool {Name} completed: exit={Exit}, timed_out={TimedOut}, output_lines={Lines}, output_file={File}",
             toolName, result.ExitCode, result.TimedOut, lineCount, outputFilePath);
 
@@ -194,6 +196,16 @@ public sealed class ToolRegistry
         if (output.Length <= maxBytes) return output;
         _logger.LogWarning("Tool output exceeded hard cap ({Length} > {Max}), truncating", output.Length, maxBytes);
         return output[..maxBytes] + $"\n... [truncated at {maxBytes / 1024}KB hard cap]";
+    }
+
+    private string ApplyCharCap(string output, int maxChars, string? filePath)
+    {
+        if (maxChars <= 0 || output.Length <= maxChars) return output;
+        _logger.LogWarning("Tool output exceeded char cap ({Length} > {Max}), truncating", output.Length, maxChars);
+        var suffix = filePath is not null
+            ? $"\n... [truncated at {maxChars / 1000}K chars -- use read_output for full content: {filePath}]"
+            : $"\n... [truncated at {maxChars / 1000}K chars]";
+        return output[..maxChars] + suffix;
     }
 
     private static List<Type> TopologicalSort(List<Type> toolTypes)

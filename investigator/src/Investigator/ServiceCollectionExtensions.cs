@@ -15,13 +15,12 @@ public static class ServiceCollectionExtensions
         services.Configure<OcOptions>(config.GetSection("Tools:run_oc"));
         services.Configure<ShellOptions>(config.GetSection("Tools:run_shell"));
         services.Configure<CiRepoOptions>(config.GetSection("Tools:ci_repo"));
-        services.Configure<SkillsOptions>(config.GetSection("Tools:skills"));
+        services.Configure<CasebookOptions>(config.GetSection("Tools:casebook"));
         services.Configure<WebSearchOptions>(config.GetSection("Tools:web_search"));
         services.Configure<WebBrowserOptions>(config.GetSection("Tools:web_browse"));
         services.Configure<GitHubOptions>(config.GetSection("Tools:github"));
         services.Configure<ProwOptions>(config.GetSection("Tools:prow"));
         services.Configure<PrometheusOptions>(config.GetSection("Tools:prometheus"));
-        services.Configure<MemoryOptions>(config.GetSection("Tools:memory"));
         services.Configure<ToolOutputOptions>(config.GetSection(ToolOutputOptions.Section));
         services.Configure<PluginOptions>(config.GetSection(PluginOptions.Section));
         services.Configure<WorkspaceOptions>(config.GetSection(WorkspaceOptions.Section));
@@ -87,8 +86,8 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<OutputSummarizer>();
-        services.AddSingleton<MemoryConsolidator>();
-        services.AddHostedService<MemoryConsolidationService>();
+        services.AddSingleton<CasebookIndexer>();
+        services.AddHostedService<IndexingService>();
 
         services.AddSingleton<ToolRegistry>(sp =>
         {
@@ -100,7 +99,6 @@ public static class ServiceCollectionExtensions
                 typeof(AwsExecutor),
                 typeof(ShellExecutor),
                 typeof(CiRepoTool),
-                typeof(SkillsLibrary),
                 typeof(WebSearchTool),
                 typeof(WebBrowserTool),
                 typeof(GitHubTool),
@@ -108,7 +106,7 @@ public static class ServiceCollectionExtensions
                 typeof(PrometheusTool),
                 typeof(DraftPatchTool),
                 typeof(ReadOutputTool),
-                typeof(MemoryTool),
+                typeof(CasebookTool),
             };
 
             var pluginOpts = sp.GetRequiredService<IOptions<PluginOptions>>().Value;

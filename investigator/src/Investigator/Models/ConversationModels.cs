@@ -16,8 +16,7 @@ namespace Investigator.Models;
 [JsonDerivedType(typeof(ConversationItem.PlanItem), "plan")]
 [JsonDerivedType(typeof(ConversationItem.SignOffItem), "sign_off")]
 [JsonDerivedType(typeof(ConversationItem.CaseReceived), "case_received")]
-[JsonDerivedType(typeof(ConversationItem.MemorySaved), "memory_saved")]
-[JsonDerivedType(typeof(ConversationItem.MemoryRecalled), "memory_recalled")]
+[JsonDerivedType(typeof(ConversationItem.CasebookActivity), "casebook_activity")]
 [JsonDerivedType(typeof(ConversationItem.CaseReferred), "case_referred")]
 public abstract record ConversationItem
 {
@@ -164,26 +163,15 @@ public abstract record ConversationItem
         public IReadOnlyList<CaseFinding> Findings { get; init; } = [];
     }
 
-    public sealed record MemorySaved : ConversationItem
+    public sealed record CasebookActivity : ConversationItem
     {
         public override string SenderId => LeadId;
         public required string LeadId { get; init; }
         public required string StepId { get; init; }
+        public required string Action { get; init; }
         public string? Title { get; init; }
-        public string? Category { get; init; }
-        public string[]? Tags { get; init; }
-        public string? MemoryId { get; init; }
-        public string? Content { get; init; }
-    }
-
-    public sealed record MemoryRecalled : ConversationItem
-    {
-        public override string SenderId => LeadId;
-        public required string LeadId { get; init; }
-        public required string StepId { get; init; }
         public string? Query { get; init; }
         public int? ResultCount { get; init; }
-        public string? ResultSummary { get; init; }
     }
 
     public sealed record CaseReferred : ConversationItem

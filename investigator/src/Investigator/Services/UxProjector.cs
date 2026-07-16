@@ -306,32 +306,19 @@ public sealed class UxProjector
             yield break;
         }
 
-        if (tres.Tool == "memory" && req is not null)
+        if (tres.Tool == "casebook" && req is not null)
         {
             var action = Prop(req.Input, "action");
-            if (action == "save")
+            if (action is "save" or "search")
             {
-                yield return new AddConversationItem(new ConversationItem.MemorySaved
+                yield return new AddConversationItem(new ConversationItem.CasebookActivity
                 {
                     LeadId = _leadId,
                     StepId = tres.Seq.ToString(),
-                    Title = Prop(req.Input, "title"),
-                    Category = Prop(req.Input, "category"),
-                    Tags = ParseTags(req.Input),
-                    MemoryId = ExtractMemoryId(tres.Output),
-                    Content = Prop(req.Input, "content"),
-                    Timestamp = tres.Timestamp,
-                });
-            }
-            else if (action == "search")
-            {
-                yield return new AddConversationItem(new ConversationItem.MemoryRecalled
-                {
-                    LeadId = _leadId,
-                    StepId = tres.Seq.ToString(),
-                    Query = Prop(req.Input, "query"),
-                    ResultCount = ExtractResultCount(tres.Output),
-                    ResultSummary = tres.Output,
+                    Action = action,
+                    Title = action == "save" ? Prop(req.Input, "title") : null,
+                    Query = action == "search" ? Prop(req.Input, "query") : null,
+                    ResultCount = action == "search" ? ExtractResultCount(tres.Output) : null,
                     Timestamp = tres.Timestamp,
                 });
             }

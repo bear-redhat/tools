@@ -57,6 +57,7 @@ public sealed class ToolOutputOptions
     public int HeadLines { get; set; } = 50;
     public int TailLines { get; set; } = 20;
     public int HardCapBytes { get; set; } = 8192;
+    public int MaxChars { get; set; } = 32_000;
 }
 
 public sealed class PluginOptions
@@ -136,26 +137,22 @@ public sealed class RepoConfig
     public TimeSpan? MaxAge { get; set; } = TimeSpan.FromHours(1);
 }
 
-public sealed class SkillsOptions
-{
-    public string Path { get; set; } = "skills";
-    public string? LearnedPath { get; set; }
-}
-
-public sealed class MemoryOptions
+public sealed class CasebookOptions
 {
     public string? Path { get; set; }
+    public string? CommonplacePath { get; set; }
+    public string SeedPath { get; set; } = "skills";
     public int MaxEntries { get; set; } = 500;
     public int SearchResults { get; set; } = 5;
     public int ListDefault { get; set; } = 20;
-    public DreamingOptions Dreaming { get; set; } = new();
+    public IndexingOptions Indexing { get; set; } = new();
 }
 
-public sealed class DreamingOptions
+public sealed class IndexingOptions
 {
     public bool Enabled { get; set; } = true;
     public TimeSpan Interval { get; set; } = TimeSpan.FromDays(7);
-    public int MinMemories { get; set; } = 5;
+    public int MinEntries { get; set; } = 5;
     public int ContextBatchSize { get; set; } = 100;
     public string? ModelProfile { get; set; }
 }

@@ -21,6 +21,7 @@ public sealed class AgentRunner
         Func<string, JsonElement, bool>? IsConditionallyTerminal = null,
         int ThinkingBudget = 10000,
         int ContextWindowTokens = 1_000_000,
+        int ContextOverheadTokens = 0,
         string? UserId = null,
         string? ConversationId = null,
         string? ModelProfile = null,
@@ -43,6 +44,7 @@ public sealed class AgentRunner
 
     private const int MaxTruncationRetries = 2;
     private const int MaxTruncationFallthroughs = 3;
+    private const int MaxPromptTooLongRetries = 3;
 
     private readonly ILogger _logger;
 
@@ -113,14 +115,15 @@ public sealed class AgentRunner
                 var truncationRetries = 0;
                 var consecutiveTruncationFallthroughs = 0;
                 int? thinkingBudgetOverride = null;
-                var promptTooLongRetried = false;
+                var promptTooLongRetries = 0;
                 while (!concluded && !ct.IsCancellationRequested)
                 {
                     _logger.LogDebug("Agent {Name} loop iteration, toolCallCount={Count}/{Max}",
                         config.Name, toolCallCount, config.MaxToolCalls);
 
-                    var compactionBudget = config.CompactionMaxTokens
-                        ?? (int)(config.ContextWindowTokens * 0.7);
+                    var compactionBudget = (config.CompactionMaxTokens
+                        ?? (int)(config.ContextWindowTokens * 0.7))
+                        - config.ContextOverheadTokens;
                     await CompactMessagesIfNeededAsync(messages, compactionBudget, config, store, ct);
 
                     List<ContentBlock>? contentBlocks = null;
@@ -132,24 +135,41 @@ public sealed class AgentRunner
                             ? new LlmRequestContext(config.UserId, config.ConversationId)
                             : null;
                         contentBlocks = await CallLlmWithRetry(config, messages, ct, thinkingBudgetOverride, llmContext);
-                        promptTooLongRetried = false;
+                        promptTooLongRetries = 0;
                         usageInfo = ExtractUsage(contentBlocks);
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
                     {
-                        if (!promptTooLongRetried)
+                        promptTooLongRetries++;
+                        if (promptTooLongRetries <= MaxPromptTooLongRetries)
                         {
-                            promptTooLongRetried = true;
-                            var emergencyBudget = (int)(config.ContextWindowTokens * 0.5);
-                            _logger.LogWarning("Agent {Name} LLM rejected with HTTP 400, emergency compaction to {Budget} tokens",
-                                config.Name, emergencyBudget);
+                            var fraction = promptTooLongRetries switch
+                            {
+                                1 => 0.4,
+                                2 => 0.2,
+                                _ => 0.0,
+                            };
+                            var emergencyBudget = fraction > 0
+                                ? (int)(config.ContextWindowTokens * fraction) - config.ContextOverheadTokens
+                                : 0;
+                            _logger.LogWarning("Agent {Name} LLM rejected with HTTP 400 (attempt {Attempt}/{Max}), emergency compaction to {Budget} tokens",
+                                config.Name, promptTooLongRetries, MaxPromptTooLongRetries, emergencyBudget);
                             await CompactMessagesIfNeededAsync(messages, emergencyBudget, config, store, ct);
                             continue;
                         }
 
                         LogMessageStructure(config.Name, messages);
-                        _logger.LogError(ex, "Agent {Name} LLM call rejected (HTTP 400)", config.Name);
-                        llmError = $"LLM call rejected: {ex.Message}";
+                        _logger.LogError(ex, "Agent {Name} LLM call rejected after {Retries} compaction attempts, forcing conclude",
+                            config.Name, promptTooLongRetries);
+
+                        var forceConcludeId = $"toolu_force_{Guid.NewGuid():N}";
+                        var forceConcludeInput = JsonSerializer.SerializeToElement(new
+                        {
+                            summary = "[Investigation interrupted: context window exhausted after tool execution. Findings so far are incomplete.]"
+                        });
+                        await executeTool("conclude", forceConcludeInput, forceConcludeId, ct);
+                        concluded = true;
+                        break;
                     }
                     catch (OperationCanceledException) { throw; }
                     catch (HttpRequestException ex)
@@ -534,6 +554,7 @@ public sealed class AgentRunner
         }
 
         messages.RemoveRange(0, compactEnd);
+        ShrinkOversizedToolResults(messages);
         var summaryMsg = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(summary) };
         messages.Insert(0, summaryMsg);
 
@@ -545,6 +566,65 @@ public sealed class AgentRunner
             ModelProfile: config.ModelProfile,
             InputPrice: config.InputPricePerMToken, OutputPrice: config.OutputPricePerMToken,
             CacheReadPrice: config.CacheReadPricePerMToken, CacheCreatePrice: config.CacheCreationPricePerMToken));
+    }
+
+    private const int ToolResultShrinkThreshold = 8_000;
+
+    private void ShrinkOversizedToolResults(List<LlmMessage> messages)
+    {
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var msg = messages[i];
+            if (msg.Role != "user" || msg.Content.ValueKind != JsonValueKind.Array) continue;
+
+            var rawText = msg.Content.GetRawText();
+            if (rawText.Length <= ToolResultShrinkThreshold) continue;
+
+            Dictionary<string, string>? summaries = null;
+            if (msg is LlmToolResultMessage trm)
+            {
+                summaries = new(StringComparer.Ordinal);
+                foreach (var meta in trm.ToolMeta)
+                    if (meta.Summary is not null)
+                        summaries[meta.ToolUseId] = meta.Summary;
+            }
+
+            var rebuilt = new List<object>();
+            var anyChanged = false;
+            foreach (var item in msg.Content.EnumerateArray())
+            {
+                if (item.TryGetProperty("type", out var t) && t.GetString() == "tool_result"
+                    && item.TryGetProperty("content", out var content))
+                {
+                    var contentStr = content.ValueKind == JsonValueKind.String
+                        ? content.GetString() ?? ""
+                        : content.GetRawText();
+
+                    if (contentStr.Length > ToolResultShrinkThreshold)
+                    {
+                        var toolUseId = item.TryGetProperty("tool_use_id", out var idEl) ? idEl.GetString() : null;
+                        string replacement;
+                        if (toolUseId is not null && summaries?.TryGetValue(toolUseId, out var summary) == true)
+                            replacement = $"[compacted -- summary: {summary}]";
+                        else
+                            replacement = contentStr[..ToolResultShrinkThreshold] + "\n... [compacted during context reduction]";
+
+                        rebuilt.Add(new { type = "tool_result", tool_use_id = toolUseId, content = replacement });
+                        anyChanged = true;
+                        continue;
+                    }
+                }
+                rebuilt.Add(item);
+            }
+
+            if (anyChanged)
+            {
+                _logger.LogDebug("Shrunk oversized tool results in message {Index}", i);
+                messages[i] = msg is LlmToolResultMessage trm2
+                    ? new LlmToolResultMessage { Role = msg.Role, Content = JsonSerializer.SerializeToElement(rebuilt), ToolMeta = trm2.ToolMeta }
+                    : new LlmMessage { Role = msg.Role, Content = JsonSerializer.SerializeToElement(rebuilt) };
+            }
+        }
     }
 
     private static bool IsToolBoundary(List<LlmMessage> messages, int index)
@@ -614,6 +694,17 @@ public sealed class AgentRunner
         return totalChars / 4;
     }
 
+    internal static int EstimateOverheadTokens(string systemPrompt, IReadOnlyList<ToolDefinition> tools)
+    {
+        var chars = systemPrompt.Length;
+        foreach (var tool in tools)
+        {
+            chars += tool.Name.Length + (tool.Description?.Length ?? 0);
+            chars += tool.ParameterSchema.GetRawText().Length;
+        }
+        return chars / 4;
+    }
+
     private static LlmMessage? FormatEventAsLlmMessage(RoomEvent evt)
     {
         var (text, from, to) = evt switch
@@ -642,7 +733,6 @@ public sealed class AgentRunner
             "run_aws" => "aws " + Prop(input, "command"),
             "run_shell" => Prop(input, "command"),
             "ci_repo" => $"ci_repo {Prop(input, "repo")}({Prop(input, "action")})",
-            "skills" => $"skills {Prop(input, "action")}" + OptProp(input, "query", " ") + OptProp(input, "name", " "),
             "delegate" => $"delegate {Prop(input, "role")}",
             "conclude" => Truncate($"conclude: {Prop(input, "summary")}", 80),
             "present_finding" => $"finding: {Prop(input, "title")}",
@@ -650,7 +740,7 @@ public sealed class AgentRunner
             "message" => $"message {Prop(input, "to")}",
             "dismiss" => $"dismiss {Prop(input, "agent_name")}",
             "recall" => $"recall {Prop(input, "agent_name")}",
-            "memory" => FormatMemoryCommand(input),
+            "casebook" => FormatCasebookCommand(input),
             _ => FormatGenericTool(toolName, input),
         };
     }
@@ -665,16 +755,15 @@ public sealed class AgentRunner
             case "run_oc": Add("cluster", Prop(input, "cluster")); break;
             case "run_aws": Add("cluster", Prop(input, "cluster")); Add("account", Prop(input, "account")); break;
             case "delegate": Add("model", Prop(input, "model")); break;
-            case "skills": Add("action", Prop(input, "action")); break;
-            case "memory": Add("action", Prop(input, "action")); Add("category", Prop(input, "category")); break;
+            case "casebook": Add("action", Prop(input, "action")); Add("category", Prop(input, "category")); break;
         }
         return ctx;
     }
 
-    private static string FormatMemoryCommand(JsonElement input)
+    private static string FormatCasebookCommand(JsonElement input)
     {
         var action = Prop(input, "action");
-        if (action is null) return "memory";
+        if (action is null) return "casebook";
         var detail = action switch
         {
             "save" => Prop(input, "title") is { } t ? $" \"{Truncate(t, 60)}\"" : null,
@@ -682,7 +771,7 @@ public sealed class AgentRunner
             "read" or "delete" => Prop(input, "id") is { } id ? $" {id}" : null,
             _ => null,
         };
-        return $"memory {action}{detail}";
+        return $"casebook {action}{detail}";
     }
 
     private static string? Prop(JsonElement input, string name) => input.TryGetProperty(name, out var v) ? v.GetString() : null;

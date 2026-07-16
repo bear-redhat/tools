@@ -1912,113 +1912,36 @@ pre.ascii-art {
     line-height: 1.5;
 }
 
-/* Memory cards */
-.chat-message.memory-saved {
-    background: #1a1e14;
-    border-left: 3px solid #d4a017;
+/* Casebook activity indicator */
+.chat-message.casebook-activity {
+    border-left: 2px solid rgba(212, 160, 23, 0.4);
+    padding: 0.25rem 0.5rem;
+    min-height: unset;
 }
 
-.chat-message.memory-recalled {
-    background: #141a1e;
-    border-left: 3px solid #3b82f6;
-}
-
-.chat-message.memory-saved .message-body { --msg-bg: #1a1e14; }
-.chat-message.memory-recalled .message-body { --msg-bg: #141a1e; }
-
-.memory-label {
-    font-size: 0.65rem;
-    color: #d4a017;
-    font-weight: 600;
-    text-transform: uppercase;
-    margin-left: 0.25rem;
-    letter-spacing: 0.04em;
-}
-
-.memory-recalled .memory-label {
-    color: #60a5fa;
-}
-
-.memory-summary {
+.casebook-activity {
     display: flex;
-    align-items: center;
-    gap: 0.4rem;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    color: #9ca3af;
     flex-wrap: wrap;
-    min-height: 1.4em;
 }
 
-.memory-title {
-    color: #e0e0e0;
+.casebook-agent {
+    color: #6b7280;
     font-weight: 500;
 }
 
-.memory-query {
-    color: #94a3b8;
+.casebook-label {
+    color: #b0956e;
     font-style: italic;
 }
 
-.memory-category-badge {
-    font-size: 0.7rem;
-    color: #d4a017;
-    background: rgba(212, 160, 23, 0.12);
-    border: 1px solid rgba(212, 160, 23, 0.25);
-    border-radius: 9999px;
-    padding: 0.1rem 0.5rem;
-    font-weight: 500;
+.casebook-detail {
+    color: #94a3b8;
 }
 
-.memory-tag-pill {
-    font-size: 0.65rem;
-    color: #9ca3af;
-    background: rgba(156, 163, 175, 0.1);
-    border: 1px solid rgba(156, 163, 175, 0.2);
-    border-radius: 9999px;
-    padding: 0.1rem 0.45rem;
-}
-
-.memory-result-badge {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: #4ade80;
-    background: rgba(74, 222, 128, 0.1);
-    border: 1px solid rgba(74, 222, 128, 0.2);
-    border-radius: 9999px;
-    padding: 0.1rem 0.5rem;
-}
-
-.memory-result-badge.no-matches {
+.casebook-result {
     color: #6b7280;
-    background: rgba(107, 114, 128, 0.1);
-    border-color: rgba(107, 114, 128, 0.2);
-}
-
-.memory-expand-body {
-    max-height: 20rem;
-    overflow-y: auto;
-    margin-top: 0.5rem;
-    padding: 0.5rem;
-    background: rgba(0, 0, 0, 0.15);
-    border-radius: 4px;
-    font-size: 0.85rem;
-    line-height: 1.5;
-}
-
-.memory-expand-body::-webkit-scrollbar {
-    width: 6px;
-}
-
-.memory-expand-body::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.memory-expand-body::-webkit-scrollbar-thumb {
-    background: #333;
-    border-radius: 3px;
-}
-
-.memory-id-muted {
-    color: #4b5563;
-    font-size: 0.7rem;
-    margin-top: 0.5rem;
-    font-family: monospace;
 }
