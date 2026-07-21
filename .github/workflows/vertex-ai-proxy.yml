@@ -1,0 +1,85 @@
+name: Vertex AI Proxy - Build
+
+on:
+  push:
+    branches: [master]
+    paths: [vertex-ai-proxy/**]
+  workflow_dispatch:
+
+jobs:
+  build:
+    defaults:
+      run:
+        working-directory: vertex-ai-proxy
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            artifact: vertex-ai-proxy
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            artifact: vertex-ai-proxy
+          - os: windows-latest
+            rid: win-x64
+            artifact: vertex-ai-proxy.exe
+          - os: windows-latest
+            rid: win-arm64
+            artifact: vertex-ai-proxy.exe
+
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install native AOT prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish
+        run: >
+          dotnet publish -c Release
+          -r ${{ matrix.rid }}
+          -o publish
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vertex-ai-proxy-${{ matrix.rid }}
+          path: vertex-ai-proxy/publish/${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir release
+          cp artifacts/vertex-ai-proxy-linux-x64/vertex-ai-proxy   release/vertex-ai-proxy-linux-x64
+          cp artifacts/vertex-ai-proxy-linux-arm64/vertex-ai-proxy  release/vertex-ai-proxy-linux-arm64
+          cp artifacts/vertex-ai-proxy-win-x64/vertex-ai-proxy.exe  release/vertex-ai-proxy-win-x64.exe
+          cp artifacts/vertex-ai-proxy-win-arm64/vertex-ai-proxy.exe release/vertex-ai-proxy-win-arm64.exe
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: vertex-ai-proxy/${{ github.run_id }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "vertex-ai-proxy $DATE" \
+            --generate-notes \
+            release/*
