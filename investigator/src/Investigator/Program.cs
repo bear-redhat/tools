@@ -1,5 +1,6 @@
 using Investigator;
 using Investigator.Components;
+using Investigator.Mcp;
 using Investigator.Models;
 using Investigator.Services;
 using Investigator.Tools;
@@ -9,6 +10,9 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.Options;
+using ModelContextProtocol.AspNetCore;
+using ModelContextProtocol.Server;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,10 +46,41 @@ builder.Services.AddSingleton<ConversationStore>();
 builder.Services.AddSingleton<InvestigationOrchestrator>();
 builder.Services.AddSingleton<RemediationOrchestrator>();
 builder.Services.AddSingleton<AuditLog>();
+builder.Services.AddScoped<McpSessionContext>();
+
+builder.Services
+    .AddMcpServer(options =>
+    {
+        options.ServerInfo = new() { Name = "investigator", Version = "1.0.0" };
+        options.ServerInstructions =
+            """
+            This server provides two levels of tools:
+
+            CAPABILITY TOOLS (preferred): investigate, follow_up, get_status, get_findings, list_investigations, search_knowledge.
+            These delegate work to the investigator's AI agents who autonomously use infrastructure tools, coordinate sub-agents, and produce structured findings. Use these for any diagnostic or investigative task.
+
+            RAW TOOLS (raw_ prefix): Direct access to infrastructure -- OpenShift clusters, AWS, Prow, GitHub, Prometheus, etc.
+            Only use raw_ tools when you need to run a specific command yourself and the capability tools are not appropriate.
+            For example, use raw_run_oc to check a specific pod's status, or raw_prow to look up a specific job's logs.
+
+            Typical workflow: call investigate to start, poll with get_status, read results with get_findings.
+            """;
+    })
+    .WithHttpTransport()
+    .WithTools<InvestigatorMcpTools>()
+    .WithResources<InvestigatorMcpResources>()
+    .WithResources<InvestigatorSkillResources>();
 
 var app = builder.Build();
 
-await app.Services.GetRequiredService<ToolRegistry>().InitializeAsync();
+var toolRegistry = app.Services.GetRequiredService<ToolRegistry>();
+await toolRegistry.InitializeAsync();
+
+var rawTools = DynamicToolHandler.BuildToolsFromRegistry(toolRegistry, app.Services);
+var mcpOptions = app.Services.GetRequiredService<IOptions<McpServerOptions>>().Value;
+mcpOptions.ToolCollection ??= [];
+foreach (var tool in rawTools)
+    mcpOptions.ToolCollection.Add(tool);
 
 if (!app.Environment.IsDevelopment())
 {
@@ -93,11 +128,14 @@ if (authSettings.HasOidc)
     });
 }
 
+app.UseWhenMcp("/mcp");
 app.UseAntiforgery();
 
 app.MapHealthChecks("/health");
 app.MapWorkspaceFiles();
 app.MapInvestigateApi();
+
+app.MapMcp("/mcp");
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

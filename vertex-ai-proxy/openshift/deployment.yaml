@@ -30,6 +30,7 @@ spec:
       containers:
         - name: proxy
           image: ghcr.io/bear-redhat/vertex-ai-proxy:latest
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 5000

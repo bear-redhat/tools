@@ -10,7 +10,27 @@ env:
   IMAGE_NAME: vertex-ai-proxy
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.proxy == 'true' }}
+      source: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.source == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            proxy:
+              - 'vertex-ai-proxy/**'
+            source:
+              - 'vertex-ai-proxy/**/*.cs'
+              - 'vertex-ai-proxy/**/*.csproj'
+              - 'vertex-ai-proxy/Dockerfile'
+
   build:
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     defaults:
       run:
         working-directory: vertex-ai-proxy
@@ -57,6 +77,8 @@ jobs:
           path: vertex-ai-proxy/publish/${{ matrix.artifact }}
 
   container:
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -98,10 +120,11 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
   release:
-    needs: build
+    needs: [changes, build]
+    if: needs.changes.outputs.source == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -113,20 +136,22 @@ jobs:
 
       - name: Prepare release assets
         run: |
+          SHORT_SHA=${GITHUB_SHA::7}
           mkdir release
-          cp artifacts/vertex-ai-proxy-linux-x64/vertex-ai-proxy   release/vertex-ai-proxy-linux-x64
-          cp artifacts/vertex-ai-proxy-linux-arm64/vertex-ai-proxy  release/vertex-ai-proxy-linux-arm64
-          cp artifacts/vertex-ai-proxy-win-x64/vertex-ai-proxy.exe  release/vertex-ai-proxy-win-x64.exe
-          cp artifacts/vertex-ai-proxy-win-arm64/vertex-ai-proxy.exe release/vertex-ai-proxy-win-arm64.exe
+          cp artifacts/vertex-ai-proxy-linux-x64/vertex-ai-proxy   "release/vertex-ai-proxy-linux-x64"
+          cp artifacts/vertex-ai-proxy-linux-arm64/vertex-ai-proxy  "release/vertex-ai-proxy-linux-arm64"
+          cp artifacts/vertex-ai-proxy-win-x64/vertex-ai-proxy.exe  "release/vertex-ai-proxy-win-x64.exe"
+          cp artifacts/vertex-ai-proxy-win-arm64/vertex-ai-proxy.exe "release/vertex-ai-proxy-win-arm64.exe"
 
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: vertex-ai-proxy/${{ github.run_id }}
+          TAG: vertex-ai-proxy/${{ github.sha }}
         run: |
+          SHORT_SHA=${GITHUB_SHA::7}
           DATE=$(date -u +%Y-%m-%d)
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "vertex-ai-proxy $DATE" \
+            --title "vertex-ai-proxy ${DATE} (${SHORT_SHA})" \
             --generate-notes \
             release/*
