@@ -106,6 +106,28 @@ public sealed class ToolRegistry
             result = new ToolResult($"[Timed out after {def.DefaultTimeout.TotalSeconds}s]", ExitCode: -1, TimedOut: true);
         }
 
+        if (context.RawOutput)
+        {
+            // MCP mode: return full output inline, no file references, no truncation.
+            // The caller cannot read files so output must be self-contained.
+            string fullOutput;
+            if (result.OutputFile is not null)
+            {
+                // Streaming tool wrote full output to disk; read it back.
+                var fullPath = Path.Combine(context.WorkspacePath, result.OutputFile);
+                fullOutput = await File.ReadAllTextAsync(fullPath, ct);
+            }
+            else
+            {
+                fullOutput = result.Output;
+            }
+
+            _logger.LogInformation("Tool {Name} completed (raw): exit={Exit}, timed_out={TimedOut}, output_length={Length}",
+                toolName, result.ExitCode, result.TimedOut, fullOutput.Length);
+
+            return (result, null, fullOutput);
+        }
+
         string? outputFilePath;
         string truncated;
         int lineCount;

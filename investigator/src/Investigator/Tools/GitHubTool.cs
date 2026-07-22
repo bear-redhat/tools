@@ -265,6 +265,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         sb.AppendLine($"# Comments on {owner}/{repo}#{number}");
         sb.AppendLine();
 
+        var raw = ctx.RawOutput;
         var issueJson = await GetAsync($"{ApiBase}/repos/{owner}/{repo}/issues/{number}/comments?per_page=100", ct);
         if (issueJson is not null)
         {
@@ -276,7 +277,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
                 var author = c.GetProperty("user").GetProperty("login").GetString();
                 var created = Str(c, "created_at");
                 var body = Str(c, "body");
-                if (body is not null && body.Length > 500) body = body[..500] + "...";
+                if (!raw && body is not null && body.Length > 500) body = body[..500] + "...";
                 sb.AppendLine($"  [{created}] {author}:");
                 sb.AppendLine($"    {body?.Replace("\n", "\n    ")}");
                 sb.AppendLine();
@@ -294,7 +295,7 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
                 var author = c.GetProperty("user").GetProperty("login").GetString();
                 var path = Str(c, "path");
                 var body = Str(c, "body");
-                if (body is not null && body.Length > 500) body = body[..500] + "...";
+                if (!raw && body is not null && body.Length > 500) body = body[..500] + "...";
                 sb.AppendLine($"  {author} on {path}:");
                 sb.AppendLine($"    {body?.Replace("\n", "\n    ")}");
                 sb.AppendLine();
@@ -411,6 +412,25 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             return new ToolResult($"HTTP request failed: {ex.Message}", ExitCode: 1);
         }
 
+        if (ctx.RawOutput)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"# Workflow Logs for run {runId} ({owner}/{repo})");
+            sb.AppendLine();
+
+            using var archive = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
+            foreach (var entry in archive.Entries.OrderBy(e => e.FullName))
+            {
+                if (string.IsNullOrEmpty(entry.Name)) continue;
+                sb.AppendLine($"=== {entry.FullName} ({entry.Length:N0} bytes) ===");
+                using var reader = new StreamReader(entry.Open());
+                sb.AppendLine(await reader.ReadToEndAsync(ct));
+                sb.AppendLine();
+            }
+
+            return new ToolResult(sb.ToString());
+        }
+
         var outDir = Path.Combine(ctx.WorkspacePath, "tool_outputs", "workflow_logs", runId.ToString());
         Directory.CreateDirectory(outDir);
 
@@ -433,20 +453,22 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             }
         }
 
-        var sb = new StringBuilder();
-        sb.AppendLine($"# Workflow Logs for run {runId} ({owner}/{repo})");
-        sb.AppendLine($"Extracted {files.Count} log files to: {outDir}");
-        sb.AppendLine();
-
-        foreach (var (name, size) in files.OrderBy(f => f.Name))
         {
-            sb.AppendLine($"  {size,8:N0} bytes  {name}");
+            var sb = new StringBuilder();
+            sb.AppendLine($"# Workflow Logs for run {runId} ({owner}/{repo})");
+            sb.AppendLine($"Extracted {files.Count} log files to: {outDir}");
+            sb.AppendLine();
+
+            foreach (var (name, size) in files.OrderBy(f => f.Name))
+            {
+                sb.AppendLine($"  {size,8:N0} bytes  {name}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Use run_shell to search or read specific log files.");
+
+            return new ToolResult(sb.ToString());
         }
-
-        sb.AppendLine();
-        sb.AppendLine("Use run_shell to search or read specific log files.");
-
-        return new ToolResult(sb.ToString());
     }
 
     // ------------------------------------------------------------------ search
@@ -539,6 +561,12 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             if (rawBytes is null)
                 return new ToolResult($"Failed to download raw content for {owner}/{repo}/{path}", ExitCode: 1);
             content = rawBytes;
+        }
+
+        if (ctx.RawOutput)
+        {
+            var text = Encoding.UTF8.GetString(content);
+            return new ToolResult(text);
         }
 
         var outDir = Path.Combine(ctx.WorkspacePath, "tool_outputs", "github_files", owner, repo, refLabel);
@@ -747,8 +775,11 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
         sb.AppendLine($"Depth: {(depth > 0 ? depth.ToString() : "full")}");
         if (!string.IsNullOrEmpty(gitRef)) sb.AppendLine($"Ref: {gitRef}");
         sb.AppendLine($"Path: {cloneDir}");
-        sb.AppendLine();
-        sb.AppendLine("Use run_shell to browse, grep, or read files in the clone.");
+        if (!ctx.RawOutput)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Use run_shell to browse, grep, or read files in the clone.");
+        }
 
         return new ToolResult(sb.ToString());
     }

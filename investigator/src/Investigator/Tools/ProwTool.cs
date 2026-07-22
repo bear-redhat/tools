@@ -353,6 +353,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             return new ToolResult(err, ExitCode: 1);
 
         ctx.Logger.LogInformation("prow: job_status bucket={Bucket} path={Path}", bucket, storagePath);
+        var raw = ctx.RawOutput;
 
         var sb = new StringBuilder();
         sb.AppendLine($"# Job Status: {storagePath}");
@@ -379,7 +380,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             }
             catch (JsonException)
             {
-                sb.AppendLine($"  (raw) {Truncate(finishedJson, 500)}");
+                sb.AppendLine(raw ? $"  (raw) {finishedJson}" : $"  (raw) {Truncate(finishedJson, 500)}");
             }
             sb.AppendLine();
         }
@@ -397,7 +398,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             }
             catch (JsonException)
             {
-                sb.AppendLine($"  (raw) {Truncate(startedJson, 200)}");
+                sb.AppendLine(raw ? $"  (raw) {startedJson}" : $"  (raw) {Truncate(startedJson, 200)}");
             }
             sb.AppendLine();
         }
@@ -446,6 +447,9 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         ctx.Logger.LogInformation("prow: log download bucket={Bucket} path={Path}", bucket, storagePath);
         ctx.OnOutputLine?.Invoke("Downloading build log...");
 
+        if (ctx.RawOutput)
+            return await DownloadLogInline(bucket!, storagePath!, ct);
+
         var safeName = SanitizePath(storagePath!);
         safeName = Regex.Replace(safeName, @"/build-log\.txt$", "", RegexOptions.IgnoreCase);
 
@@ -491,6 +495,52 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         }
 
         return FormatLogResult(outFile, bytesWritten);
+    }
+
+    private async Task<ToolResult> DownloadLogInline(string bucket, string storagePath, CancellationToken ct)
+    {
+        if (_storageClient is not null)
+        {
+            try
+            {
+                var objectName = $"{storagePath}/build-log.txt";
+                using var ms = new MemoryStream();
+                await _storageClient.DownloadObjectAsync(bucket, objectName, ms, cancellationToken: ct);
+                ms.Position = 0;
+                var content = await new StreamReader(ms).ReadToEndAsync(ct);
+                return new ToolResult(content);
+            }
+            catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // fall through to HTTP
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "prow: GCS SDK inline download failed, falling back to HTTP");
+            }
+        }
+
+        var url = $"{_options.GcsWebUrl}/gcs/{bucket}/{storagePath}/build-log.txt";
+        try
+        {
+            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400)
+                return new ToolResult(
+                    "Build log not available at this path. The job may still be running, or the log has not been uploaded yet.",
+                    ExitCode: 1);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await ReadContentAsStringAsync(response.Content, ct);
+                return new ToolResult($"Failed to download build log ({response.StatusCode}).\n{body}", ExitCode: 1);
+            }
+
+            var content = await ReadContentAsStringAsync(response.Content, ct);
+            return new ToolResult(content);
+        }
+        catch (HttpRequestException ex)
+        {
+            return new ToolResult($"HTTP request failed: {ex.Message}", ExitCode: 1);
+        }
     }
 
     private async Task<ToolResult> FallbackLogDownload(
@@ -555,14 +605,14 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
 
         if (_storageClient is not null)
         {
-            return await ListArtifactsSdk(bucket!, fullPath, ctx, ct);
+            return await ListArtifactsSdk(bucket!, fullPath, ctx.RawOutput, ct);
         }
 
         return await ListArtifactsHttp(bucket!, fullPath, ctx, ct);
     }
 
     private async Task<ToolResult> ListArtifactsSdk(
-        string bucket, string prefix, ToolContext ctx, CancellationToken ct)
+        string bucket, string prefix, bool rawOutput, CancellationToken ct)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# Artifacts: {prefix}");
@@ -580,7 +630,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
                 var size = obj.Size ?? 0;
                 sb.AppendLine($"  {size,12:N0}  {name}");
                 count++;
-                if (count >= 200) { sb.AppendLine("  ... (truncated at 200 entries)"); break; }
+                if (!rawOutput && count >= 200) { sb.AppendLine("  ... (truncated at 200 entries)"); break; }
             }
 
             if (count == 0)
@@ -589,13 +639,39 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         catch (Google.GoogleApiException ex)
         {
             _logger.LogWarning(ex, "prow: GCS SDK list failed for {Bucket}/{Prefix}", bucket, prefix);
-            return await ListArtifactsHttp(bucket, prefix, ctx, ct);
+            return await ListArtifactsHttpRaw(bucket, prefix, ct);
         }
         catch (IOException ex)
         {
             _logger.LogWarning(ex, "prow: GCS SDK list IO failed for {Bucket}/{Prefix}", bucket, prefix);
-            return await ListArtifactsHttp(bucket, prefix, ctx, ct);
+            return await ListArtifactsHttpRaw(bucket, prefix, ct);
         }
+
+        return new ToolResult(sb.ToString());
+    }
+
+    private async Task<ToolResult> ListArtifactsHttpRaw(
+        string bucket, string prefix, CancellationToken ct)
+    {
+        var url = $"{_options.GcsWebUrl}/gcs/{bucket}/{prefix}/";
+        var html = await GetStringAsync(url, ct);
+        if (html is null)
+            return new ToolResult(
+                $"Could not reach artifact listing (network error). URL: {url}\n" +
+                "Do not retry this URL with curl or other HTTP tools.",
+                ExitCode: 1);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"# Artifacts: {prefix}");
+        sb.AppendLine();
+
+        var basePath = $"/gcs/{bucket}/{prefix}/";
+        var links = ParseGcsWebLinks(html, basePath);
+        if (links.Count == 0)
+            sb.AppendLine("  (no artifacts found at this path)");
+        else
+            foreach (var link in links)
+                sb.AppendLine($"  {link}");
 
         return new ToolResult(sb.ToString());
     }
@@ -658,10 +734,10 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         if (xmlContent is null)
             return new ToolResult("No JUnit XML found. Tried prowjob_junit.xml and common artifact paths.", ExitCode: 1);
 
-        return ParseJunit(xmlContent);
+        return ParseJunit(xmlContent, ctx.RawOutput);
     }
 
-    private static ToolResult ParseJunit(string xml)
+    private static ToolResult ParseJunit(string xml, bool rawOutput)
     {
         var sb = new StringBuilder();
         sb.AppendLine("# JUnit Test Results");
@@ -699,7 +775,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
                     {
                         var tcName = tc.Attribute("name")?.Value ?? "(unnamed)";
                         var msg = failEl.Attribute("message")?.Value ?? failEl.Value;
-                        failures.Add((suiteName, tcName, Truncate(msg, 200)));
+                        failures.Add((suiteName, tcName, rawOutput ? msg : Truncate(msg, 200)));
                     }
                 }
             }
@@ -711,25 +787,26 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
             {
                 sb.AppendLine();
                 sb.AppendLine("## Failed Tests");
-                foreach (var (suite, test, msg) in failures.Take(30))
+                var shown = rawOutput ? failures : failures.Take(30).ToList();
+                foreach (var (suite, test, msg) in shown)
                 {
                     sb.AppendLine();
                     sb.AppendLine($"  {suite} / {test}");
-                    sb.AppendLine($"    {msg.Replace("\n", "\n    ")}");
+                    sb.AppendLine($"    {msg?.Replace("\n", "\n    ")}");
                 }
-                if (failures.Count > 30)
+                if (!rawOutput && failures.Count > 30)
                     sb.AppendLine($"\n  ... and {failures.Count - 30} more failures");
             }
         }
         catch (System.Xml.XmlException ex)
         {
             sb.AppendLine($"Failed to parse JUnit XML: {ex.Message}");
-            sb.AppendLine($"First 500 chars: {Truncate(xml, 500)}");
+            sb.AppendLine(rawOutput ? xml : $"First 500 chars: {Truncate(xml, 500)}");
         }
         catch (InvalidOperationException ex)
         {
             sb.AppendLine($"Failed to parse JUnit XML: {ex.Message}");
-            sb.AppendLine($"First 500 chars: {Truncate(xml, 500)}");
+            sb.AppendLine(rawOutput ? xml : $"First 500 chars: {Truncate(xml, 500)}");
         }
 
         return new ToolResult(sb.ToString());
@@ -810,10 +887,10 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
                 var branch = pool.TryGetProperty("Branch", out var pb) ? pb.GetString() : null;
                 sb.AppendLine($"  {poolOrg}/{poolRepo} ({branch}):");
 
-                AppendTidePoolSection(sb, pool, "SuccessPRs", "Ready to merge");
-                AppendTidePoolSection(sb, pool, "PendingPRs", "Tests pending");
-                AppendTidePoolSection(sb, pool, "MissingPRs", "Missing requirements");
-                AppendTidePoolSection(sb, pool, "BatchPending", "Batch pending");
+                AppendTidePoolSection(sb, pool, "SuccessPRs", "Ready to merge", ctx.RawOutput);
+                AppendTidePoolSection(sb, pool, "PendingPRs", "Tests pending", ctx.RawOutput);
+                AppendTidePoolSection(sb, pool, "MissingPRs", "Missing requirements", ctx.RawOutput);
+                AppendTidePoolSection(sb, pool, "BatchPending", "Batch pending", ctx.RawOutput);
                 sb.AppendLine();
             }
 
@@ -824,7 +901,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         return new ToolResult(sb.ToString());
     }
 
-    private static void AppendTidePoolSection(StringBuilder sb, JsonElement pool, string key, string label)
+    private static void AppendTidePoolSection(StringBuilder sb, JsonElement pool, string key, string label, bool rawOutput)
     {
         if (!pool.TryGetProperty(key, out var arr) || arr.GetArrayLength() == 0)
             return;
@@ -834,7 +911,7 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         {
             var num = pr.TryGetProperty("Number", out var n) ? n.GetInt32() : 0;
             var title = pr.TryGetProperty("Title", out var t) ? t.GetString() : null;
-            sb.AppendLine($"      PR#{num}: {Truncate(title, 80)}");
+            sb.AppendLine($"      PR#{num}: {(rawOutput ? title : Truncate(title, 80))}");
         }
     }
 

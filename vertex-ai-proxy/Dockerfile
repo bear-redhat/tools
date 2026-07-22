@@ -14,13 +14,14 @@ RUN if [ "$TARGETARCH" = "arm64" ] && [ "$(dpkg --print-architecture)" != "arm64
 
 WORKDIR /src
 COPY vertex-ai-proxy.csproj .
-RUN dotnet restore -r linux-${TARGETARCH/amd/x}
+
+ARG DOTNET_RID=linux-x64
+RUN if [ "$TARGETARCH" = "arm64" ]; then DOTNET_RID=linux-arm64; fi && \
+    dotnet restore -r $DOTNET_RID
 
 COPY . .
-RUN dotnet publish -c Release \
-    -r linux-${TARGETARCH/amd/x} \
-    --no-restore \
-    -o /app
+RUN if [ "$TARGETARCH" = "arm64" ]; then DOTNET_RID=linux-arm64; fi && \
+    dotnet publish -c Release -r $DOTNET_RID --no-restore -o /app
 
 # --- runtime ---
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled
