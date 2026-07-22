@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vertex-ai-proxy
+  namespace: vertex-ai-proxy
+  labels:
+    app.kubernetes.io/name: vertex-ai-proxy
+    app.kubernetes.io/component: proxy
+data:
+  UPSTREAM_URL: "https://us-east5-aiplatform.googleapis.com/v1"

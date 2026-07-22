@@ -35,6 +35,8 @@ Console.WriteLine($"  model    : claude-opus-4-8 -> claude-opus-4-6");
 Console.WriteLine($"  effort   : output_config.effort xhigh -> max");
 Console.WriteLine();
 
+app.MapGet("/healthz", () => Results.Ok("ok"));
+
 app.Run(async (HttpContext ctx) =>
 {
     var path = ctx.Request.Path.Value ?? "";

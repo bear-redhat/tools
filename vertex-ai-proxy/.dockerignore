@@ -1,0 +1,8 @@
+bin/
+obj/
+publish/
+.git/
+.github/
+openshift/
+build_output.txt
+*.md
