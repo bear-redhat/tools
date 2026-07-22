@@ -203,6 +203,17 @@ public static class ServiceCollectionExtensions
                 var scopes = authSection.GetSection("Scopes").Get<string[]>() ?? ["openid", "profile", "email"];
                 foreach (var scope in scopes)
                     options.Scope.Add(scope);
+            })
+            .AddJwtBearer(options =>
+            {
+                options.Authority = authSection["Authority"];
+                options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+                {
+                    ValidateAudience = true,
+                    ValidAudience = authSection["ClientId"],
+                };
+                if (environment.IsDevelopment())
+                    options.RequireHttpsMetadata = false;
             });
         }
         else if (!authEnabled)

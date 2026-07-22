@@ -35,11 +35,17 @@ Console.WriteLine($"  model    : claude-opus-4-8 -> claude-opus-4-6");
 Console.WriteLine($"  effort   : output_config.effort xhigh -> max");
 Console.WriteLine();
 
-app.MapGet("/healthz", () => Results.Ok("ok"));
-
 app.Run(async (HttpContext ctx) =>
 {
     var path = ctx.Request.Path.Value ?? "";
+
+    if (path.Equals("/healthz", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Response.StatusCode = 200;
+        await ctx.Response.WriteAsync("ok", ctx.RequestAborted);
+        return;
+    }
+
     var query = ctx.Request.QueryString.Value ?? "";
     var rewrite = path.Contains("/models/claude-opus-4-8");
 
