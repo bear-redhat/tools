@@ -241,6 +241,7 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
         var title = await session.Page.TitleAsync();
         var url = session.Page.Url;
         var text = await session.Page.InnerTextAsync("body");
+        var raw = context.RawOutput;
 
         var sb = new StringBuilder();
         sb.AppendLine($"=== Page: {title} ({url}) ===");
@@ -251,43 +252,51 @@ public sealed class WebBrowserTool : IInvestigatorTool, IAsyncDisposable
         else if (offset >= text.Length)
             text = "(offset beyond end of page content)";
 
-        var maxChars = _options.MaxContentChars;
-        var truncated = text.Length > maxChars;
-        if (truncated)
-            text = text[..maxChars];
+        if (!raw)
+        {
+            var maxChars = _options.MaxContentChars;
+            var truncated = text.Length > maxChars;
+            if (truncated)
+                text = text[..maxChars];
 
-        sb.AppendLine(text);
+            sb.AppendLine(text);
 
-        if (truncated)
-            sb.AppendLine($"\n[Content truncated at {maxChars} chars. Use get_text with offset={offset + maxChars} to read more.]");
+            if (truncated)
+                sb.AppendLine($"\n[Content truncated at {maxChars} chars. Use get_text with offset={offset + maxChars} to read more.]");
+        }
+        else
+        {
+            sb.AppendLine(text);
+        }
 
-        var elements = await ExtractInteractiveElements(session);
+        var elements = await ExtractInteractiveElements(session, raw);
         session.Elements = elements;
 
         if (elements.Count > 0)
         {
             sb.AppendLine();
             sb.AppendLine("--- Interactive elements ---");
-            var limit = Math.Min(elements.Count, _options.MaxElements);
+            var limit = raw ? elements.Count : Math.Min(elements.Count, _options.MaxElements);
             for (var i = 0; i < limit; i++)
             {
                 var e = elements[i];
                 sb.AppendLine($"[{i + 1}] {e.Description}");
             }
-            if (elements.Count > limit)
+            if (!raw && elements.Count > limit)
                 sb.AppendLine($"... and {elements.Count - limit} more elements");
         }
 
         return new ToolResult(sb.ToString());
     }
 
-    private async Task<List<PageElement>> ExtractInteractiveElements(BrowseSession session)
+    private async Task<List<PageElement>> ExtractInteractiveElements(BrowseSession session, bool rawOutput = false)
     {
         var elements = new List<PageElement>();
         var locators = session.Page.Locator("a, button, input, textarea, select");
         var count = await locators.CountAsync();
+        var cap = rawOutput ? int.MaxValue : _options.MaxElements + 20;
 
-        for (var i = 0; i < count && elements.Count < _options.MaxElements + 20; i++)
+        for (var i = 0; i < count && elements.Count < cap; i++)
         {
             try
             {
