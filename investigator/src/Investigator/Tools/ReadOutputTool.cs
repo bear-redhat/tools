@@ -69,7 +69,7 @@ public sealed class ReadOutputTool : IInvestigatorTool
             if (lineNum < startLine) continue;
             if (lineNum > endLine) break;
             sb.AppendLine(line);
-            if (sb.Length >= HardCapBytes)
+            if (!context.RawOutput && sb.Length >= HardCapBytes)
             {
                 sb.AppendLine($"... [truncated at {HardCapBytes / 1024}KB hard cap, line {lineNum}]");
                 break;

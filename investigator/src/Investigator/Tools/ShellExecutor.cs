@@ -238,8 +238,10 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
             if (proc.ExitCode != 0)
                 context.Logger.LogWarning("run_shell: command '{Command}' exited with code {Code}", command, proc.ExitCode);
 
-            var truncated = headTail.Build(proc.ExitCode, outputRelative);
-            if (headTail.LineCount > _headLines + _tailLines)
+            var truncated = context.RawOutput
+                ? headTail.BuildRaw()
+                : headTail.Build(proc.ExitCode, outputRelative);
+            if (!context.RawOutput && headTail.LineCount > _headLines + _tailLines)
             {
                 var fullText = await ReadUpToAsync(outputPath, ct);
                 var summary = await _summarizer.SummarizeAsync(fullText, ct);
@@ -259,7 +261,9 @@ public sealed class ShellExecutor : IInvestigatorTool, ISystemPromptContributor
                 await fileWriter.FlushAsync();
             }
             headTail.Add("[timed out]");
-            var truncated = headTail.Build(-1, outputRelative);
+            var truncated = context.RawOutput
+                ? headTail.BuildRaw()
+                : headTail.Build(-1, outputRelative);
             return new ToolResult(truncated, ExitCode: -1, TimedOut: true, ReproCommand: command,
                 LineCount: headTail.LineCount, OutputFile: outputRelative);
         }
