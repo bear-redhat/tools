@@ -115,8 +115,8 @@ public sealed class PrometheusTool : IInvestigatorTool, ISystemPromptContributor
 
         return action switch
         {
-            "query" => await QueryAsync(parameters, context, ct),
-            "query_range" => await QueryRangeAsync(parameters, context, ct),
+            "query" => await QueryAsync(parameters, context.RawOutput, ct),
+            "query_range" => await QueryRangeAsync(parameters, context.RawOutput, ct),
             "alerts" => await AlertsAsync(parameters, context, ct),
             "list_servicemonitors" => await ListCrAsync("servicemonitors", parameters, context, ct),
             "list_podmonitors" => await ListCrAsync("podmonitors", parameters, context, ct),
@@ -127,7 +127,7 @@ public sealed class PrometheusTool : IInvestigatorTool, ISystemPromptContributor
         };
     }
 
-    private async Task<ToolResult> QueryAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
+    private async Task<ToolResult> QueryAsync(JsonElement parameters, bool rawOutput, CancellationToken ct)
     {
         var query = Prop(parameters, "query");
         if (string.IsNullOrEmpty(query))
@@ -141,10 +141,10 @@ public sealed class PrometheusTool : IInvestigatorTool, ISystemPromptContributor
         var (json, error) = await ThanosGetAsync(url, ct);
         if (error is not null) return error;
 
-        return FormatQueryResult(json!.Value, query);
+        return FormatQueryResult(json!.Value, query, rawOutput);
     }
 
-    private async Task<ToolResult> QueryRangeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
+    private async Task<ToolResult> QueryRangeAsync(JsonElement parameters, bool rawOutput, CancellationToken ct)
     {
         var query = Prop(parameters, "query");
         var start = Prop(parameters, "start");
@@ -166,7 +166,7 @@ public sealed class PrometheusTool : IInvestigatorTool, ISystemPromptContributor
         var (json, error) = await ThanosGetAsync(url, ct);
         if (error is not null) return error;
 
-        return FormatQueryResult(json!.Value, query);
+        return FormatQueryResult(json!.Value, query, rawOutput);
     }
 
     private async Task<ToolResult> AlertsAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
@@ -266,7 +266,7 @@ public sealed class PrometheusTool : IInvestigatorTool, ISystemPromptContributor
         }
     }
 
-    private ToolResult FormatQueryResult(JsonElement root, string query)
+    private ToolResult FormatQueryResult(JsonElement root, string query, bool rawOutput = false)
     {
         if (root.TryGetProperty("status", out var status) && status.GetString() == "error")
         {
@@ -287,7 +287,7 @@ public sealed class PrometheusTool : IInvestigatorTool, ISystemPromptContributor
         var shown = 0;
         foreach (var item in results)
         {
-            if (shown >= _options.MaxSeries)
+            if (!rawOutput && shown >= _options.MaxSeries)
             {
                 sb.AppendLine($"... ({results.Count - shown} more series truncated, MaxSeries={_options.MaxSeries})");
                 break;
