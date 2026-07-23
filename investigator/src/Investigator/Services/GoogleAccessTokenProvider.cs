@@ -25,14 +25,14 @@ public sealed class GoogleAccessTokenProvider
             }
             else
             {
-                _logger.LogInformation("Loading Google credentials from service account key: {Path}", _serviceAccountKeyPath);
+                _logger.LogInformation("Loading Google credentials from key file: {Path}", _serviceAccountKeyPath);
                 if (!File.Exists(_serviceAccountKeyPath))
                     throw new FileNotFoundException(
-                        $"Service account key file not found: {_serviceAccountKeyPath}",
+                        $"Credential key file not found: {_serviceAccountKeyPath}",
                         _serviceAccountKeyPath);
 
-                _credential = await CredentialFactory.FromFileAsync(
-                    _serviceAccountKeyPath, JsonCredentialParameters.ServiceAccountCredentialType, ct);
+                using var stream = File.OpenRead(_serviceAccountKeyPath);
+                _credential = await GoogleCredential.FromStreamAsync(stream, ct);
             }
 
             _credential = _credential.CreateScoped("https://www.googleapis.com/auth/cloud-platform");

@@ -182,6 +182,11 @@ public sealed class AgentRunner
                         _logger.LogError(ex, "Agent {Name} LLM stream failed (IO error)", config.Name);
                         llmError = $"LLM stream error: {ex.Message}";
                     }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        _logger.LogError(ex, "Agent {Name} LLM call failed unexpectedly ({ExType})", config.Name, ex.GetType().Name);
+                        llmError = $"LLM call failed: [{ex.GetType().Name}] {ex.Message}";
+                    }
 
                     if (llmError is not null)
                     {
