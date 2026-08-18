@@ -103,6 +103,18 @@ public sealed class InvestigatorMcpResources(
             steer(conversationId, "stand_down", agentName: "...")  # abort its in-flight tool
             steer(conversationId, "cancel")                        # stop the investigation
 
+        ## Remediation
+
+        When the investigator commissions a fix, that work runs in a second room with its
+        own agents and its own transcript. Every read and steering tool takes an optional
+        `room` argument -- omit it for the investigation, pass `"remediation"` for the fix:
+
+            get_transcript(conversationId, sinceSeq: 0, room: "remediation")
+            poll(conversationId, sinceSeq: <nextSeq>, room: "remediation")
+            steer(conversationId, "cancel", room: "remediation")
+
+        `get_status` reports `hasRemediation`; `no_such_room` means it has not started.
+
         ## Results
 
             get_status(conversationId)     # phase, cost, whether it is waiting on you

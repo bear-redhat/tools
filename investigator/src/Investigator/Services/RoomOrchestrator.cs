@@ -19,7 +19,24 @@ public sealed class RunningRoom<TRoom> where TRoom : AgentRoom
     public ConcurrentDictionary<string, Channel<byte>> Subscribers { get; } = new();
 }
 
-public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
+/// <summary>
+/// The room-control surface the MCP tools need, independent of the room type. The two
+/// orchestrators are distinct generic types, so without this the tools could only ever
+/// address the investigation and remediation stayed invisible.
+/// </summary>
+public interface IRoomOrchestrator
+{
+    bool IsRunning(string conversationId);
+    System.Threading.Channels.ChannelReader<byte>? Subscribe(string conversationId, string subscriberId);
+    void Unsubscribe(string conversationId, string subscriberId);
+    ValueTask<bool> PostUserMessageAsync(string conversationId, string message, CancellationToken ct);
+    void Cancel(string conversationId);
+    Task<bool> RecallSubAgentAsync(string conversationId, string agentName);
+    Task<bool> StandDownSubAgentAsync(string conversationId, string agentName);
+    IReadOnlyList<string> SubAgentNames(string conversationId);
+}
+
+public abstract class RoomOrchestrator<TRoom> : IRoomOrchestrator where TRoom : AgentRoom
 {
     protected readonly ConcurrentDictionary<string, RunningRoom<TRoom>> _running = new();
 
@@ -60,7 +77,14 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
     protected abstract Task StartRoomAsync(TRoom room, RunningRoom<TRoom> run, CancellationToken ct);
     protected virtual void OnFanOutEvent(RunningRoom<TRoom> run, RoomEvent evt, RoomState room) { }
 
-    public bool IsRunning(string conversationId) => _running.ContainsKey(conversationId);
+    /// <summary>
+    /// True while the room can still accept input. A completed room lingers in _running
+    /// until TryCleanupIdle runs -- whose only callers are in the Blazor page -- so a bare
+    /// ContainsKey reported "running" forever once MCP was the only client, making poll
+    /// loops non-terminating and follow_up a black hole.
+    /// </summary>
+    public bool IsRunning(string conversationId) =>
+        _running.TryGetValue(conversationId, out var run) && !run.RunTask.IsCompleted;
 
     public bool IsIdle(string conversationId)
     {
@@ -132,7 +156,7 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
 
     public ChannelReader<byte>? Subscribe(string conversationId, string subscriberId)
     {
-        if (!_running.TryGetValue(conversationId, out var run))
+        if (!_running.TryGetValue(conversationId, out var run) || run.RunTask.IsCompleted)
             return null;
 
         var sub = Channel.CreateUnbounded<byte>();
@@ -149,11 +173,12 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
             sub.Writer.TryComplete();
     }
 
-    public ValueTask PostUserMessageAsync(string conversationId, string message, CancellationToken ct)
+    /// <returns>False when no live room took the message.</returns>
+    public ValueTask<bool> PostUserMessageAsync(string conversationId, string message, CancellationToken ct)
     {
-        if (_running.TryGetValue(conversationId, out var run))
+        if (_running.TryGetValue(conversationId, out var run) && !run.RunTask.IsCompleted)
             return run.Room.PostUserMessageAsync(message, ct);
-        return ValueTask.CompletedTask;
+        return ValueTask.FromResult(false);
     }
 
     public void Cancel(string conversationId)
@@ -162,19 +187,25 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
             run.Cts.Cancel();
     }
 
-    public Task RecallSubAgentAsync(string conversationId, string agentName)
+    /// <returns>False when no sub-agent matched the given name or id.</returns>
+    public Task<bool> RecallSubAgentAsync(string conversationId, string agentName)
     {
         if (_running.TryGetValue(conversationId, out var run))
             return run.Room.RecallSubAgentAsync(agentName);
-        return Task.CompletedTask;
+        return Task.FromResult(false);
     }
 
-    public Task StandDownSubAgentAsync(string conversationId, string agentName)
+    /// <returns>False when no sub-agent matched the given name or id.</returns>
+    public Task<bool> StandDownSubAgentAsync(string conversationId, string agentName)
     {
         if (_running.TryGetValue(conversationId, out var run))
             return run.Room.StandDownSubAgentAsync(agentName);
-        return Task.CompletedTask;
+        return Task.FromResult(false);
     }
+
+    /// <summary>Display names of the live sub-agents, for error messages.</summary>
+    public IReadOnlyList<string> SubAgentNames(string conversationId) =>
+        _running.TryGetValue(conversationId, out var run) ? run.Room.SubAgentNames() : [];
 
     private async Task RunRoomAsync(RunningRoom<TRoom> run, CancellationToken ct)
     {

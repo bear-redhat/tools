@@ -65,6 +65,29 @@ public sealed class WorkspaceManager
         return path;
     }
 
+    /// <summary>
+    /// Conversation ids that have a workspace on disk. Without this a restarted pod knows
+    /// only about sessions created since boot, so list_investigations comes back empty
+    /// while every session.json is still sitting on the volume.
+    /// </summary>
+    public IReadOnlyList<string> ListPersistedConversationIds()
+    {
+        var root = GetRoot();
+        if (!Directory.Exists(root)) return [];
+
+        var ids = new List<string>();
+        foreach (var dir in Directory.GetDirectories(root, "conv-*"))
+        {
+            if (!File.Exists(Path.Combine(dir, "session.json"))) continue;
+
+            // conv-yyyy-MM-dd-{conversationId}
+            var name = Path.GetFileName(dir);
+            var parts = name.Split('-', 5);
+            if (parts.Length == 5) ids.Add(parts[4]);
+        }
+        return ids;
+    }
+
     public string? FindWorkspacePath(string conversationId)
     {
         var root = GetRoot();

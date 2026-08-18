@@ -68,6 +68,9 @@ public sealed class PluginOptions
 
 public sealed class AuthOptions
 {
+    /// <summary>Serve /mcp with no authentication. Off by default; see McpAuthMiddleware.</summary>
+    public bool AllowAnonymous { get; set; }
+
     public const string Section = "Authentication";
     public string? Authority { get; set; }
     public string? ClientId { get; set; }

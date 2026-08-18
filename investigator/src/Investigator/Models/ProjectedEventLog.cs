@@ -108,11 +108,22 @@ public sealed class ProjectedEventLog
             var chars = 0;
             var truncated = false;
 
+            // The cursor tracks what was *examined*, not what was returned. Deriving it
+            // from the filtered selection left entries the filter skipped below the
+            // cursor, so a filtered page could never be resumed without either re-reading
+            // the log or never advancing at all.
+            var lastExamined = sinceSeq;
+
             foreach (var entry in _entries)
             {
                 if (entry.Seq <= sinceSeq) continue;
-                if (agentId is not null && !MatchesAgent(entry, agentId)) continue;
-                if (kind is not null && entry.Kind != kind) continue;
+
+                if ((agentId is not null && !MatchesAgent(entry, agentId))
+                    || (kind is not null && entry.Kind != kind))
+                {
+                    lastExamined = entry.Seq;
+                    continue;
+                }
 
                 var cost = (entry.Text?.Length ?? 0) + (entry.Summary?.Length ?? 0) + 120;
                 if (selected.Count > 0 && (selected.Count >= maxEntries || chars + cost > maxChars))
@@ -123,9 +134,10 @@ public sealed class ProjectedEventLog
 
                 selected.Add(entry);
                 chars += cost;
+                lastExamined = entry.Seq;
             }
 
-            var nextSeq = selected.Count > 0 ? selected[^1].Seq : sinceSeq;
+            var nextSeq = lastExamined;
             var highest = _entries.Count > 0 ? _entries[^1].Seq : sinceSeq;
 
             // A caller resuming from a cursor older than everything retained has a hole.
@@ -176,11 +188,15 @@ public sealed class ProjectedEventLog
         }
     }
 
+    /// <summary>
+    /// A tool_result's From is "tool:&lt;name&gt;", so it is matched through To, which the
+    /// projector sets to the calling agent. This previously accepted every tool_result
+    /// unconditionally, which made a per-agent filter return all agents' results -- the
+    /// largest entries in the log, and exactly what the filter exists to exclude.
+    /// </summary>
     private static bool MatchesAgent(TranscriptEntry entry, string agentId) =>
         string.Equals(entry.From, agentId, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(entry.To, agentId, StringComparison.OrdinalIgnoreCase)
-        // tool results are attributed to "tool:<name>", so match them by their caller.
-        || (entry.Kind == "tool_result" && entry.From.StartsWith("tool:", StringComparison.Ordinal));
+        || string.Equals(entry.To, agentId, StringComparison.OrdinalIgnoreCase);
 
     internal static TranscriptEntry? Flatten(RoomEvent evt, int maxTextChars)
     {

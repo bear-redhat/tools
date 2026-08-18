@@ -22,6 +22,23 @@ public sealed class McpAuthMiddleware(RequestDelegate next)
 
         if (!authSettings.IsEnabled)
         {
+            // Fail closed. /mcp exposes raw_run_shell, cluster-wide oc, and the pod's AWS
+            // identity; with no auth configured this used to serve all of it to anyone who
+            // could reach the Route. Set Authentication:SharedToken or the OIDC pair, or
+            // opt out deliberately with Authentication:AllowAnonymous.
+            if (!authOptions.AllowAnonymous)
+            {
+                context.Response.StatusCode = 503;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    error = "auth_not_configured",
+                    detail = "No authentication is configured for /mcp. Set Authentication:SharedToken "
+                        + "or Authentication:ClientId + Authentication:Authority, or set "
+                        + "Authentication:AllowAnonymous=true to serve it unauthenticated.",
+                });
+                return;
+            }
+
             await next(context);
             return;
         }

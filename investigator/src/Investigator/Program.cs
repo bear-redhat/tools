@@ -54,16 +54,52 @@ builder.Services
         options.ServerInfo = new() { Name = "investigator", Version = "1.0.0" };
         options.ServerInstructions =
             """
-            This server provides two levels of tools:
+            Investigate CI infrastructure failures on OpenShift, Prow and AWS.
 
-            CAPABILITY TOOLS (preferred): investigate, follow_up, get_status, get_findings, list_investigations, search_knowledge.
-            These delegate work to the investigator's AI agents who autonomously use infrastructure tools, coordinate sub-agents, and produce structured findings. Use these for any diagnostic or investigative task.
+            TWO WAYS TO WORK
 
-            RAW TOOLS (raw_ prefix): Direct access to infrastructure -- OpenShift clusters, AWS, Prow, GitHub, Prometheus, etc.
-            Only use raw_ tools when you need to run a specific command yourself and the capability tools are not appropriate.
-            For example, use raw_run_oc to check a specific pod's status, or raw_prow to look up a specific job's logs.
+            1. Delegate. `investigate` starts a team of AI agents that diagnose the problem
+               autonomously. It returns a conversationId immediately and does not block.
+               Follow the work with `poll`; it is the primary loop:
 
-            Typical workflow: call investigate to start, poll with get_status, read results with get_findings.
+                 investigate(message)              -> { conversationId }
+                 poll(conversationId, sinceSeq: 0) -> { events, nextSeq, running,
+                                                        pendingQuestion, truncated, gap }
+                 poll(conversationId, sinceSeq: <nextSeq>)   ... repeat
+
+               Every event is one step: an agent message, a tool call with its arguments,
+               or a tool result with exit code and summary. Pass the returned nextSeq back
+               as sinceSeq. `truncated` means more is ready now -- call again immediately
+               rather than waiting. `running: false` means it has finished; stop polling
+               and call `get_findings`.
+
+               `pendingQuestion` non-null means the investigator asked you something and
+               has stopped until you answer. Reply with `follow_up`.
+
+               Steer it with `steer`: nudge the lead, recall a scout for interim findings,
+               stand a scout down to abort its in-flight tool, or cancel the whole run.
+               You can `follow_up` at any time while it works; the message is delivered
+               after the current tool call, never mid-call.
+
+               Tool output in the transcript is clipped. When an event carries outputFile,
+               read the rest with `get_output` by line range instead of pulling a whole
+               build log into context.
+
+               `get_transcript` is the same data without waiting -- use it to catch up on
+               an investigation you were not watching, and to filter by agent or kind.
+               Reconnecting later: `list_investigations` -> `get_transcript(sinceSeq: 0)`.
+
+            2. Do it yourself. The raw_ tools run one infrastructure command directly, with
+               no agents involved -- raw_run_oc, raw_prow, raw_run_aws, raw_prometheus,
+               raw_github and others. Use these when you know exactly what to look at.
+               Their large output is written to a file; page it with raw_read_output.
+
+            When the investigator commissions a fix, it runs in a second room. Pass
+            room: "remediation" to poll, get_transcript, get_status, get_findings or steer
+            to follow or control it; omit the argument for the investigation itself.
+
+            `get_status` is a cheap liveness and cost check. It does not return any of the
+            investigation's content -- use poll or get_transcript for that.
             """;
     })
     // Pinned explicitly: the default flips to stateless in the 2.x SDK, which would

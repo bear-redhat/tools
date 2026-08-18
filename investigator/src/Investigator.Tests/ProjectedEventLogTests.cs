@@ -19,9 +19,9 @@ public class ProjectedEventLogTests
         new(seq, "little-bear", T, tool, default, DisplayCommand: cmd);
 
     private static RoomEvent.ToolResponse Result(int seq, int requestSeq, string output,
-        int exitCode = 0, string? file = null, string? summary = null) =>
+        int exitCode = 0, string? file = null, string? summary = null, string? caller = null) =>
         new(seq, "tool:run_oc", T, "run_oc", output, requestSeq,
-            ExitCode: exitCode, OutputFile: file, Summary: summary);
+            ExitCode: exitCode, OutputFile: file, Summary: summary) { To = caller };
 
     [Fact]
     public void ToolCall_RetainsCommandAndSequence()
@@ -122,6 +122,72 @@ public class ProjectedEventLogTests
         var page = log.Read(0, 10, 100_000, agentId: "sharp-badger");
         Assert.Single(page.Entries);
         Assert.Equal("scout speaking", page.Entries[0].Text);
+    }
+
+    [Fact]
+    public void AgentFilter_ExcludesAnotherAgentsToolResults()
+    {
+        // Regression: the filter used to accept every tool_result regardless of caller,
+        // so filtering to one scout returned every scout's output -- the largest entries,
+        // and precisely what the filter exists to keep out of a bounded response.
+        var log = new ProjectedEventLog();
+        log.Append(Result(1, 0, "badger output", caller: "sharp-badger"));
+        log.Append(Result(2, 0, "owl output", caller: "keen-owl"));
+
+        var page = log.Read(0, 10, 100_000, agentId: "sharp-badger");
+
+        var entry = Assert.Single(page.Entries);
+        Assert.Equal("badger output", entry.Text);
+    }
+
+    [Fact]
+    public void FilteredCursor_AdvancesPastSkippedEntries()
+    {
+        // Deriving nextSeq from the returned page left filtered-out entries below the
+        // cursor, so the same filtered read never made progress.
+        var log = new ProjectedEventLog();
+        log.Append(Call(1));
+        log.Append(new RoomEvent.TextMessage(2, "little-bear", T, "chatter"));
+        log.Append(new RoomEvent.TextMessage(3, "little-bear", T, "more chatter"));
+        log.Append(Call(4));
+
+        var first = log.Read(0, maxEntries: 1, maxChars: 100_000, kind: "tool_call");
+        Assert.Equal([1], first.Entries.Select(e => e.Seq));
+
+        var second = log.Read(first.NextSeq, maxEntries: 10, maxChars: 100_000, kind: "tool_call");
+        Assert.Equal([4], second.Entries.Select(e => e.Seq));
+
+        var third = log.Read(second.NextSeq, maxEntries: 10, maxChars: 100_000, kind: "tool_call");
+        Assert.Empty(third.Entries);
+        Assert.Equal(second.NextSeq, third.NextSeq);
+    }
+
+    [Fact]
+    public void FilterMatchingNothing_ReachesTheEndInsteadOfLooping()
+    {
+        var log = new ProjectedEventLog();
+        for (var i = 1; i <= 5; i++) log.Append(new RoomEvent.TextMessage(i, "little-bear", T, $"m{i}"));
+
+        var page = log.Read(0, 10, 100_000, kind: "tool_call");
+
+        Assert.Empty(page.Entries);
+        Assert.Equal(5, page.NextSeq);
+        Assert.False(page.Truncated);
+    }
+
+    [Fact]
+    public void BudgetBreak_LeavesTheCursorOnTheLastReturnedEntry()
+    {
+        var log = new ProjectedEventLog();
+        log.Append(Result(1, 0, new string('a', 2_000)));
+        log.Append(Result(2, 0, new string('b', 2_000)));
+        log.Append(Result(3, 0, new string('c', 2_000)));
+
+        var page = log.Read(0, maxEntries: 2, maxChars: 100_000);
+
+        Assert.Equal([1, 2], page.Entries.Select(e => e.Seq));
+        Assert.Equal(2, page.NextSeq);
+        Assert.True(page.Truncated);
     }
 
     [Fact]

@@ -73,8 +73,8 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         Description: "Query OpenShift CI Prow -- job results, build logs, test artifacts, "
             + "JUnit results, and Tide merge status. Logs are downloaded to the workspace.",
         ParameterSchema: s_paramSchema,
-        DefaultTimeout: TimeSpan.FromSeconds(120),
-        ReadOnlyHint: true);
+        // Not ReadOnlyHint: the log/artifacts actions download into the workspace.
+        DefaultTimeout: TimeSpan.FromSeconds(120));
 
     public string? GetSystemPromptSection()
     {
@@ -454,7 +454,9 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         var safeName = SanitizePath(storagePath!);
         safeName = Regex.Replace(safeName, @"/build-log\.txt$", "", RegexOptions.IgnoreCase);
 
-        var outDir = Path.Combine(ctx.WorkspacePath, "tool_outputs", "prow_logs", safeName);
+        var outDir = ctx.ResolveInsideWorkspace(Path.Combine("tool_outputs", "prow_logs", safeName));
+        if (outDir is null)
+            return new ToolResult($"[Rejected] storage_path escapes the workspace: {storagePath}", ExitCode: -1);
 
         if (File.Exists(outDir))
             File.Delete(outDir);
@@ -1054,8 +1056,14 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
     private static string? Truncate(string? s, int max) =>
         s is null || s.Length <= max ? s : s[..max] + "...";
 
+    /// <summary>
+    /// Strips characters that have no business in a path segment. It deliberately keeps
+    /// '.' and '/' so the GCS layout survives, which means ".." survives too -- callers
+    /// must pair this with <see cref="IsInsideWorkspace"/>.
+    /// </summary>
     private static string SanitizePath(string path) =>
         Regex.Replace(path, @"[^\w\-/.]", "_");
+
 
     private static string FormatJsonArray(JsonElement arr)
     {

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using Investigator.Contracts;
 using Investigator.Models;
 using Investigator.Services;
 using Investigator.Tools;
@@ -11,12 +12,63 @@ namespace Investigator.Mcp;
 public sealed class InvestigatorMcpTools(
     ConversationStore store,
     InvestigationOrchestrator orchestrator,
+    RemediationOrchestrator remediationOrchestrator,
     WorkspaceManager workspaceManager,
     ToolRegistry toolRegistry,
     McpSessionContext sessionContext,
+    AuditLog auditLog,
+    IHttpContextAccessor httpContextAccessor,
     ILoggerFactory loggerFactory)
 {
     private readonly ILogger _logger = loggerFactory.CreateLogger<InvestigatorMcpTools>();
+
+    private const string RemediationRoom = "remediation";
+
+    private static bool IsRemediation(string? room) =>
+        string.Equals(room, RemediationRoom, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Remediation runs in its own room with its own agents and transcript. It was
+    /// unreachable over MCP, so the phase that drafts patches and touches clusters
+    /// produced no observable events at all.
+    /// </summary>
+    private IRoomOrchestrator RoomFor(string? room) =>
+        IsRemediation(room) ? remediationOrchestrator : orchestrator;
+
+    private static ProjectedEventLog LogFor(ConversationSession session, string? room) =>
+        IsRemediation(room) ? session.RemediationEventLog : session.InvestigationEventLog;
+
+    private static RoomState? StateFor(ConversationSession session, string? room) =>
+        IsRemediation(room) ? session.Remediation : session.Investigation;
+
+    /// <summary>
+    /// The authenticated caller, or null under a shared token, where the token itself is
+    /// the trust boundary and there is no per-user identity to enforce.
+    /// </summary>
+    private string? CurrentUserId()
+    {
+        var user = httpContextAccessor.HttpContext?.User;
+        if (user?.Identity?.IsAuthenticated != true) return null;
+
+        return user.FindFirst("email")?.Value
+            ?? user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+            ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? user.Identity.Name;
+    }
+
+    private bool CallerOwns(ConversationSession session)
+    {
+        var caller = CurrentUserId();
+        if (caller is null || session.OwnerUserId is null) return true;
+        return string.Equals(session.OwnerUserId, caller, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Forbidden() =>
+        JsonSerializer.Serialize(new { error = "forbidden", detail = "This investigation belongs to another user." });
+
+    private void Audit(string conversationId, string eventName, Dictionary<string, string>? extra = null) =>
+        auditLog.Record(conversationId, eventName, CurrentUserId(),
+            httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString(), extra);
 
     [McpServerTool, Description(
         "Start a new CI infrastructure investigation. " +
@@ -30,12 +82,17 @@ public sealed class InvestigatorMcpTools(
         var session = store.CreateSession();
         session.WorkspacePath = workspaceManager.CreateWorkspace(session.Id);
 
+        // Without an owner every later call is unauthenticated in effect: no MCP tool had
+        // anything to check against.
+        session.OwnerUserId = CurrentUserId();
+
         const string subscriberId = "__mcp__";
         orchestrator.StartAsync(session.Id, session, subscriberId);
         await orchestrator.PostUserMessageAsync(session.Id, message, ct);
         orchestrator.Unsubscribe(session.Id, subscriberId);
 
         _logger.LogInformation("MCP: Investigation started: {ConversationId}", session.Id);
+        Audit(session.Id, "mcp.investigate", new() { ["message"] = message });
 
         return JsonSerializer.Serialize(new
         {
@@ -52,31 +109,41 @@ public sealed class InvestigatorMcpTools(
         [Description("Follow-up message to send to the investigation")] string message,
         CancellationToken ct)
     {
-        if (!orchestrator.IsRunning(conversationId))
-        {
-            var session = store.TryGetSession(conversationId);
-            if (session is null)
-                return JsonSerializer.Serialize(new { error = "not_found", detail = "Investigation not found." });
-            return JsonSerializer.Serialize(new { error = "not_running", detail = "Investigation has completed." });
-        }
+        var session = await store.TryGetOrLoadSessionAsync(conversationId, workspaceManager);
+        if (session is null)
+            return JsonSerializer.Serialize(new { error = "not_found", detail = "Investigation not found." });
+        if (!CallerOwns(session)) return Forbidden();
 
-        await orchestrator.PostUserMessageAsync(conversationId, message, ct);
-        return JsonSerializer.Serialize(new { status = "sent" });
+        if (!orchestrator.IsRunning(conversationId))
+            return JsonSerializer.Serialize(new { error = "not_running", detail = "Investigation has completed." });
+
+        Audit(conversationId, "mcp.follow_up", new() { ["message"] = message });
+        var delivered = await orchestrator.PostUserMessageAsync(conversationId, message, ct);
+        return delivered
+            ? JsonSerializer.Serialize(new { status = "sent" })
+            : JsonSerializer.Serialize(new { error = "not_running", detail = "The investigation has ended; the message was not delivered." });
     }
 
     [McpServerTool, Description(
         "Check the current status of an investigation. " +
         "Use this to determine whether the investigation is still running or has concluded.")]
-    public string get_status(
-        [Description("The conversation ID returned by investigate")] string conversationId)
+    public async Task<string> get_status(
+        [Description("The conversation ID returned by investigate")] string conversationId,
+        [Description("Which room: 'investigation' (default) or 'remediation'.")] string? room)
     {
-        var session = store.TryGetSession(conversationId);
+        var session = await store.TryGetOrLoadSessionAsync(conversationId, workspaceManager);
         if (session is null)
             return JsonSerializer.Serialize(new { error = "not_found" });
 
-        var view = session.Investigation.CurrentView;
+        if (!CallerOwns(session)) return Forbidden();
+
+        var state = StateFor(session, room);
+        if (state is null)
+            return JsonSerializer.Serialize(new { error = "no_such_room", detail = "Remediation has not started." });
+
+        var view = state.CurrentView;
         var conclusion = view.Items.OfType<ConversationItem.Conclusion>().LastOrDefault();
-        var pending = session.InvestigationEventLog.FindPendingUserRequest();
+        var pending = LogFor(session, room).FindPendingUserRequest();
 
         return JsonSerializer.Serialize(new
         {
@@ -87,6 +154,8 @@ public sealed class InvestigatorMcpTools(
             findingCount = view.Items.OfType<ConversationItem.Finding>().Count(),
             hasConclusion = conclusion is not null,
             totalCost = view.TotalCost,
+            room = IsRemediation(room) ? RemediationRoom : "investigation",
+            running = RoomFor(room).IsRunning(conversationId),
             // Distinguishes "still thinking" from "parked waiting on you". Answer with
             // follow_up or steer(nudge) to unblock it.
             isWaitingForYou = pending is not null,
@@ -103,14 +172,21 @@ public sealed class InvestigatorMcpTools(
     [McpServerTool, Description(
         "Retrieve findings and conclusion from an investigation. " +
         "Returns incremental findings, sub-agent (scout) reports, and the final conclusion with evidence chain and fix suggestion.")]
-    public string get_findings(
-        [Description("The conversation ID returned by investigate")] string conversationId)
+    public async Task<string> get_findings(
+        [Description("The conversation ID returned by investigate")] string conversationId,
+        [Description("Which room: 'investigation' (default) or 'remediation'.")] string? room)
     {
-        var session = store.TryGetSession(conversationId);
+        var session = await store.TryGetOrLoadSessionAsync(conversationId, workspaceManager);
         if (session is null)
             return JsonSerializer.Serialize(new { error = "not_found" });
 
-        var view = session.Investigation.CurrentView;
+        if (!CallerOwns(session)) return Forbidden();
+
+        var state = StateFor(session, room);
+        if (state is null)
+            return JsonSerializer.Serialize(new { error = "no_such_room", detail = "Remediation has not started." });
+
+        var view = state.CurrentView;
 
         var findings = view.Items.OfType<ConversationItem.Finding>()
             .Select(f => new { f.Title, f.Description })
@@ -149,10 +225,8 @@ public sealed class InvestigatorMcpTools(
     public string list_investigations(
         [Description("Maximum number of investigations to return. Defaults to 20.")] int? count)
     {
-        var all = store.GetAllSessionInfo();
-        var results = all
+        var known = store.GetAllSessionInfo()
             .OrderByDescending(i => i.StartedAt)
-            .Take(count ?? 20)
             .Select(i => new
             {
                 conversationId = i.Id,
@@ -160,10 +234,30 @@ public sealed class InvestigatorMcpTools(
                 startedAt = i.StartedAt,
                 isActive = i.HasWorkingAgents,
                 hasRemediation = i.HasRemediation,
+                loaded = true,
             })
             .ToList();
 
-        return JsonSerializer.Serialize(new { investigations = results });
+        // The in-memory index only holds what this process created or loaded. After a
+        // restart every persisted conversation would otherwise be invisible even though
+        // its session.json is intact, which breaks reconnecting to a long investigation.
+        var seen = known.Select(k => k.conversationId).ToHashSet(StringComparer.Ordinal);
+        var onDisk = workspaceManager.ListPersistedConversationIds()
+            .Where(id => !seen.Contains(id))
+            .Select(id => new
+            {
+                conversationId = id,
+                summary = (string?)null,
+                startedAt = default(DateTimeOffset),
+                isActive = false,
+                hasRemediation = false,
+                loaded = false,
+            });
+
+        return JsonSerializer.Serialize(new
+        {
+            investigations = known.Concat(onDisk).Take(count ?? 20).ToList(),
+        });
     }
 
     private const int MaxWaitSeconds = 50;
@@ -175,22 +269,26 @@ public sealed class InvestigatorMcpTools(
         "every tool call with its command, and every tool result with exit code and summary. " +
         "Paged with a cursor -- pass the returned nextSeq as sinceSeq to continue. " +
         "Tool output is clipped; use get_output with the returned outputFile to read the rest.")]
-    public string get_transcript(
+    public async Task<string> get_transcript(
         [Description("The conversation ID returned by investigate")] string conversationId,
         [Description("Return only events after this sequence number. Omit or 0 to start from the beginning.")] int? sinceSeq,
         [Description("Maximum events to return. Defaults to 100.")] int? maxEntries,
         [Description("Approximate character budget for the response. Defaults to 40000.")] int? maxChars,
         [Description("Restrict to one agent, e.g. 'little-bear' or a scout's id.")] string? agentId,
-        [Description("Restrict to one kind: text, tool_call, tool_result, turn, session_ended.")] string? kind)
+        [Description("Restrict to one kind: text, tool_call, tool_result, turn, session_ended.")] string? kind,
+        [Description("Which room: 'investigation' (default) or 'remediation'.")] string? room)
     {
-        var session = store.TryGetSession(conversationId);
+        var session = await store.TryGetOrLoadSessionAsync(conversationId, workspaceManager);
         if (session is null)
             return JsonSerializer.Serialize(new { error = "not_found" });
 
-        var page = session.InvestigationEventLog.Read(
+        if (!CallerOwns(session)) return Forbidden();
+
+        var log = LogFor(session, room);
+        var page = log.Read(
             sinceSeq ?? 0, maxEntries ?? DefaultMaxEntries, maxChars ?? DefaultMaxChars, agentId, kind);
 
-        return SerializePage(conversationId, page, session.InvestigationEventLog);
+        return SerializePage(conversationId, page, log, room);
     }
 
     [McpServerTool, Description(
@@ -203,27 +301,31 @@ public sealed class InvestigatorMcpTools(
         [Description("Seconds to wait for new activity. Clamped to 50. Defaults to 25.")] int? waitSeconds,
         [Description("Maximum events to return. Defaults to 100.")] int? maxEntries,
         [Description("Approximate character budget for the response. Defaults to 40000.")] int? maxChars,
+        [Description("Which room: 'investigation' (default) or 'remediation'.")] string? room,
         CancellationToken ct)
     {
-        var session = store.TryGetSession(conversationId);
+        var session = await store.TryGetOrLoadSessionAsync(conversationId, workspaceManager);
         if (session is null)
             return JsonSerializer.Serialize(new { error = "not_found" });
 
+        if (!CallerOwns(session)) return Forbidden();
+
         var cursor = sinceSeq ?? 0;
-        var log = session.InvestigationEventLog;
+        var log = LogFor(session, room);
+        var rooms = RoomFor(room);
 
         var page = log.Read(cursor, maxEntries ?? DefaultMaxEntries, maxChars ?? DefaultMaxChars);
         if (page.Entries.Count > 0)
-            return SerializePage(conversationId, page, session.InvestigationEventLog);
+            return SerializePage(conversationId, page, log, room);
 
         // Nothing new yet. Park on the orchestrator's per-subscriber tick until something
         // happens or the budget expires, so following an investigation does not require
         // the caller to spin.
         var wait = Math.Clamp(waitSeconds ?? 25, 0, MaxWaitSeconds);
-        if (wait > 0 && orchestrator.IsRunning(conversationId))
+        if (wait > 0 && rooms.IsRunning(conversationId))
         {
             var subscriberId = $"__mcp_poll_{Guid.NewGuid():N}";
-            var reader = orchestrator.Subscribe(conversationId, subscriberId);
+            var reader = rooms.Subscribe(conversationId, subscriberId);
             if (reader is not null)
             {
                 try
@@ -238,37 +340,38 @@ public sealed class InvestigatorMcpTools(
                 }
                 finally
                 {
-                    orchestrator.Unsubscribe(conversationId, subscriberId);
+                    rooms.Unsubscribe(conversationId, subscriberId);
                 }
 
                 page = log.Read(cursor, maxEntries ?? DefaultMaxEntries, maxChars ?? DefaultMaxChars);
             }
         }
 
-        return SerializePage(conversationId, page, session.InvestigationEventLog);
+        return SerializePage(conversationId, page, log, room);
     }
 
     [McpServerTool, Description(
         "Read a tool output file in full, by line range. Paths come from the outputFile " +
         "field on tool_result entries in get_transcript. This is how you inspect a large " +
         "build log or must-gather without pulling it all through context.")]
-    public string get_output(
+    public async Task<string> get_output(
         [Description("The conversation ID returned by investigate")] string conversationId,
         [Description("Workspace-relative path, e.g. 'tool_outputs/031-run_oc.txt'")] string outputFile,
         [Description("First line to return, 1-based. Defaults to 1.")] int? offset,
         [Description("Maximum lines to return. Defaults to 200.")] int? limit)
     {
-        var session = store.TryGetSession(conversationId);
+        var session = await store.TryGetOrLoadSessionAsync(conversationId, workspaceManager);
         if (session is null)
             return JsonSerializer.Serialize(new { error = "not_found" });
+        if (!CallerOwns(session)) return Forbidden();
         if (session.WorkspacePath is null)
             return JsonSerializer.Serialize(new { error = "no_workspace" });
 
         // outputFile comes back to us from a model-authored transcript, so confine it to
-        // the conversation's own workspace before touching the filesystem.
-        var root = Path.GetFullPath(session.WorkspacePath);
-        var resolved = Path.GetFullPath(Path.Combine(root, outputFile));
-        if (!resolved.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        // the conversation's own workspace -- following symlinks, since the workspace is
+        // written by tools that can materialise them.
+        var resolved = ToolContext.ResolveInside(session.WorkspacePath, outputFile);
+        if (resolved is null)
             return JsonSerializer.Serialize(new { error = "path_outside_workspace" });
         if (!File.Exists(resolved))
             return JsonSerializer.Serialize(new { error = "not_found", detail = outputFile });
@@ -299,39 +402,49 @@ public sealed class InvestigatorMcpTools(
         [Description("One of: nudge, recall, stand_down, cancel")] string action,
         [Description("Scout name. Required for recall and stand_down.")] string? agentName,
         [Description("Message text. Required for nudge.")] string? note,
+        [Description("Which room: 'investigation' (default) or 'remediation'.")] string? room,
         CancellationToken ct)
     {
-        if (!orchestrator.IsRunning(conversationId))
+        var session = await store.TryGetOrLoadSessionAsync(conversationId, workspaceManager);
+        if (session is null)
+            return JsonSerializer.Serialize(new { error = "not_found" });
+        if (!CallerOwns(session)) return Forbidden();
+
+        var rooms = RoomFor(room);
+        if (!rooms.IsRunning(conversationId))
+            return JsonSerializer.Serialize(new { error = "not_running" });
+
+        Audit(conversationId, $"mcp.steer.{action}", new()
         {
-            var known = store.TryGetSession(conversationId);
-            return JsonSerializer.Serialize(new
-            {
-                error = known is null ? "not_found" : "not_running",
-            });
-        }
+            ["agent"] = agentName ?? "",
+            ["room"] = IsRemediation(room) ? RemediationRoom : "investigation",
+        });
 
         switch (action?.ToLowerInvariant())
         {
             case "nudge":
                 if (string.IsNullOrWhiteSpace(note))
                     return JsonSerializer.Serialize(new { error = "note_required" });
-                await orchestrator.PostUserMessageAsync(conversationId, note, ct);
+                if (!await rooms.PostUserMessageAsync(conversationId, note, ct))
+                    return JsonSerializer.Serialize(new { error = "not_running" });
                 break;
 
             case "recall":
                 if (string.IsNullOrWhiteSpace(agentName))
                     return JsonSerializer.Serialize(new { error = "agent_name_required" });
-                await orchestrator.RecallSubAgentAsync(conversationId, agentName);
+                if (!await rooms.RecallSubAgentAsync(conversationId, agentName))
+                    return UnknownAgent(rooms, conversationId, agentName);
                 break;
 
             case "stand_down":
                 if (string.IsNullOrWhiteSpace(agentName))
                     return JsonSerializer.Serialize(new { error = "agent_name_required" });
-                await orchestrator.StandDownSubAgentAsync(conversationId, agentName);
+                if (!await rooms.StandDownSubAgentAsync(conversationId, agentName))
+                    return UnknownAgent(rooms, conversationId, agentName);
                 break;
 
             case "cancel":
-                orchestrator.Cancel(conversationId);
+                rooms.Cancel(conversationId);
                 break;
 
             default:
@@ -346,14 +459,23 @@ public sealed class InvestigatorMcpTools(
         return JsonSerializer.Serialize(new { status = "applied", action });
     }
 
-    private string SerializePage(string conversationId, TranscriptPage page, ProjectedEventLog log)
+    private static string UnknownAgent(IRoomOrchestrator rooms, string conversationId, string agentName) =>
+        JsonSerializer.Serialize(new
+        {
+            error = "unknown_agent",
+            detail = $"No live sub-agent matches '{agentName}'.",
+            knownAgents = rooms.SubAgentNames(conversationId),
+        });
+
+    private string SerializePage(string conversationId, TranscriptPage page, ProjectedEventLog log, string? room)
     {
         var pending = log.FindPendingUserRequest();
 
         return JsonSerializer.Serialize(new
         {
             conversationId,
-            running = orchestrator.IsRunning(conversationId),
+            room = IsRemediation(room) ? RemediationRoom : "investigation",
+            running = RoomFor(room).IsRunning(conversationId),
             events = page.Entries,
             nextSeq = page.NextSeq,
             highestSeq = page.HighestSeq,
@@ -388,7 +510,16 @@ public sealed class InvestigatorMcpTools(
         });
 
         var context = sessionContext.CreateToolContext("mcp-search");
-        var (result, _, _) = await toolRegistry.InvokeAsync("casebook", parameters, context, ct);
-        return result.Output;
+
+        // Returning result.Output discarded both the capped text and the file handle, so a
+        // long casebook search blew past the client's output limit with nothing to page.
+        var (result, outputFile, truncated) = await toolRegistry.InvokeAsync("casebook", parameters, context, ct);
+
+        return JsonSerializer.Serialize(new
+        {
+            results = truncated,
+            outputFile,
+            exitCode = result.ExitCode,
+        });
     }
 }

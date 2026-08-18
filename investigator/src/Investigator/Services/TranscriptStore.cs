@@ -34,7 +34,8 @@ public sealed class TranscriptStore
     /// This numbering is independent of <see cref="RoomEventPipeline"/>'s: the store
     /// numbers the persisted log, the pipeline numbers the projected stream.
     /// </summary>
-    public void Append(RoomEvent evt)
+    /// <returns>False once the room has ended and nothing will read the event.</returns>
+    public bool Append(RoomEvent evt)
     {
         RoomEvent sequenced;
         lock (_lock)
@@ -42,7 +43,7 @@ public sealed class TranscriptStore
             sequenced = evt with { Seq = ++_seq };
             _events.Add(sequenced);
         }
-        _channel.Writer.TryWrite(sequenced);
+        return _channel.Writer.TryWrite(sequenced);
     }
 
     public ChannelReader<RoomEvent> Reader => _channel.Reader;

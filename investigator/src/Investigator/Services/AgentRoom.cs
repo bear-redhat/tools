@@ -150,17 +150,40 @@ public abstract class AgentRoom
         _subAgentCoordinator.RegisterAgentName(LeadName);
     }
 
-    public ValueTask PostUserMessageAsync(string text, CancellationToken ct)
+    public ValueTask<bool> PostUserMessageAsync(string text, CancellationToken ct)
     {
-        TranscriptStore.Append(new RoomEvent.ExternalInput(0, "user", DateTimeOffset.UtcNow, text)
-            { To = LeadId });
-        return ValueTask.CompletedTask;
+        var delivered = TranscriptStore.Append(
+            new RoomEvent.ExternalInput(0, "user", DateTimeOffset.UtcNow, text) { To = LeadId });
+        return ValueTask.FromResult(delivered);
     }
 
-    public Task RecallSubAgentAsync(string agentName)
+    /// <summary>
+    /// Resolves a sub-agent by display name ("Sharp Badger") or by the id the transcript
+    /// exposes ("sharp-badger"). _agents is keyed by name, so callers reading the
+    /// transcript could never match and the recall silently did nothing.
+    /// </summary>
+    public AgentSlot? FindSubAgent(string agentName)
     {
-        if (!_agents.TryGetValue(agentName, out var slot) || slot.Id == LeadId) return Task.CompletedTask;
-        if (slot.Idle || slot.Dismissed || slot.Recalled) return Task.CompletedTask;
+        if (_agents.TryGetValue(agentName, out var byName) && byName.Id != LeadId)
+            return byName;
+
+        foreach (var (_, slot) in _agents)
+            if (slot.Id != LeadId
+                && (string.Equals(slot.Id, agentName, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(slot.Name, agentName, StringComparison.OrdinalIgnoreCase)))
+                return slot;
+
+        return null;
+    }
+
+    public IReadOnlyList<string> SubAgentNames() =>
+        _agents.Values.Where(a => a.Id != LeadId).Select(a => a.Name).ToList();
+
+    public Task<bool> RecallSubAgentAsync(string agentName)
+    {
+        var slot = FindSubAgent(agentName);
+        if (slot is null) return Task.FromResult(false);
+        if (slot.Idle || slot.Dismissed || slot.Recalled) return Task.FromResult(true);
 
         slot.Recalled = true;
 
@@ -169,12 +192,13 @@ public abstract class AgentRoom
 
         TranscriptStore.Append(new RoomEvent.ExternalInput(0, LeadId, DateTimeOffset.UtcNow, message)
             { To = slot.Id });
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
-    public Task StandDownSubAgentAsync(string agentName)
+    public Task<bool> StandDownSubAgentAsync(string agentName)
     {
-        if (!_agents.TryGetValue(agentName, out var slot) || slot.Id == LeadId) return Task.CompletedTask;
+        var slot = FindSubAgent(agentName);
+        if (slot is null) return Task.FromResult(false);
 
         slot.StoodDown = true;
         slot.CurrentToolCts?.Cancel();
@@ -185,7 +209,7 @@ public abstract class AgentRoom
 
         TranscriptStore.Append(new RoomEvent.ExternalInput(0, LeadId, DateTimeOffset.UtcNow, message)
             { To = slot.Id });
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     internal async Task RunAgentWithRouting(AgentSlot slot, AgentRunner.Config config, CancellationToken ct,

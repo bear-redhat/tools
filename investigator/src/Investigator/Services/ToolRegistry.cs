@@ -163,7 +163,7 @@ public sealed class ToolRegistry
 
             truncated = def.TruncateOutput
                 ? TruncateOutput(result, outputFilePath ?? fileName)
-                : ApplyHardCap(result.Output, _options.HardCapBytes);
+                : ApplyHardCap(result.Output, def.HardCapBytesOverride ?? _options.HardCapBytes);
 
             if (def.TruncateOutput && lineCount > _options.HeadLines + _options.TailLines)
             {

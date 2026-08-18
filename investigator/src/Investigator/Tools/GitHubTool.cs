@@ -569,7 +569,9 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
             return new ToolResult(text);
         }
 
-        var outDir = Path.Combine(ctx.WorkspacePath, "tool_outputs", "github_files", owner, repo, refLabel);
+        var outDir = ctx.ResolveInsideWorkspace(Path.Combine("tool_outputs", "github_files", owner, repo, refLabel));
+        if (outDir is null)
+            return new ToolResult($"[Rejected] path escapes the workspace: {owner}/{repo}@{refLabel}", ExitCode: -1);
         var outPath = Path.Combine(outDir, path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
         var dir = Path.GetDirectoryName(outPath);
         if (dir is not null) Directory.CreateDirectory(dir);
@@ -682,7 +684,9 @@ public sealed class GitHubTool : IInvestigatorTool, ISystemPromptContributor
 
         ctx.Logger.LogInformation("github: clone_repo {Owner}/{Repo} ref={Ref} depth={Depth}", owner, repo, gitRef ?? "(default)", depth);
 
-        var cloneDir = Path.Combine(ctx.WorkspacePath, "tool_outputs", "github_clones", owner, repo);
+        var cloneDir = ctx.ResolveInsideWorkspace(Path.Combine("tool_outputs", "github_clones", owner, repo));
+        if (cloneDir is null)
+            return new ToolResult($"[Rejected] path escapes the workspace: {owner}/{repo}", ExitCode: -1);
         if (Directory.Exists(cloneDir) && Directory.Exists(Path.Combine(cloneDir, ".git")))
         {
             ctx.Logger.LogInformation("github: clone_repo reusing existing clone at {Path}", cloneDir);

@@ -154,12 +154,14 @@ public sealed class TranscriptProjector
                 var toolName = ResolveToolName(requestSeq);
                 if (toolName is null || content is null) continue;
 
+                // Addressed back to the calling agent so a per-agent filter can find it;
+                // From is "tool:<name>", which identifies the tool, not the caller.
                 await _emit(new RoomEvent.ToolResponse(0, $"tool:{toolName}", ctx.Timestamp,
                     toolName, content, requestSeq,
                     ExitCode: meta?.ExitCode ?? 0,
                     OutputFile: meta?.OutputFile,
                     TimedOut: meta?.TimedOut ?? false,
-                    Summary: meta?.Summary));
+                    Summary: meta?.Summary) { To = ctx.From });
             }
         }
     }
