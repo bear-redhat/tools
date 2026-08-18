@@ -26,8 +26,8 @@ Parameters:
     Type: CommaDelimitedList
     Description: >-
       Comma-separated list of IAM role ARNs this role may AssumeRole into.
-      Must include the investigator-jump and investigator-bedrock role ARNs
-      from the infra account (cross-account).
+      Must include the investigator-jump role ARN from the infra account
+      (cross-account).
   ServiceAccountName:
     Type: String
     Default: investigator
@@ -134,5 +134,5 @@ Outputs:
     Description: >-
       ARN of the investigator home role. Set this as AWS_ROLE_ARN in the
       pod ConfigMap. Also supply this ARN as TrustedRoleArn when deploying
-      jump-role.cf and bedrock-role.cf in the infra account.
+      jump-role.cf in the infra account.
     Value: !GetAtt InvestigatorHomeRole.Arn

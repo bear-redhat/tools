@@ -132,28 +132,21 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<ILoggerFactory>()));
 
-        var llmSection = config.GetSection(LlmOptions.Section);
-        var primaryName = llmSection["Primary"];
-        var primaryProvider = llmSection.GetSection($"Models:{primaryName}")["Provider"]?.ToLowerInvariant();
-        switch (primaryProvider)
+        // Embeddings follow the profile that declares an EmbeddingModel, falling back to
+        // the primary profile. Reading only the primary profile's provider made a
+        // Vertex-embeddings-with-another-primary setup unrepresentable.
+        services.AddSingleton<GoogleAccessTokenProvider>(sp =>
         {
-            case "vertex" or "vertex-gemini":
-                services.AddSingleton<GoogleAccessTokenProvider>(sp =>
-                {
-                    var opts = sp.GetRequiredService<IOptions<LlmOptions>>().Value;
-                    var providerName = opts.Models[opts.Primary].Provider;
-                    var creds = opts.Providers.GetValueOrDefault(providerName);
-                    return new GoogleAccessTokenProvider(creds?.ServiceAccountKeyPath,
-                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<GoogleAccessTokenProvider>());
-                });
-                services.AddHttpClient<VertexEmbeddingClient>();
-                services.AddSingleton<IEmbeddingClient>(sp => sp.GetRequiredService<VertexEmbeddingClient>());
-                break;
-            default:
-                services.AddHttpClient<BedrockEmbeddingClient>();
-                services.AddSingleton<IEmbeddingClient>(sp => sp.GetRequiredService<BedrockEmbeddingClient>());
-                break;
-        }
+            var opts = sp.GetRequiredService<IOptions<LlmOptions>>().Value;
+            var providerName = opts.Models.TryGetValue(opts.Primary, out var primary)
+                ? primary.Provider
+                : "vertex";
+            var creds = opts.Providers.GetValueOrDefault(providerName);
+            return new GoogleAccessTokenProvider(creds?.ServiceAccountKeyPath,
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger<GoogleAccessTokenProvider>());
+        });
+        services.AddHttpClient<VertexEmbeddingClient>();
+        services.AddSingleton<IEmbeddingClient>(sp => sp.GetRequiredService<VertexEmbeddingClient>());
 
         return services;
     }

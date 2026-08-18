@@ -10,15 +10,39 @@ public sealed class TranscriptStore
         new UnboundedChannelOptions { SingleReader = true });
     private readonly object _lock = new();
 
+    private int _seq;
+
     public void SeedHistory(IEnumerable<RoomEvent> events)
     {
-        lock (_lock) _events.AddRange(events);
+        lock (_lock)
+        {
+            foreach (var evt in events)
+            {
+                _events.Add(evt);
+                if (evt.Seq > _seq) _seq = evt.Seq;
+            }
+        }
     }
 
+    /// <summary>
+    /// Appends to the durable log, stamping a monotonic sequence number that continues
+    /// past any seeded history. Callers previously constructed events with Seq 0 and only
+    /// the projection pipeline ever assigned one, so everything written straight to the
+    /// store -- external input, recall and stand-down instructions, session end -- stayed
+    /// at 0 and could not be ordered or addressed.
+    ///
+    /// This numbering is independent of <see cref="RoomEventPipeline"/>'s: the store
+    /// numbers the persisted log, the pipeline numbers the projected stream.
+    /// </summary>
     public void Append(RoomEvent evt)
     {
-        lock (_lock) _events.Add(evt);
-        _channel.Writer.TryWrite(evt);
+        RoomEvent sequenced;
+        lock (_lock)
+        {
+            sequenced = evt with { Seq = ++_seq };
+            _events.Add(sequenced);
+        }
+        _channel.Writer.TryWrite(sequenced);
     }
 
     public ChannelReader<RoomEvent> Reader => _channel.Reader;

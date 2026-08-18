@@ -41,14 +41,16 @@ public sealed class SessionSnapshot
         session.StartedAt = StartedAt;
 
         var closedEvents = EventLogScanner.CloseDanglingToolCalls(Events);
-        ReplayIntoRoom(closedEvents, "little-bear", session.Investigation);
+        ReplayIntoRoom(
+            closedEvents, "little-bear", session.Investigation, session.InvestigationEventLog);
         session.Investigation.Phase = InvestigationPhase;
 
         if (CaseFile is not null)
         {
             session.AddRemediationRoom(CaseFile);
             var closedRemediation = EventLogScanner.CloseDanglingToolCalls(RemediationEvents);
-            ReplayIntoRoom(closedRemediation, "langur", session.Remediation!);
+            ReplayIntoRoom(
+                closedRemediation, "langur", session.Remediation!, session.RemediationEventLog);
             session.Remediation!.Phase = RemediationPhase;
             session.LoadedRemediationEvents = closedRemediation;
         }
@@ -62,10 +64,15 @@ public sealed class SessionSnapshot
         return session;
     }
 
-    private static void ReplayIntoRoom(IEnumerable<RoomEvent> events, string leadId, RoomState room)
+    /// <remarks>
+    /// Populates <paramref name="log"/> with the projected stream, which is also what the
+    /// live pipeline reads its starting sequence number from.
+    /// </remarks>
+    private static void ReplayIntoRoom(IEnumerable<RoomEvent> events, string leadId, RoomState room,
+        ProjectedEventLog log)
     {
         var bus = new RoomEventBus();
-        var pipeline = new RoomEventPipeline(bus, [new ToolEffectEnricher(leadId)]);
+        var pipeline = new RoomEventPipeline(bus, [new ToolEffectEnricher(leadId)], startSeq: 0, log: log);
         var uxProjector = new UxProjector(leadId);
         var mutator = new RoomState.Mutator(room);
 

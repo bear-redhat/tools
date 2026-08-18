@@ -36,7 +36,8 @@ public sealed class ReadOutputTool : IInvestigatorTool
             + "Specify start_line and end_line to read a specific range.",
         ParameterSchema: s_paramSchema,
         DefaultTimeout: TimeSpan.FromSeconds(5),
-        TruncateOutput: false);
+        TruncateOutput: false,
+        ReadOnlyHint: true);
 
     public Task RegisterAsync(CancellationToken ct = default) => Task.CompletedTask;
 

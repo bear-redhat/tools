@@ -73,7 +73,8 @@ public sealed class ProwTool : IInvestigatorTool, ISystemPromptContributor
         Description: "Query OpenShift CI Prow -- job results, build logs, test artifacts, "
             + "JUnit results, and Tide merge status. Logs are downloaded to the workspace.",
         ParameterSchema: s_paramSchema,
-        DefaultTimeout: TimeSpan.FromSeconds(120));
+        DefaultTimeout: TimeSpan.FromSeconds(120),
+        ReadOnlyHint: true);
 
     public string? GetSystemPromptSection()
     {

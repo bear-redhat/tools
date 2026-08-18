@@ -5,8 +5,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.BedrockRuntime" Version="4.0.17.3" />
-    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.6" />
     <PackageReference Include="cuid.net" Version="7.0.0" />
     <PackageReference Include="Google.Apis.Auth" Version="1.73.0" />
     <PackageReference Include="Google.Cloud.Storage.V1" Version="4.14.0" />
@@ -26,6 +24,10 @@
 
   <ItemGroup>
     <Content Include="skills\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Investigator.Tests" />
   </ItemGroup>
 
 </Project>

@@ -85,7 +85,8 @@ public sealed class PrometheusTool : IInvestigatorTool, ISystemPromptContributor
         Name: "prometheus",
         Description: "Query Prometheus metrics via centralized Thanos and list monitoring custom resources (ServiceMonitor, PodMonitor, PrometheusRule, AlertmanagerConfig) on clusters.",
         ParameterSchema: s_paramSchema,
-        DefaultTimeout: TimeSpan.FromSeconds(60));
+        DefaultTimeout: TimeSpan.FromSeconds(60),
+        ReadOnlyHint: true);
 
     public string? GetSystemPromptSection() => """
         ## Prometheus / Thanos tool

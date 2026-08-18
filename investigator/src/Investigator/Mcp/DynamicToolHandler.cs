@@ -31,7 +31,7 @@ public static class DynamicToolHandler
             {
                 Name = mcpName,
                 Description = def.Description,
-                ReadOnly = true,
+                ReadOnly = def.ReadOnlyHint,
             });
             tools.Add(mcpTool);
         }
@@ -68,8 +68,14 @@ public static class DynamicToolHandler
             AIFunctionArguments arguments,
             CancellationToken cancellationToken)
         {
-            var toolRegistry = _services.GetRequiredService<ToolRegistry>();
-            var sessionContext = _services.GetRequiredService<McpSessionContext>();
+            // Prefer the per-request provider the MCP host supplies. Falling back to the
+            // provider captured at startup is only safe because both services below are
+            // singletons; resolving a scoped service from it threw under Development
+            // scope validation and shared one instance across all callers in Production.
+            var services = arguments.Services ?? _services;
+
+            var toolRegistry = services.GetRequiredService<ToolRegistry>();
+            var sessionContext = services.GetRequiredService<McpSessionContext>();
 
             var parameters = JsonSerializer.SerializeToElement(arguments);
             var context = sessionContext.CreateToolContext("mcp");

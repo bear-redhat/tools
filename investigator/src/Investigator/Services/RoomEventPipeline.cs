@@ -8,13 +8,31 @@ public sealed class RoomEventPipeline
     private readonly IReadOnlyList<IEventEnricher> _enrichers;
     private int _seq;
 
-    public RoomEventPipeline(RoomEventBus bus, IEnumerable<IEventEnricher> enrichers)
+    /// <param name="startSeq">
+    /// Sequence number to continue from. On resume the persisted log is replayed through a
+    /// throwaway pipeline to rebuild room state, consuming sequence numbers 1..N; the live
+    /// pipeline must start at N so newly emitted events do not collide with the replayed
+    /// ones and a client cursor stays monotonic across a restart.
+    /// </param>
+    /// <param name="log">
+    /// Optional retained log. The bus fans out to live subscribers only, so without this
+    /// the projected stream -- every tool call and result -- is unrecoverable once emitted.
+    /// </param>
+    public RoomEventPipeline(RoomEventBus bus, IEnumerable<IEventEnricher> enrichers,
+        int startSeq = 0, ProjectedEventLog? log = null)
     {
         _bus = bus;
         _enrichers = enrichers.ToList();
+        _seq = startSeq;
+        _log = log;
     }
 
+    private readonly ProjectedEventLog? _log;
+
     public RoomEventBus Bus => _bus;
+
+    /// <summary>Highest sequence number assigned so far.</summary>
+    public int CurrentSeq => Volatile.Read(ref _seq);
 
     public T? GetEnricher<T>() where T : class, IEventEnricher =>
         _enrichers.OfType<T>().FirstOrDefault();
@@ -33,7 +51,10 @@ public sealed class RoomEventPipeline
         }
 
         foreach (var e in batch)
+        {
+            _log?.Append(e);
             _bus.Publish(e);
+        }
 
         return assignedSeq;
     }

@@ -16,4 +16,8 @@ public record ToolDefinition(
     JsonElement ParameterSchema,
     TimeSpan DefaultTimeout,
     bool TruncateOutput = true,
-    ToolScope Scope = ToolScope.All);
+    ToolScope Scope = ToolScope.All,
+    // Surfaced to MCP clients as the tool's readOnlyHint. Defaults to false: tools that
+    // cannot mutate external state opt in explicitly. Previously every tool was
+    // advertised as read-only, including run_shell, draft_patch and github.
+    bool ReadOnlyHint = false);

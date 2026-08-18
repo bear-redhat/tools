@@ -39,6 +39,12 @@ public sealed class InvestigationOrchestrator : RoomOrchestrator<InvestigationRo
     protected override IReadOnlyList<RoomEvent>? GetEventLog(ConversationSession session) =>
         session.LoadedInvestigationEvents;
 
+    protected override int GetSeedSeq(ConversationSession session) =>
+        session.InvestigationEventLog.HighestSeq;
+
+    protected override ProjectedEventLog GetProjectedLog(ConversationSession session) =>
+        session.InvestigationEventLog;
+
     protected override Task StartRoomAsync(InvestigationRoom room, RunningRoom<InvestigationRoom> run, CancellationToken ct)
     {
         _pendingRequests[run.Session.Id] = new Dictionary<int, RoomEvent.ToolRequest>();

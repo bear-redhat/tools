@@ -49,7 +49,8 @@ public sealed class WebSearchTool : IInvestigatorTool
         Description: "Search the public record -- documentation, error reports, release notes, "
             + "and any other intelligence available on the open web.",
         ParameterSchema: s_paramSchema,
-        DefaultTimeout: TimeSpan.FromSeconds(15));
+        DefaultTimeout: TimeSpan.FromSeconds(15),
+        ReadOnlyHint: true);
 
     public async Task<ToolResult> InvokeAsync(JsonElement parameters, ToolContext context, CancellationToken ct)
     {

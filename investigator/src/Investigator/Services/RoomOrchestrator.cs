@@ -51,6 +51,12 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
     protected abstract void WireSession(ConversationSession session, RoomEventPipeline pipeline, TranscriptStore store);
     protected abstract RoomState GetRoomState(ConversationSession session);
     protected abstract IReadOnlyList<RoomEvent>? GetEventLog(ConversationSession session);
+
+    /// <summary>Projected sequence number the resume replay reached, or 0 for a fresh room.</summary>
+    protected abstract int GetSeedSeq(ConversationSession session);
+
+    /// <summary>Retained projected stream for this room, so late clients can page it.</summary>
+    protected abstract ProjectedEventLog GetProjectedLog(ConversationSession session);
     protected abstract Task StartRoomAsync(TRoom room, RunningRoom<TRoom> run, CancellationToken ct);
     protected virtual void OnFanOutEvent(RunningRoom<TRoom> run, RoomEvent evt, RoomState room) { }
 
@@ -93,7 +99,8 @@ public abstract class RoomOrchestrator<TRoom> where TRoom : AgentRoom
         {
             var bus = new RoomEventBus();
             var initialLog = GetEventLog(session);
-            var pipeline = new RoomEventPipeline(bus, [new ToolEffectEnricher(LeadId)]);
+            var pipeline = new RoomEventPipeline(bus, [new ToolEffectEnricher(LeadId)],
+                GetSeedSeq(session), GetProjectedLog(session));
             var transcriptStore = new TranscriptStore();
             if (initialLog is not null)
                 transcriptStore.SeedHistory(initialLog);

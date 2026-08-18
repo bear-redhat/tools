@@ -371,6 +371,11 @@ Intendant G. Langur. The case file from Banyan Row is on my desk. I shall assess
     public IReadOnlyList<RoomEvent>? LoadedInvestigationEvents { get; set; }
     public IReadOnlyList<RoomEvent>? LoadedRemediationEvents { get; set; }
 
+    // Retained projected stream -- every tool call and result -- for clients that are not
+    // holding a live bus subscription. Rebuilt by replay on resume.
+    public ProjectedEventLog InvestigationEventLog { get; set; } = new();
+    public ProjectedEventLog RemediationEventLog { get; set; } = new();
+
     public decimal TotalCost => Investigation.TotalCost + (Remediation?.TotalCost ?? 0m);
 
     public CaseReferral? PendingReferral { get; set; }

@@ -46,7 +46,7 @@ builder.Services.AddSingleton<ConversationStore>();
 builder.Services.AddSingleton<InvestigationOrchestrator>();
 builder.Services.AddSingleton<RemediationOrchestrator>();
 builder.Services.AddSingleton<AuditLog>();
-builder.Services.AddScoped<McpSessionContext>();
+builder.Services.AddSingleton<McpSessionContext>();
 
 builder.Services
     .AddMcpServer(options =>
@@ -66,7 +66,9 @@ builder.Services
             Typical workflow: call investigate to start, poll with get_status, read results with get_findings.
             """;
     })
-    .WithHttpTransport()
+    // Pinned explicitly: the default flips to stateless in the 2.x SDK, which would
+    // silently drop Mcp-Session-Id, the SSE GET and DELETE with no compile error.
+    .WithHttpTransport(o => o.Stateless = false)
     .WithTools<InvestigatorMcpTools>()
     .WithResources<InvestigatorMcpResources>()
     .WithResources<InvestigatorSkillResources>();
@@ -81,6 +83,20 @@ var mcpOptions = app.Services.GetRequiredService<IOptions<McpServerOptions>>().V
 mcpOptions.ToolCollection ??= [];
 foreach (var tool in rawTools)
     mcpOptions.ToolCollection.Add(tool);
+
+// The nine ISystemPromptContributor tools describe their own usage (cluster lists, prow
+// actions, AWS accounts). Those briefings previously reached in-process agents only --
+// AgentRoom was the sole consumer of GetSystemPromptContributions() -- so an MCP client
+// had to guess at the raw_* tools. Append them to the server instructions.
+var toolBriefings = toolRegistry.GetSystemPromptContributions();
+if (toolBriefings.Count > 0)
+{
+    mcpOptions.ServerInstructions = mcpOptions.ServerInstructions
+        + "\n\nRAW TOOL REFERENCE\n"
+        + "The following briefings describe the raw_ tools. The raw_ prefix is not part of\n"
+        + "the command syntax shown below.\n\n"
+        + string.Join("\n\n", toolBriefings);
+}
 
 if (!app.Environment.IsDevelopment())
 {

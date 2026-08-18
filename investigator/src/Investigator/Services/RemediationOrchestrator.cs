@@ -39,6 +39,12 @@ public sealed class RemediationOrchestrator : RoomOrchestrator<RemediationRoom>
     protected override IReadOnlyList<RoomEvent>? GetEventLog(ConversationSession session) =>
         session.LoadedRemediationEvents;
 
+    protected override int GetSeedSeq(ConversationSession session) =>
+        session.RemediationEventLog.HighestSeq;
+
+    protected override ProjectedEventLog GetProjectedLog(ConversationSession session) =>
+        session.RemediationEventLog;
+
     protected override Task StartRoomAsync(RemediationRoom room, RunningRoom<RemediationRoom> run, CancellationToken ct)
     {
         _pendingRequests[run.Session.Id] = new Dictionary<int, RoomEvent.ToolRequest>();

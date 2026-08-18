@@ -37,6 +37,27 @@ spec:
                 secretKeyRef:
                   name: investigator-dex-oidc
                   key: client-secret
+            # Vertex AI is the only supported model backend. These are set explicitly
+            # rather than left to the investigator-config ConfigMap so the deployment is
+            # self-describing and a stale appsettings.Production.json cannot silently
+            # point the agents at a retired backend -- environment variables win over the
+            # mounted JSON. Startup fails loudly if ProjectId or Region is missing.
+            - name: Llm__Models__claude-opus__Provider
+              value: "vertex"
+            - name: Llm__Models__claude-opus__ProjectId
+              value: "itpc-gcp-hcm-pe-eng-claude"
+            - name: Llm__Models__claude-opus__Region
+              value: "us-east5"
+            - name: Llm__Models__claude-opus__Model
+              value: "claude-opus-4-6"
+            - name: Llm__Models__claude-sonnet__Provider
+              value: "vertex"
+            - name: Llm__Models__claude-sonnet__ProjectId
+              value: "itpc-gcp-hcm-pe-eng-claude"
+            - name: Llm__Models__claude-sonnet__Region
+              value: "us-east5"
+            - name: Llm__Models__claude-sonnet__Model
+              value: "claude-sonnet-4-6"
           envFrom:
             - configMapRef:
                 name: investigator-aws-irsa

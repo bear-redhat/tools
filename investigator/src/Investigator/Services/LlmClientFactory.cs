@@ -35,6 +35,27 @@ public sealed class LlmClientFactory : ILlmClientFactory
         if (!_profileMap.ContainsKey(_defaultName))
             throw new InvalidOperationException($"Default profile '{_defaultName}' not found in Models dictionary. Available: {string.Join(", ", _profileMap.Keys)}");
 
+        // Vertex needs a project and region on every profile. Without this check the first
+        // LLM call inside an investigation throws instead, so a misconfigured deployment
+        // looks healthy until it silently fails a real case minutes in.
+        foreach (var (name, model) in _profileMap)
+        {
+            if (!string.Equals(model.Provider, "vertex", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (string.IsNullOrWhiteSpace(model.ProjectId))
+                throw new InvalidOperationException(
+                    $"Model profile '{name}' targets Vertex but has no ProjectId. "
+                    + $"Set Llm:Models:{name}:ProjectId, or the environment variable "
+                    + $"Llm__Models__{name}__ProjectId.");
+
+            if (string.IsNullOrWhiteSpace(model.Region))
+                throw new InvalidOperationException(
+                    $"Model profile '{name}' targets Vertex but has no Region. "
+                    + $"Set Llm:Models:{name}:Region, or the environment variable "
+                    + $"Llm__Models__{name}__Region.");
+        }
+
         logger.LogInformation("Loaded {Count} model profiles, primary='{Primary}', default='{Default}'",
             _profileMap.Count, _primaryName, _defaultName);
         foreach (var (name, m) in _profileMap)
@@ -64,19 +85,21 @@ public sealed class LlmClientFactory : ILlmClientFactory
     private ILlmClient CreateClient(string name, ModelOptions options)
     {
         var http = _httpFactory.CreateClient($"llm-{name}");
-        var creds = _credentials[options.Provider];
 
-        return options.Provider.ToLowerInvariant() switch
+        var provider = options.Provider ?? string.Empty;
+
+        // Providers may legitimately have no credential entry (Vertex falls back to
+        // application default credentials), so a missing key is not an error --
+        // but indexing blindly would throw KeyNotFoundException at first use.
+        var keyPath = _credentials.GetValueOrDefault(provider)?.ServiceAccountKeyPath;
+
+        return provider.ToLowerInvariant() switch
         {
-            "bedrock" => new BedrockClient(http, name, options, creds, _loggerFactory.CreateLogger<BedrockClient>()),
             "vertex" => new VertexAiClient(http, name, options,
-                new GoogleAccessTokenProvider(creds.ServiceAccountKeyPath, _loggerFactory.CreateLogger<GoogleAccessTokenProvider>()),
+                new GoogleAccessTokenProvider(keyPath, _loggerFactory.CreateLogger<GoogleAccessTokenProvider>()),
                 _loggerFactory.CreateLogger<VertexAiClient>()),
-            "vertex-gemini" => new GeminiClient(http, name, options,
-                new GoogleAccessTokenProvider(creds.ServiceAccountKeyPath, _loggerFactory.CreateLogger<GoogleAccessTokenProvider>()),
-                _loggerFactory.CreateLogger<GeminiClient>()),
             _ => throw new InvalidOperationException(
-                $"Unknown provider '{options.Provider}' for profile '{name}'. Supported: bedrock, vertex, vertex-gemini"),
+                $"Unknown provider '{provider}' for profile '{name}'. Supported: vertex"),
         };
     }
 }

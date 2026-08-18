@@ -30,7 +30,6 @@ public sealed class AgentRunner
         decimal CacheReadPricePerMToken = 0,
         decimal CacheCreationPricePerMToken = 0,
         ILlmClient? SummarizerClient = null,
-        ModelOptions? SummarizerModelOptions = null,
         IReadOnlySet<string>? TerminalToolNames = null,
         string? TextOnlyNudge = null,
         Func<bool>? ShouldSuppressNextTurn = null);
@@ -240,6 +239,7 @@ public sealed class AgentRunner
                             await store(MakeCtx([assistantMsg], thinkingText: thinkingText, usage: usageInfo));
 
                             var toolResults = new List<object>();
+                            var toolMetas = new List<ToolCallMeta>();
                             var bufferedInbox = new List<LlmMessage>();
 
                             foreach (var tu in toolUses)
@@ -259,10 +259,11 @@ public sealed class AgentRunner
 
                                 var result = await executeTool(toolName, toolInput, tu.Id, ct);
                                 toolResults.Add(new { type = "tool_result", tool_use_id = tu.Id, content = result.Output });
+                                toolMetas.Add(MetaFor(tu.Id, result));
                                 while (inbox.TryRead(out var inboxEvt)) { var m = FormatEventAsLlmMessage(inboxEvt); if (m is not null) bufferedInbox.Add(m); }
                             }
 
-                            var toolResultMsg = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(toolResults) };
+                            var toolResultMsg = MakeToolResultMessage(toolResults, toolMetas);
                             messages.Add(toolResultMsg);
                             messages.AddRange(bufferedInbox);
                             var contextBatch = new List<LlmMessage> { toolResultMsg };
@@ -334,9 +335,12 @@ public sealed class AgentRunner
 
                         var aMsg = new LlmMessage { Role = "assistant", Content = JsonSerializer.SerializeToElement(terminalContent) };
                         var toolResultContent = JsonSerializer.SerializeToElement(new[] { new { type = "tool_result", tool_use_id = terminalCall.Id, content = result.Output } });
-                        LlmMessage tMsg = result.Summary is not null
-                            ? new LlmToolResultMessage { Role = "user", Content = toolResultContent, ToolMeta = [new ToolCallMeta { ToolUseId = terminalCall.Id!, Summary = result.Summary, ExitCode = result.ExitCode, OutputFile = result.OutputFile, TimedOut = result.TimedOut }] }
-                            : new LlmMessage { Role = "user", Content = toolResultContent };
+                        LlmMessage tMsg = new LlmToolResultMessage
+                        {
+                            Role = "user",
+                            Content = toolResultContent,
+                            ToolMeta = [MetaFor(terminalCall.Id!, result)],
+                        };
                         messages.Add(aMsg);
                         messages.Add(tMsg);
                         await store(MakeCtx([aMsg, tMsg], thinkingText: thinkingText, usage: usageInfo));
@@ -360,6 +364,7 @@ public sealed class AgentRunner
                         await store(MakeCtx([assistantMsg], thinkingText: thinkingText, usage: usageInfo));
 
                         var toolResults = new List<object>();
+                        var toolMetas = new List<ToolCallMeta>();
                         var bufferedInbox = new List<LlmMessage>();
                         var anyToolConcluded = false;
 
@@ -376,12 +381,13 @@ public sealed class AgentRunner
                             var result = await executeTool(toolName, toolInput, tu.Id, ct);
 
                             toolResults.Add(new { type = "tool_result", tool_use_id = tu.Id, content = result.Output });
+                            toolMetas.Add(MetaFor(tu.Id, result));
                             if (config.IsConditionallyTerminal?.Invoke(toolName, toolInput) == true)
                                 anyToolConcluded = true;
                             while (inbox.TryRead(out var inboxEvt)) { var m = FormatEventAsLlmMessage(inboxEvt); if (m is not null) bufferedInbox.Add(m); }
                         }
 
-                        var toolResultMsg = new LlmMessage { Role = "user", Content = JsonSerializer.SerializeToElement(toolResults) };
+                        var toolResultMsg = MakeToolResultMessage(toolResults, toolMetas);
                         messages.Add(toolResultMsg);
                         messages.AddRange(bufferedInbox);
                         var ctxBatch = new List<LlmMessage> { toolResultMsg };
@@ -499,6 +505,30 @@ public sealed class AgentRunner
             }
         }
         throw lastEx ?? new InvalidOperationException("LLM call failed with no exception captured");
+    }
+
+    private static ToolCallMeta MetaFor(string toolUseId, ToolExecutionResult result) => new()
+    {
+        ToolUseId = toolUseId,
+        Summary = result.Summary,
+        ExitCode = result.ExitCode,
+        OutputFile = result.OutputFile,
+        TimedOut = result.TimedOut,
+    };
+
+    /// <summary>
+    /// Builds the tool_result turn, always carrying per-call metadata when any tool ran.
+    /// Metadata used to be attached only on the terminal-tool branch, so exit codes,
+    /// timeouts and tool_outputs/ references were absent for ordinary tool calls -- which
+    /// left <see cref="TranscriptProjector"/> nothing to put on ToolResponse and made a
+    /// running investigation opaque to anything watching the projected stream.
+    /// </summary>
+    private static LlmMessage MakeToolResultMessage(List<object> toolResults, List<ToolCallMeta> toolMetas)
+    {
+        var content = JsonSerializer.SerializeToElement(toolResults);
+        return toolMetas.Count > 0
+            ? new LlmToolResultMessage { Role = "user", Content = content, ToolMeta = toolMetas }
+            : new LlmMessage { Role = "user", Content = content };
     }
 
     private static int ReducedThinkingBudget(Config config) => Math.Max(1024, config.ThinkingBudget / 4);
@@ -780,7 +810,6 @@ public sealed class AgentRunner
     }
 
     private static string? Prop(JsonElement input, string name) => input.TryGetProperty(name, out var v) ? v.GetString() : null;
-    private static string OptProp(JsonElement input, string name, string prefix) => input.TryGetProperty(name, out var v) && !string.IsNullOrEmpty(v.GetString()) ? prefix + v.GetString() : "";
     private static string Truncate(string value, int maxLength) => value.Length <= maxLength ? value : value[..(maxLength - 1)] + "\u2026";
 
     private static string FormatGenericTool(string toolName, JsonElement input)

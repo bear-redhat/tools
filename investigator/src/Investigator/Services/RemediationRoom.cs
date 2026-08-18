@@ -301,7 +301,6 @@ public sealed class RemediationRoom : AgentRoom
             UserId: userId,
             ConversationId: conversationId,
             SummarizerClient: _llmFactory.GetClient(summarizerProfile),
-            SummarizerModelOptions: summarizerOptions,
             TerminalToolNames: new HashSet<string> { SignOffToolName, ReferBackToolName },
             IsConditionallyTerminal: (tool, input) =>
                 tool == "message" && input.TryGetProperty("to", out var to)
