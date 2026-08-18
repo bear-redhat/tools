@@ -740,6 +740,15 @@ public sealed class AgentRunner
         return chars / 4;
     }
 
+    /// <summary>
+    /// Stamps each inbound message with the time it arrived.
+    ///
+    /// "The current date and time is ..." used to sit in the system prompt, which made the
+    /// value stale for the length of a run and, worse, gave every agent a unique prefix --
+    /// so the identical persona and tool briefings could never share a prompt cache across
+    /// scouts. The stamp is a prefix, not a suffix, because resume matches a delivered
+    /// message against its ExternalInput by comparing the tail.
+    /// </summary>
     private static LlmMessage? FormatEventAsLlmMessage(RoomEvent evt)
     {
         var (text, from, to) = evt switch
@@ -750,14 +759,19 @@ public sealed class AgentRunner
             _ => ((string?)null, (string?)null, (string?)null),
         };
         if (text is null) return null;
+
         return new LlmInboxMessage
         {
             Role = "user",
-            Content = JsonSerializer.SerializeToElement(text),
+            Content = JsonSerializer.SerializeToElement(Stamp(evt.Timestamp, text)),
             SourceFrom = from!,
             SourceTo = to,
         };
     }
+
+    /// <summary>Prefixes a message with its arrival time in UTC.</summary>
+    internal static string Stamp(DateTimeOffset timestamp, string text) =>
+        $"[{timestamp.ToUniversalTime():yyyy-MM-dd HH:mm:ss}Z] {text}";
 
     internal static string? FormatDisplayCommand(string toolName, JsonElement input)
     {

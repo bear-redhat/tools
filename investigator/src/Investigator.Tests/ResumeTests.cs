@@ -86,7 +86,8 @@ public class ResumeTests
         var replayed = LlmContextApplier.Replay(events, Lead);
 
         var single = Assert.Single(replayed);
-        Assert.Equal("actually check build02 instead", TextOf(single));
+        Assert.Contains("actually check build02 instead", TextOf(single));
+        Assert.StartsWith("[", TextOf(single));   // carries its arrival time
     }
 
     [Fact]
@@ -102,7 +103,7 @@ public class ResumeTests
         var replayed = LlmContextApplier.Replay(events, Lead);
 
         Assert.Equal(2, replayed.Count);
-        Assert.Equal("second", TextOf(replayed[^1]));
+        Assert.Contains("second", TextOf(replayed[^1]));
     }
 
     [Fact]
@@ -126,6 +127,31 @@ public class ResumeTests
         };
 
         var replayed = LlmContextApplier.Replay(events, scout);
+
+        Assert.Single(replayed);
+    }
+
+    [Fact]
+    public void Replay_DeduplicatesAStampedMessageAgainstItsExternalInput()
+    {
+        // Messages carry their arrival time as a prefix. A suffix would break the tail
+        // comparison resume uses to tell a delivered message from an undelivered one.
+        var events = new List<RoomEvent>
+        {
+            UserSays("which cluster?"),
+            new RoomEvent.LlmContext(0, Lead, T,
+                [new LlmInboxMessage
+                {
+                    Role = "user",
+                    Content = JsonSerializer.SerializeToElement(
+                        AgentRunner.Stamp(T, "which cluster?")),
+                    SourceFrom = "user",
+                    SourceTo = Lead,
+                }],
+                IsInboxBatch: true),
+        };
+
+        var replayed = LlmContextApplier.Replay(events, Lead);
 
         Assert.Single(replayed);
     }

@@ -30,7 +30,6 @@ internal static class InvestigationPrompts
 
             WORKSPACE:
             Your working directory is: {{workspacePath}}
-            The current date and time is: {{Now(clientTimeZone)}}
             Shell commands execute in this directory. Tool output files are saved to tool_outputs/ within it.
             Long outputs are truncated (head + tail) with a [summary] and the file path shown in the header.
             Use read_output to retrieve the full content of any tool output file by line range.
@@ -143,7 +142,6 @@ internal static class InvestigationPrompts
             Your assignment: {{task}}
 
             WORKSPACE: {{workspacePath}}
-            The current date and time is: {{Now(clientTimeZone)}}
             Tool output files are in tool_outputs/ within the workspace. Long outputs are truncated with a [summary]; use read_output to retrieve full content by line range. Do NOT change directory.
 
             {{FileLinksSection(conversationId)}}
@@ -200,7 +198,6 @@ internal static class InvestigationPrompts
             Your assignment: {{task}}
 
             WORKSPACE: {{workspacePath}}
-            The current date and time is: {{Now(clientTimeZone)}}
             Tool output files are in tool_outputs/ within the workspace. Long outputs are truncated with a [summary]; use read_output to retrieve full content by line range. Do NOT change directory.
 
             {{FileLinksSection(conversationId)}}
@@ -252,18 +249,12 @@ internal static class InvestigationPrompts
     private static readonly TimeZoneInfo s_fallbackTz =
         TimeZoneInfo.FindSystemTimeZoneById("America/St_Johns");
 
-    private static string Now(TimeZoneInfo? tz)
-    {
-        tz ??= s_fallbackTz;
-        var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, tz);
-        return $"{now:O} ({tz.DisplayName})";
-    }
 
     private static string TimestampInstruction(TimeZoneInfo? tz)
     {
         tz ??= s_fallbackTz;
         return $"""
-            The Client's local timezone is {tz.Id} ({tz.DisplayName}). When you mention a date or time to the Client -- whether in conversation, findings, or conclusions -- present it in the Client's timezone and include the timezone abbreviation. If you are quoting a raw UTC timestamp from a log or tool output, convert it or annotate both (e.g. "03:14 UTC (00:44 NST)"). Never present a bare timestamp without timezone context.
+            The Client's local timezone is {tz.Id} ({tz.DisplayName}). When you mention a date or time to the Client -- whether in conversation, findings, or conclusions -- present it in the Client's timezone and include the timezone abbreviation. If you are quoting a raw UTC timestamp from a log or tool output, convert it or annotate both (e.g. "03:14 UTC (00:44 NST)"). Never present a bare timestamp without timezone context. Every message you receive is prefixed with the UTC time it arrived, e.g. "[2026-08-19 14:03:22Z]" -- treat the most recent one as the current time.
             """;
     }
 

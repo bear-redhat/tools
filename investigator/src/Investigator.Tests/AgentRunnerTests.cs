@@ -207,7 +207,7 @@ public class AgentRunnerTests
         await h.RunAsync();
 
         var interjectIndex = h.Messages.FindIndex(m =>
-            AgentRunnerHarness.ContentText(m) == "interject");
+            AgentRunnerHarness.ContentText(m).Contains("interject"));
         Assert.True(interjectIndex > 0, "interjected message was dropped");
 
         // It must land after the tool_result array, never between tool_use and tool_result.

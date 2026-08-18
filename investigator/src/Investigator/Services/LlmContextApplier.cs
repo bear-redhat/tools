@@ -53,7 +53,8 @@ public static class LlmContextApplier
             messages.Add(new LlmMessage
             {
                 Role = "user",
-                Content = JsonSerializer.SerializeToElement(input.Text),
+                Content = JsonSerializer.SerializeToElement(
+                    AgentRunner.Stamp(input.Timestamp, input.Text)),
             });
 
         return messages;
