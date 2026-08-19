@@ -35,6 +35,15 @@ public sealed class ModelOptions
     public decimal OutputPricePerMToken { get; set; }
     public decimal CacheReadPricePerMToken { get; set; }
     public decimal CacheCreationPricePerMToken { get; set; }
+
+    /// <summary>
+    /// Emit cache_control breakpoints. Caching is a prefix match, so it only pays off
+    /// while the system prompt and tool list are byte-stable across calls.
+    /// </summary>
+    public bool PromptCaching { get; set; } = true;
+
+    /// <summary>"5m" (default) or "1h". The longer TTL costs 2x to write instead of 1.25x.</summary>
+    public string? PromptCacheTtl { get; set; }
 }
 
 public sealed class AgentOptions

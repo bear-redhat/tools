@@ -20,7 +20,7 @@ public class LlmRequest
     public ThinkingConfig? Thinking { get; set; }
 
     [JsonPropertyName("system")]
-    public string? System { get; set; }
+    public List<SystemBlock>? System { get; set; }
 
     [JsonPropertyName("messages")]
     public List<LlmMessage> Messages { get; set; } = [];
@@ -31,6 +31,34 @@ public class LlmRequest
     [JsonPropertyName("metadata")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LlmRequestMetadata? Metadata { get; set; }
+}
+
+/// <summary>
+/// A system-prompt block. The plain-string form cannot carry cache_control, which is the
+/// only way to cache the tools + system prefix -- and tools render before system, so one
+/// breakpoint at the end of system covers both.
+/// </summary>
+public class SystemBlock
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "text";
+
+    [JsonPropertyName("text")]
+    public string? Text { get; set; }
+
+    [JsonPropertyName("cache_control")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CacheControl? CacheControl { get; set; }
+}
+
+public class CacheControl
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "ephemeral";
+
+    [JsonPropertyName("ttl")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Ttl { get; set; }
 }
 
 public class LlmRequestMetadata

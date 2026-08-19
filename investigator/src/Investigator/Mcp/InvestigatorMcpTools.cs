@@ -154,6 +154,15 @@ public sealed class InvestigatorMcpTools(
             findingCount = view.Items.OfType<ConversationItem.Finding>().Count(),
             hasConclusion = conclusion is not null,
             totalCost = view.TotalCost,
+            // Cache reads bill at a tenth of input; a cacheRead of 0 across many turns
+            // means the prefix is being invalidated and the markers are doing nothing.
+            tokens = new
+            {
+                input = view.UsageByAgent.Values.Sum(u => u.InputTokens),
+                output = view.UsageByAgent.Values.Sum(u => u.OutputTokens),
+                cacheRead = view.UsageByAgent.Values.Sum(u => u.CacheReadTokens),
+                cacheWrite = view.UsageByAgent.Values.Sum(u => u.CacheCreateTokens),
+            },
             room = IsRemediation(room) ? RemediationRoom : "investigation",
             running = RoomFor(room).IsRunning(conversationId),
             // Distinguishes "still thinking" from "parked waiting on you". Answer with
